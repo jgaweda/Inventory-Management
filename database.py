@@ -19,9 +19,8 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inventory.db
 # Default categories seeded on first run
 DEFAULT_CATEGORIES = [
     ('Printer', 'Printers and multifunction devices'),
-    ('Router/Access Point', 'Routers and wireless access points'),
-    ('Laptop', 'Laptop computers'),
-    ('Phone/Tablet', 'Phones and tablets'),
+    ('Router/AP', 'Routers and wireless access points'),
+    ('Laptop/Phone/Tablet', 'Laptops, phones, and tablets'),
     ('Other', 'Uncategorized items'),
 ]
 
