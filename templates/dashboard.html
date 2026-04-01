@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Dashboard</h2>
+
+<!-- Stat Cards -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
+    <div class="card" style="border-left: 3px solid var(--accent-blue);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Total Active</div>
+        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-blue); margin-top: 4px;">{{ stats.total }}</div>
+    </div>
+    <div class="card" style="border-left: 3px solid var(--accent-green);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Available</div>
+        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-green); margin-top: 4px;">{{ stats.available }}</div>
+    </div>
+    <div class="card" style="border-left: 3px solid var(--accent-amber);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Checked Out</div>
+        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-amber); margin-top: 4px;">{{ stats.checked_out }}</div>
+    </div>
+    <div class="card" style="border-left: 3px solid var(--accent-red);">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Lost</div>
+        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-red); margin-top: 4px;">{{ stats.lost }}</div>
+    </div>
+</div>
+
+<!-- Breakdowns -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+    <!-- By Category -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">By Category</div>
+        {% for item in stats.by_category %}
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+            <span style="width: 140px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.category }}</span>
+            <div style="flex: 1; height: 20px; background: var(--bg-primary); border-radius: 4px; overflow: hidden;">
+                <div style="height: 100%; background: var(--accent-blue); border-radius: 4px; width: {{ (item.count / stats.total * 100) if stats.total else 0 }}%; min-width: 20px;"></div>
+            </div>
+            <span class="font-mono" style="font-size: 13px; font-weight: 600; color: var(--text-primary); width: 24px; text-align: right;">{{ item.count }}</span>
+        </div>
+        {% endfor %}
+        {% if not stats.by_category %}
+        <p style="color: var(--text-muted); font-size: 13px;">No data yet.</p>
+        {% endif %}
+    </div>
+
+    <!-- By Connectivity -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">By Connectivity</div>
+        {% for item in stats.by_connectivity %}
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+            <span style="width: 140px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.connectivity }}</span>
+            <div style="flex: 1; height: 20px; background: var(--bg-primary); border-radius: 4px; overflow: hidden;">
+                <div style="height: 100%; background: var(--accent-cyan); border-radius: 4px; width: {{ (item.count / stats.total * 100) if stats.total else 0 }}%; min-width: 20px;"></div>
+            </div>
+            <span class="font-mono" style="font-size: 13px; font-weight: 600; color: var(--text-primary); width: 24px; text-align: right;">{{ item.count }}</span>
+        </div>
+        {% endfor %}
+        {% if not stats.by_connectivity %}
+        <p style="color: var(--text-muted); font-size: 13px;">No data yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="card" style="cursor: default;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div class="section-label" style="margin-bottom: 0;">Recent Activity</div>
+        <a href="{{ url_for('audit_log') }}" style="color: var(--accent-blue); font-size: 13px; text-decoration: none;">View all →</a>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Device</th>
+                <th>Action</th>
+                <th>By</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in stats.recent_activity %}
+            <tr>
+                <td class="font-mono" style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">{{ entry.timestamp }}</td>
+                <td>
+                    <a href="{{ url_for('device_detail', device_id=entry.device_id) }}" style="color: var(--accent-blue); text-decoration: none;">
+                        {{ entry.device_name or entry.device_id }}
+                    </a>
+                </td>
+                <td><span class="action-badge action-{{ entry.action }}">{{ entry.action }}</span></td>
+                <td style="color: var(--text-secondary); font-size: 13px;">{{ entry.performed_by }}</td>
+                <td style="color: var(--text-muted); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ entry.details }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not stats.recent_activity %}
+    <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">No activity yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

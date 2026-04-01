@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Edit Device{% else %}Add Device{% endif %}{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">
+    {% if is_edit %}Edit Device{% else %}Add New Device{% endif %}
+</h2>
+
+<form method="POST" action="{% if is_edit %}{{ url_for('device_edit', device_id=device_id) }}{% else %}{{ url_for('device_add') }}{% endif %}">
+    <!-- Identification -->
+    <div class="card" style="margin-bottom: 16px; cursor: default;">
+        <div class="section-label">Identification</div>
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                Device Name <span style="color: var(--accent-red);">*</span>
+            </label>
+            <input type="text" name="name" value="{{ device.get('name', '') if device is mapping else device.name if device else '' }}" required placeholder="e.g. Intel AX211 Wi-Fi Module">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
+                <select name="category">
+                    <option value="">Select category...</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.name }}" {% if (device.get('category', '') if device is mapping else device.category if device else '') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity</label>
+                <input type="text" name="connectivity" value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
+            </div>
+        </div>
+    </div>
+
+    <!-- Hardware Details -->
+    <div class="card" style="margin-bottom: 16px; cursor: default;">
+        <div class="section-label">Hardware Details</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Manufacturer</label>
+                <input type="text" name="manufacturer" value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" placeholder="e.g. Intel">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Number</label>
+                <input type="text" name="model_number" value="{{ device.get('model_number', '') if device is mapping else device.model_number if device else '' }}" placeholder="e.g. AX211NGW">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Serial Number</label>
+                <input type="text" name="serial_number" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Firmware Version</label>
+                <input type="text" name="firmware_version" value="{{ device.get('firmware_version', '') if device is mapping else device.firmware_version if device else '' }}" placeholder="e.g. 22.240.0.4">
+            </div>
+        </div>
+    </div>
+
+    <!-- Location & Status -->
+    <div class="card" style="margin-bottom: 16px; cursor: default;">
+        <div class="section-label">Location & Status</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Location</label>
+                <input type="text" name="location" value="{{ device.get('location', '') if device is mapping else device.location if device else '' }}" placeholder="e.g. Lab A Shelf 2">
+            </div>
+            {% if is_edit %}
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Status</label>
+                <select name="status">
+                    <option value="available" {% if (device.get('status', '') if device is mapping else device.status if device else '') == 'available' %}selected{% endif %}>Available</option>
+                    <option value="checked_out" {% if (device.get('status', '') if device is mapping else device.status if device else '') == 'checked_out' %}selected{% endif %}>Checked Out</option>
+                    <option value="lost" {% if (device.get('status', '') if device is mapping else device.status if device else '') == 'lost' %}selected{% endif %}>Lost</option>
+                    <option value="retired" {% if (device.get('status', '') if device is mapping else device.status if device else '') == 'retired' %}selected{% endif %}>Retired</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assigned To</label>
+                <input type="text" name="assigned_to" value="{{ device.get('assigned_to', '') if device is mapping else device.assigned_to if device else '' }}" placeholder="Person name">
+            </div>
+            {% endif %}
+        </div>
+        <div style="margin-top: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Notes</label>
+            <textarea name="notes" placeholder="Any additional notes...">{{ device.get('notes', '') if device is mapping else device.notes if device else '' }}</textarea>
+        </div>
+    </div>
+
+    <!-- Audit info -->
+    <div class="card" style="cursor: default; border-top: 1px solid var(--border-color);">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: end;">
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name (for audit log)</label>
+                <input type="text" name="performed_by" placeholder="e.g. John Smith" value="">
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <a href="{% if is_edit %}{{ url_for('device_detail', device_id=device_id) }}{% else %}{{ url_for('device_list') }}{% endif %}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    {% if is_edit %}Save Changes{% else %}Add Device{% endif %}
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}

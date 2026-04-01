@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Devices{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h2 style="font-size: 24px; font-weight: 700;">Devices</h2>
+    <a href="{{ url_for('device_add') }}" class="btn btn-primary">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        Add Device
+    </a>
+</div>
+
+<!-- Search and Filters -->
+<form method="GET" action="{{ url_for('device_list') }}" class="card" style="margin-bottom: 24px; cursor: default;">
+    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+        <div style="flex: 1; position: relative;">
+            <svg style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.4;" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            <input type="text" name="q" value="{{ q }}" placeholder="Search devices..." style="padding-left: 36px;">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('filters').style.display = document.getElementById('filters').style.display === 'none' ? 'grid' : 'none'">Filters</button>
+    </div>
+    <div id="filters" style="display: {% if selected_category or selected_status or selected_connectivity or selected_location %}grid{% else %}none{% endif %}; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+        <div>
+            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Category</label>
+            <select name="category">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat.name }}" {% if selected_category == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Status</label>
+            <select name="status">
+                <option value="">All Statuses</option>
+                <option value="available" {% if selected_status == 'available' %}selected{% endif %}>Available</option>
+                <option value="checked_out" {% if selected_status == 'checked_out' %}selected{% endif %}>Checked Out</option>
+                <option value="lost" {% if selected_status == 'lost' %}selected{% endif %}>Lost</option>
+                <option value="retired" {% if selected_status == 'retired' %}selected{% endif %}>Retired</option>
+            </select>
+        </div>
+        <div>
+            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Connectivity</label>
+            <input type="text" name="connectivity" value="{{ selected_connectivity }}" placeholder="e.g. Wi-Fi 6E">
+        </div>
+        <div>
+            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Location</label>
+            <input type="text" name="location" value="{{ selected_location }}" placeholder="e.g. Lab A">
+        </div>
+    </div>
+</form>
+
+<!-- Label Print Form wraps the table -->
+<form method="POST" action="{{ url_for('label_sheet') }}">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
+            <input type="checkbox" id="selectAll" onchange="document.querySelectorAll('.device-check').forEach(c => c.checked = this.checked)">
+            Select All
+        </label>
+        <button type="submit" class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print Labels
+        </button>
+    </div>
+
+    <div class="card" style="padding: 0; cursor: default;">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 40px;"></th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Connectivity</th>
+                    <th>Status</th>
+                    <th>Location</th>
+                    <th>Assigned To</th>
+                    <th>Barcode</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for device in devices %}
+                <tr style="cursor: pointer;" onclick="if(!event.target.closest('input'))window.location='{{ url_for('device_detail', device_id=device.device_id) }}'">
+                    <td onclick="event.stopPropagation()">
+                        <input type="checkbox" name="device_ids" value="{{ device.device_id }}" class="device-check">
+                    </td>
+                    <td style="font-weight: 600;">{{ device.name }}</td>
+                    <td style="color: var(--text-secondary); font-size: 13px;">{{ device.category }}</td>
+                    <td style="color: var(--text-secondary); font-size: 13px;">{{ device.connectivity }}</td>
+                    <td><span class="badge badge-{{ device.status }}">{{ device.status }}</span></td>
+                    <td style="color: var(--text-secondary); font-size: 13px;">{{ device.location }}</td>
+                    <td style="color: var(--text-secondary); font-size: 13px;">{{ device.assigned_to }}</td>
+                    <td class="font-mono" style="font-size: 12px; color: var(--text-muted);">{{ device.barcode_value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if not devices %}
+        <div style="text-align: center; padding: 48px 24px;">
+            <svg width="48" height="48" fill="none" stroke="var(--text-muted)" stroke-width="1.5" viewBox="0 0 24 24" style="margin: 0 auto 16px;"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
+            <p style="color: var(--text-muted); font-size: 14px;">No devices found.</p>
+            <a href="{{ url_for('device_add') }}" style="color: var(--accent-blue); font-size: 14px;">Add your first device →</a>
+        </div>
+        {% endif %}
+    </div>
+</form>
+{% endblock %}

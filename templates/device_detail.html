@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }}{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+        <a href="{{ url_for('device_list') }}" style="color: var(--text-muted); text-decoration: none; font-size: 13px;">← Back to Devices</a>
+        <h2 style="font-size: 24px; font-weight: 700; margin-top: 8px;">{{ device.name }}</h2>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="{{ url_for('device_edit', device_id=device.device_id) }}" class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+        </a>
+        {% if device.status != 'retired' %}
+        <form method="POST" action="{{ url_for('device_retire', device_id=device.device_id) }}" onsubmit="return confirm('Are you sure you want to retire this device? It will be hidden from the default device list.')">
+            <input type="hidden" name="performed_by" value="">
+            <button type="submit" class="btn btn-danger btn-sm">Retire</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+    <!-- Left column: Device info -->
+    <div>
+        <!-- Device Information -->
+        <div class="card" style="margin-bottom: 16px; cursor: default;">
+            <div class="section-label">Device Information</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Category</div>
+                    <div style="font-size: 14px;">{{ device.category or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Status</div>
+                    <span class="badge badge-{{ device.status }}">{{ device.status }}</span>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Manufacturer</div>
+                    <div style="font-size: 14px;">{{ device.manufacturer or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Model Number</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ device.model_number or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Serial Number</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ device.serial_number or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Firmware Version</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ device.firmware_version or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Connectivity</div>
+                    <div style="font-size: 14px;">{{ device.connectivity or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Location</div>
+                    <div style="font-size: 14px;">{{ device.location or '—' }}</div>
+                </div>
+                {% if device.assigned_to %}
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Assigned To</div>
+                    <div style="font-size: 14px; color: var(--accent-amber);">{{ device.assigned_to }}</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if device.notes %}
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Notes</div>
+                <div style="font-size: 14px; color: var(--text-secondary);">{{ device.notes }}</div>
+            </div>
+            {% endif %}
+
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); display: flex; gap: 24px;">
+                <div>
+                    <span style="font-size: 11px; color: var(--text-muted);">Created:</span>
+                    <span class="font-mono" style="font-size: 12px; color: var(--text-secondary);">{{ device.created_at }}</span>
+                </div>
+                <div>
+                    <span style="font-size: 11px; color: var(--text-muted);">Updated:</span>
+                    <span class="font-mono" style="font-size: 12px; color: var(--text-secondary);">{{ device.updated_at }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Check-out / Check-in -->
+        {% if device.status == 'available' %}
+        <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(16,185,129,0.3);">
+            <div class="section-label" style="color: var(--accent-green);">Check Out Device</div>
+            <form method="POST" action="{{ url_for('device_checkout', device_id=device.device_id) }}" style="display: flex; gap: 12px; align-items: end;">
+                <div style="flex: 1;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assign To</label>
+                    <input type="text" name="assigned_to" required placeholder="Person's name">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name</label>
+                    <input type="text" name="performed_by" placeholder="Your name">
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">Check Out</button>
+            </form>
+        </div>
+        {% elif device.status == 'checked_out' %}
+        <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(245,158,11,0.3); background: rgba(245,158,11,0.05);">
+            <div class="section-label" style="color: var(--accent-amber);">Device Checked Out</div>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px;">
+                Currently assigned to <strong style="color: var(--accent-amber);">{{ device.assigned_to }}</strong>
+            </p>
+            <form method="POST" action="{{ url_for('device_checkin', device_id=device.device_id) }}" style="display: flex; gap: 12px; align-items: end;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name</label>
+                    <input type="text" name="performed_by" placeholder="Your name">
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">Check In</button>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Activity History -->
+        <div class="card" style="cursor: default;">
+            <div class="section-label">Activity History</div>
+            {% if audit %}
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                {% for entry in audit %}
+                <div style="display: flex; gap: 12px; align-items: flex-start; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">
+                    <div style="width: 8px; height: 8px; border-radius: 50; margin-top: 6px; flex-shrink: 0;
+                        background: {% if entry.action == 'added' %}var(--accent-green){% elif entry.action == 'checked_out' %}var(--accent-amber){% elif entry.action == 'returned' %}var(--accent-blue){% elif entry.action == 'retired' %}var(--accent-red){% else %}var(--text-muted){% endif %};
+                        border-radius: 50%;"></div>
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="action-badge action-{{ entry.action }}">{{ entry.action }}</span>
+                            <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">{{ entry.timestamp }}</span>
+                        </div>
+                        {% if entry.performed_by %}
+                        <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">by {{ entry.performed_by }}</div>
+                        {% endif %}
+                        {% if entry.details %}
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">{{ entry.details }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p style="color: var(--text-muted); font-size: 13px;">No activity recorded.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right column: Label & Quick Info -->
+    <div>
+        <!-- Label Preview -->
+        <div class="card" style="margin-bottom: 16px; cursor: default; text-align: center;">
+            <div class="section-label">Device Label</div>
+            <div style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <img src="{{ url_for('serve_label', device_id=device.device_id) }}" alt="Device Label"
+                     style="max-width: 100%; height: auto;">
+            </div>
+            <a href="{{ url_for('serve_label', device_id=device.device_id) }}" download="{{ device.barcode_value }}.png" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Download Label
+            </a>
+        </div>
+
+        <!-- Quick Info -->
+        <div class="card" style="cursor: default;">
+            <div class="section-label">Quick Info</div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Device ID</div>
+                    <div class="font-mono" style="font-size: 14px; color: var(--accent-cyan);">{{ device.device_id }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Barcode Value</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ device.barcode_value }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Activity Events</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ audit|length }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

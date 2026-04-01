@@ -1,0 +1,7 @@
+inventory.db
+static/labels/*.png
+backups/
+__pycache__/
+*.pyc
+*.pyo
+.env

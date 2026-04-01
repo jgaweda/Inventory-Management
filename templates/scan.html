@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Scan{% endblock %}
+
+{% block extra_head %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Barcode Scanner</h2>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+    <!-- USB Scanner / Manual Entry -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">USB Scanner / Manual Entry</div>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+            Scan a barcode with a USB scanner or type a barcode value manually.
+        </p>
+        <div style="position: relative;">
+            <input type="text" id="barcodeInput" placeholder="Scan or type barcode..."
+                   style="font-family: 'JetBrains Mono', monospace; font-size: 18px; padding: 16px; text-align: center;"
+                   autofocus autocomplete="off">
+        </div>
+        <div id="usbResult" style="margin-top: 16px; display: none;"></div>
+    </div>
+
+    <!-- Camera Scanner -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">Camera Scanner</div>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+            Use your device camera to scan QR codes.
+        </p>
+        <div id="cameraContainer">
+            <button id="startCamera" class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="startCameraScanner()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Enable Camera
+            </button>
+            <div id="qr-reader" style="margin-top: 12px; border-radius: 8px; overflow: hidden;"></div>
+            <div id="cameraResult" style="margin-top: 12px; display: none;"></div>
+            <button id="scanAnother" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 12px; display: none;" onclick="resumeCamera()">
+                Scan Another
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Scan History -->
+<div class="card" style="cursor: default;">
+    <div class="section-label">Scan History (This Session)</div>
+    <div id="scanHistory">
+        <p style="color: var(--text-muted); font-size: 13px;" id="noScans">No scans yet this session.</p>
+    </div>
+</div>
+
+<script>
+    // --- USB Scanner Auto-Detection ---
+    const barcodeInput = document.getElementById('barcodeInput');
+    let lastKeyTime = 0;
+    let scanBuffer = '';
+    let submitTimeout = null;
+
+    barcodeInput.addEventListener('keydown', function(e) {
+        const now = Date.now();
+        const gap = now - lastKeyTime;
+        lastKeyTime = now;
+
+        // Enter key always triggers lookup
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(submitTimeout);
+            doLookup(barcodeInput.value.trim());
+            return;
+        }
+
+        // If gap > 100ms, this is manual typing — reset buffer
+        if (gap > 100) {
+            scanBuffer = '';
+        }
+
+        // Build the scanner buffer
+        if (e.key.length === 1) {
+            scanBuffer += e.key;
+        }
+
+        // If buffer >= 6 chars, set auto-submit after 150ms pause
+        clearTimeout(submitTimeout);
+        if (scanBuffer.length >= 6) {
+            submitTimeout = setTimeout(function() {
+                doLookup(barcodeInput.value.trim());
+            }, 150);
+        }
+    });
+
+    function doLookup(barcode) {
+        if (!barcode) return;
+        barcodeInput.value = '';
+        scanBuffer = '';
+
+        fetch('/api/lookup?barcode=' + encodeURIComponent(barcode))
+            .then(r => r.json())
+            .then(data => {
+                showUsbResult(barcode, data);
+                addToHistory(barcode, data);
+            })
+            .catch(() => {
+                showUsbResult(barcode, { found: false });
+                addToHistory(barcode, { found: false });
+            });
+    }
+
+    function showUsbResult(barcode, data) {
+        const el = document.getElementById('usbResult');
+        el.style.display = 'block';
+        if (data.found) {
+            el.innerHTML = `
+                <div style="padding: 16px; border-radius: 8px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);">
+                    <div style="font-weight: 600; color: var(--accent-green); margin-bottom: 8px;">✓ Device Found</div>
+                    <div style="font-size: 14px; margin-bottom: 4px;"><strong>${data.name}</strong></div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">Status: <span class="badge badge-${data.status}">${data.status}</span></div>
+                    ${data.assigned_to ? '<div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Assigned to: ' + data.assigned_to + '</div>' : ''}
+                    <a href="/devices/${data.device_id}" class="btn btn-primary btn-sm" style="margin-top: 12px;">View Device →</a>
+                </div>`;
+        } else {
+            el.innerHTML = `
+                <div style="padding: 16px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);">
+                    <div style="font-weight: 600; color: var(--accent-red); margin-bottom: 4px;">✗ Not Found</div>
+                    <div class="font-mono" style="font-size: 13px; color: var(--text-muted);">${barcode}</div>
+                </div>`;
+        }
+    }
+
+    // --- Camera Scanner ---
+    let html5QrCode = null;
+
+    function startCameraScanner() {
+        document.getElementById('startCamera').style.display = 'none';
+        html5QrCode = new Html5Qrcode("qr-reader");
+        html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            onCameraScan,
+            () => {}
+        ).catch(err => {
+            document.getElementById('startCamera').style.display = 'flex';
+            alert('Could not start camera: ' + err);
+        });
+    }
+
+    function onCameraScan(decodedText) {
+        // Pause camera and show result
+        html5QrCode.pause();
+        document.getElementById('scanAnother').style.display = 'flex';
+
+        fetch('/api/lookup?barcode=' + encodeURIComponent(decodedText))
+            .then(r => r.json())
+            .then(data => {
+                showCameraResult(decodedText, data);
+                addToHistory(decodedText, data);
+            })
+            .catch(() => {
+                showCameraResult(decodedText, { found: false });
+                addToHistory(decodedText, { found: false });
+            });
+    }
+
+    function showCameraResult(barcode, data) {
+        const el = document.getElementById('cameraResult');
+        el.style.display = 'block';
+        if (data.found) {
+            el.innerHTML = `
+                <div style="padding: 12px; border-radius: 8px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);">
+                    <div style="font-weight: 600; color: var(--accent-green);">✓ ${data.name}</div>
+                    <a href="/devices/${data.device_id}" class="btn btn-primary btn-sm" style="margin-top: 8px;">View Device →</a>
+                </div>`;
+        } else {
+            el.innerHTML = `
+                <div style="padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);">
+                    <div style="font-weight: 600; color: var(--accent-red);">✗ Not Found: <span class="font-mono">${barcode}</span></div>
+                </div>`;
+        }
+    }
+
+    function resumeCamera() {
+        document.getElementById('cameraResult').style.display = 'none';
+        document.getElementById('scanAnother').style.display = 'none';
+        html5QrCode.resume();
+    }
+
+    // --- Scan History ---
+    const scanHistory = [];
+
+    function addToHistory(barcode, data) {
+        document.getElementById('noScans').style.display = 'none';
+        const historyDiv = document.getElementById('scanHistory');
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.style.cssText = 'display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-color);';
+
+        if (data.found) {
+            entry.innerHTML = `
+                <span style="color: var(--accent-green); font-weight: 600;">✓</span>
+                <span class="font-mono" style="font-size: 12px; color: var(--text-muted); width: 70px;">${time}</span>
+                <a href="/devices/${data.device_id}" style="color: var(--accent-blue); text-decoration: none; font-size: 14px;">${data.name}</a>
+                <span class="font-mono" style="font-size: 12px; color: var(--text-muted);">${barcode}</span>`;
+        } else {
+            entry.innerHTML = `
+                <span style="color: var(--accent-red); font-weight: 600;">✗</span>
+                <span class="font-mono" style="font-size: 12px; color: var(--text-muted); width: 70px;">${time}</span>
+                <span style="color: var(--text-secondary); font-size: 14px;">Not found</span>
+                <span class="font-mono" style="font-size: 12px; color: var(--text-muted);">${barcode}</span>`;
+        }
+
+        historyDiv.insertBefore(entry, historyDiv.firstChild.nextSibling || null);
+    }
+</script>
+{% endblock %}
