@@ -27,7 +27,7 @@
                 </select>
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity</label>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity Type/Version</label>
                 <input type="text" name="connectivity" value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
@@ -49,9 +49,13 @@
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Serial Number</label>
                 <input type="text" name="serial_number" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
             </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Firmware Version</label>
-                <input type="text" name="firmware_version" value="{{ device.get('firmware_version', '') if device is mapping else device.firmware_version if device else '' }}" placeholder="e.g. 22.240.0.4">
+            <div style="display: flex; align-items: center; padding-top: 24px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: var(--text-primary);">
+                    <input type="checkbox" name="vendor_supplied" value="1"
+                        {% if (device.get('vendor_supplied', 0) if device is mapping else device.vendor_supplied if device else 0)|int %}checked{% endif %}
+                        style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
+                    Vendor Supplied (HP Partner Program)
+                </label>
             </div>
         </div>
     </div>

@@ -18,21 +18,17 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inventory.db
 
 # Default categories seeded on first run
 DEFAULT_CATEGORIES = [
-    ('Wi-Fi Module', 'Wireless networking modules'),
-    ('Bluetooth Dongle', 'Bluetooth USB dongles and adapters'),
-    ('Dev Board', 'Development and evaluation boards'),
-    ('Antenna', 'Antennas and antenna assemblies'),
-    ('Access Point', 'Wireless access points'),
-    ('Cable/Adapter', 'Cables, adapters, and connectors'),
-    ('Test Equipment', 'Test and measurement equipment'),
-    ('Reference Design', 'Reference design hardware'),
+    ('Printer', 'Printers and multifunction devices'),
+    ('Router/Access Point', 'Routers and wireless access points'),
+    ('Laptop', 'Laptop computers'),
+    ('Phone/Tablet', 'Phones and tablets'),
     ('Other', 'Uncategorized items'),
 ]
 
 # Fields that can be updated via update_device()
 UPDATABLE_FIELDS = [
     'name', 'category', 'manufacturer', 'model_number', 'serial_number',
-    'firmware_version', 'connectivity', 'status', 'location',
+    'connectivity', 'vendor_supplied', 'status', 'location',
     'assigned_to', 'notes',
 ]
 
@@ -73,8 +69,8 @@ def init_db():
                 manufacturer TEXT DEFAULT '',
                 model_number TEXT DEFAULT '',
                 serial_number TEXT DEFAULT '',
-                firmware_version TEXT DEFAULT '',
                 connectivity TEXT DEFAULT '',
+                vendor_supplied INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'available'
                     CHECK(status IN ('available','checked_out','retired','lost')),
                 location TEXT DEFAULT '',
@@ -120,91 +116,6 @@ def init_db():
                 (name, desc)
             )
 
-        # Seed test data if the devices table is empty
-        count = conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
-        if count == 0:
-            _seed_test_data(conn)
-
-
-def _seed_test_data(conn):
-    """Insert test devices for development/demo. Only called when DB is empty."""
-    test_devices = [
-        {
-            'name': 'Intel AX211 Wi-Fi Module',
-            'category': 'Wi-Fi Module',
-            'manufacturer': 'Intel',
-            'model_number': 'AX211NGW',
-            'serial_number': 'SN-AX211-001',
-            'firmware_version': '22.240.0.4',
-            'connectivity': 'Wi-Fi 6E',
-            'location': 'Lab A Shelf 2',
-        },
-        {
-            'name': 'Qualcomm QCA6696 Module',
-            'category': 'Wi-Fi Module',
-            'manufacturer': 'Qualcomm',
-            'model_number': 'QCA6696',
-            'serial_number': 'SN-QCA-002',
-            'firmware_version': '3.2.1',
-            'connectivity': 'Wi-Fi 7',
-            'location': 'Lab A Shelf 3',
-        },
-        {
-            'name': 'Nordic nRF52840 Dongle',
-            'category': 'Bluetooth Dongle',
-            'manufacturer': 'Nordic Semiconductor',
-            'model_number': 'nRF52840',
-            'serial_number': 'SN-NRF-003',
-            'firmware_version': '1.4.2',
-            'connectivity': 'BT 5.3 / BLE',
-            'location': 'Lab B',
-        },
-        {
-            'name': 'Raspberry Pi 4 Dev Board',
-            'category': 'Dev Board',
-            'manufacturer': 'Raspberry Pi Foundation',
-            'model_number': 'RPi4-8GB',
-            'serial_number': 'SN-RPI-004',
-            'firmware_version': '-',
-            'connectivity': 'Wi-Fi 5 / BT 5.0',
-            'location': 'Lab A Bench 1',
-        },
-        {
-            'name': 'Taoglas FXP840 Antenna',
-            'category': 'Antenna',
-            'manufacturer': 'Taoglas',
-            'model_number': 'FXP840.07.0100A',
-            'serial_number': 'SN-TAG-005',
-            'firmware_version': '-',
-            'connectivity': 'Wi-Fi 6E',
-            'location': 'Storage Cabinet',
-        },
-        {
-            'name': 'Broadcom BCM4389 Eval Board',
-            'category': 'Dev Board',
-            'manufacturer': 'Broadcom',
-            'model_number': 'BCM4389-EVB',
-            'serial_number': 'SN-BCM-006',
-            'firmware_version': '101.10.591',
-            'connectivity': 'Wi-Fi 6E / BT 5.2',
-            'location': 'Lab B Bench 2',
-            'notes': 'Primary Wi-Fi 6E test platform',
-        },
-    ]
-
-    device_ids = []
-    for data in test_devices:
-        device_id = _insert_device(conn, data, performed_by='system')
-        device_ids.append(device_id)
-
-    # Check out device #1 to Sarah Chen
-    if device_ids:
-        conn.execute(
-            "UPDATE devices SET status='checked_out', assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE device_id=?",
-            ('Sarah Chen', device_ids[0])
-        )
-        log_action(conn, device_ids[0], 'checked_out', 'system', 'Assigned to Sarah Chen')
-
 
 def generate_device_id():
     """Generate a short unique device ID (10 hex chars)."""
@@ -223,7 +134,7 @@ def _insert_device(conn, data, performed_by='system'):
 
     conn.execute('''
         INSERT INTO devices (device_id, barcode_value, name, category, manufacturer,
-            model_number, serial_number, firmware_version, connectivity, status,
+            model_number, serial_number, connectivity, vendor_supplied, status,
             location, assigned_to, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
@@ -234,8 +145,8 @@ def _insert_device(conn, data, performed_by='system'):
         data.get('manufacturer', ''),
         data.get('model_number', ''),
         data.get('serial_number', ''),
-        data.get('firmware_version', ''),
         data.get('connectivity', ''),
+        int(data.get('vendor_supplied', 0)),
         data.get('status', 'available'),
         data.get('location', ''),
         data.get('assigned_to', ''),

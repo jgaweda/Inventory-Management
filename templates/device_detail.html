@@ -50,12 +50,18 @@
                     <div class="font-mono" style="font-size: 14px;">{{ device.serial_number or '—' }}</div>
                 </div>
                 <div>
-                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Firmware Version</div>
-                    <div class="font-mono" style="font-size: 14px;">{{ device.firmware_version or '—' }}</div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Connectivity Type/Version</div>
+                    <div style="font-size: 14px;">{{ device.connectivity or '—' }}</div>
                 </div>
                 <div>
-                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Connectivity</div>
-                    <div style="font-size: 14px;">{{ device.connectivity or '—' }}</div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Ownership</div>
+                    <div style="font-size: 14px;">
+                        {% if device.vendor_supplied %}
+                        <span style="background: rgba(139,92,246,0.12); color: #a78bfa; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">vendor supplied</span>
+                        {% else %}
+                        <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">HP owned</span>
+                        {% endif %}
+                    </div>
                 </div>
                 <div>
                     <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Location</div>

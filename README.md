@@ -1,6 +1,6 @@
 # HP Connectivity Team Inventory Management System
 
-A simple, self-contained inventory management system for tracking Wi-Fi modules, Bluetooth dongles, dev boards, antennas, and test equipment.
+A simple, self-contained inventory management system for tracking printers, routers, laptops, phones/tablets, and other hardware devices.
 
 ## Quick Start
 
@@ -15,7 +15,7 @@ python app.py
 # http://127.0.0.1:5000
 ```
 
-The database (`inventory.db`) is created automatically on first run with sample data.
+The database (`inventory.db`) is created automatically on first run (empty, ready for your data).
 
 ## Features
 
@@ -52,7 +52,7 @@ The database (`inventory.db`) is created automatically on first run with sample 
 
 ### Importing from CSV
 1. Click **Import CSV** in the sidebar
-2. Upload a CSV file with headers: `name,category,manufacturer,model_number,serial_number,firmware_version,connectivity,location,notes`
+2. Upload a CSV file with headers: `name,category,manufacturer,model_number,serial_number,connectivity,vendor_supplied,location,notes`
 3. Only `name` is required; other fields are optional
 
 ### Backing Up
@@ -93,4 +93,4 @@ This copies `inventory.db` to `backups/` with a timestamp. Keeps the last 30 cop
 
 **Port already in use**: Run with a different port: `python app.py --port 5001`
 
-**Reset everything**: Delete `inventory.db` and restart. The database and sample data will be recreated.
+**Reset everything**: Delete `inventory.db` and restart. A fresh empty database will be created.

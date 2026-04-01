@@ -89,8 +89,8 @@ def device_add():
             'manufacturer': request.form.get('manufacturer', ''),
             'model_number': request.form.get('model_number', ''),
             'serial_number': request.form.get('serial_number', ''),
-            'firmware_version': request.form.get('firmware_version', ''),
             'connectivity': request.form.get('connectivity', ''),
+            'vendor_supplied': 1 if request.form.get('vendor_supplied') else 0,
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
         }
@@ -147,8 +147,8 @@ def device_edit(device_id):
             'manufacturer': request.form.get('manufacturer', ''),
             'model_number': request.form.get('model_number', ''),
             'serial_number': request.form.get('serial_number', ''),
-            'firmware_version': request.form.get('firmware_version', ''),
             'connectivity': request.form.get('connectivity', ''),
+            'vendor_supplied': 1 if request.form.get('vendor_supplied') else 0,
             'status': request.form.get('status', device['status']),
             'location': request.form.get('location', ''),
             'assigned_to': request.form.get('assigned_to', ''),
@@ -283,7 +283,7 @@ def export_csv():
 
     output = io.StringIO()
     fields = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
-              'model_number', 'serial_number', 'firmware_version', 'connectivity',
+              'model_number', 'serial_number', 'connectivity', 'vendor_supplied',
               'status', 'location', 'assigned_to', 'notes', 'created_at', 'updated_at']
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -322,14 +322,15 @@ def import_csv():
                     errors += 1
                     continue
                 try:
+                    vendor_val = row.get('vendor_supplied', '0').strip().lower()
                     data = {
                         'name': name,
                         'category': row.get('category', ''),
                         'manufacturer': row.get('manufacturer', ''),
                         'model_number': row.get('model_number', ''),
                         'serial_number': row.get('serial_number', ''),
-                        'firmware_version': row.get('firmware_version', ''),
                         'connectivity': row.get('connectivity', ''),
+                        'vendor_supplied': 1 if vendor_val in ('1', 'yes', 'true') else 0,
                         'location': row.get('location', ''),
                         'notes': row.get('notes', ''),
                     }
