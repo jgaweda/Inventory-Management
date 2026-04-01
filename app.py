@@ -2,17 +2,21 @@
 HP Connectivity Team Inventory Management System — Flask Application
 
 All routes are defined here. Run with: python app.py [--host HOST] [--port PORT]
+
+Authentication: Users must log in. Admins can add/edit/checkout/retire/import devices.
+Viewers have read-only access (dashboard, device list, detail, scan, audit, export).
 """
 
 import argparse
 import csv
 import io
 import os
+from functools import wraps
 from datetime import datetime
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, send_file, jsonify, Response,
+    flash, send_file, jsonify, Response, session, g,
 )
 
 import database as db
@@ -27,12 +31,57 @@ app.secret_key = 'hp-connectivity-inventory-system-secret-key'
 
 with app.app_context():
     db.init_db()
-    # Ensure directories exist
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
     os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups'), exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Context processor: inject categories and current time into all templates
+# Authentication helpers
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def load_user():
+    """Load the current user from session before each request."""
+    g.user = None
+    user_id = session.get('user_id')
+    if user_id:
+        g.user = db.get_user(user_id)
+        if not g.user:
+            session.clear()
+
+
+def login_required(f):
+    """Decorator: redirect to login if not authenticated."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login', next=request.path))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    """Decorator: require admin role. Viewers get an error flash."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login', next=request.path))
+        if g.user['role'] != 'admin':
+            flash('You do not have permission to perform this action.', 'error')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def current_username():
+    """Return display name of logged-in user, or 'system'."""
+    if g.user:
+        return g.user['display_name'] or g.user['username']
+    return 'system'
+
+# ---------------------------------------------------------------------------
+# Context processor: inject categories, user, and current time into templates
 # ---------------------------------------------------------------------------
 
 @app.context_processor
@@ -40,13 +89,45 @@ def inject_globals():
     return {
         'categories': db.get_categories(),
         'now': datetime.utcnow(),
+        'current_user': g.user,
     }
+
+# ---------------------------------------------------------------------------
+# Login / Logout
+# ---------------------------------------------------------------------------
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if g.user:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = db.authenticate_user(username, password)
+        if user:
+            session['user_id'] = user['user_id']
+            session['role'] = user['role']
+            next_url = request.form.get('next') or url_for('dashboard')
+            return redirect(next_url)
+        else:
+            flash('Invalid username or password.', 'error')
+
+    return render_template('login.html', next=request.args.get('next', ''))
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.', 'success')
+    return redirect(url_for('login'))
 
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 
 @app.route('/')
+@login_required
 def dashboard():
     stats = db.get_stats()
     return render_template('dashboard.html', stats=stats)
@@ -56,6 +137,7 @@ def dashboard():
 # ---------------------------------------------------------------------------
 
 @app.route('/devices')
+@login_required
 def device_list():
     devices = db.search_devices(
         query=request.args.get('q', ''),
@@ -72,10 +154,11 @@ def device_list():
                            selected_location=request.args.get('location', ''))
 
 # ---------------------------------------------------------------------------
-# Add device
+# Add device (admin only)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/add', methods=['GET', 'POST'])
+@admin_required
 def device_add():
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
@@ -94,8 +177,7 @@ def device_add():
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
         }
-        performed_by = request.form.get('performed_by', 'system')
-        device_id = db.add_device(data, performed_by=performed_by)
+        device_id = db.add_device(data, performed_by=current_username())
 
         # Generate label
         device = db.get_device(device_id)
@@ -107,17 +189,17 @@ def device_add():
     return render_template('device_form.html', device={}, is_edit=False)
 
 # ---------------------------------------------------------------------------
-# Device detail
+# Device detail (any logged-in user)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>')
+@login_required
 def device_detail(device_id):
     device = db.get_device(device_id)
     if not device:
         flash('Device not found.', 'error')
         return redirect(url_for('device_list'))
 
-    # Ensure label exists
     if not barcode_utils.label_exists(device_id):
         barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
 
@@ -125,10 +207,11 @@ def device_detail(device_id):
     return render_template('device_detail.html', device=device, audit=audit)
 
 # ---------------------------------------------------------------------------
-# Edit device
+# Edit device (admin only)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/edit', methods=['GET', 'POST'])
+@admin_required
 def device_edit(device_id):
     device = db.get_device(device_id)
     if not device:
@@ -154,10 +237,8 @@ def device_edit(device_id):
             'assigned_to': request.form.get('assigned_to', ''),
             'notes': request.form.get('notes', ''),
         }
-        performed_by = request.form.get('performed_by', 'system')
-        db.update_device(device_id, data, performed_by=performed_by)
+        db.update_device(device_id, data, performed_by=current_username())
 
-        # Regenerate label (name may have changed)
         barcode_utils.generate_label(device_id, device['barcode_value'], name)
 
         flash(f'Device "{name}" updated successfully.', 'success')
@@ -166,37 +247,37 @@ def device_edit(device_id):
     return render_template('device_form.html', device=device, is_edit=True, device_id=device_id)
 
 # ---------------------------------------------------------------------------
-# Retire device (soft delete)
+# Retire device (admin only)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/retire', methods=['POST'])
+@admin_required
 def device_retire(device_id):
-    performed_by = request.form.get('performed_by', 'system')
-    db.retire_device(device_id, performed_by=performed_by)
+    db.retire_device(device_id, performed_by=current_username())
     flash('Device retired successfully.', 'success')
     return redirect(url_for('device_list'))
 
 # ---------------------------------------------------------------------------
-# Check out / Check in
+# Check out / Check in (admin only)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/checkout', methods=['POST'])
+@admin_required
 def device_checkout(device_id):
     assigned_to = request.form.get('assigned_to', '').strip()
     if not assigned_to:
         flash('Please enter who is checking out this device.', 'error')
         return redirect(url_for('device_detail', device_id=device_id))
 
-    performed_by = request.form.get('performed_by', 'system')
-    db.checkout_device(device_id, assigned_to, performed_by=performed_by)
+    db.checkout_device(device_id, assigned_to, performed_by=current_username())
     flash(f'Device checked out to {assigned_to}.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
 
 @app.route('/devices/<device_id>/checkin', methods=['POST'])
+@admin_required
 def device_checkin(device_id):
-    performed_by = request.form.get('performed_by', 'system')
-    db.checkin_device(device_id, performed_by=performed_by)
+    db.checkin_device(device_id, performed_by=current_username())
     flash('Device checked in successfully.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
@@ -205,6 +286,7 @@ def device_checkin(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/labels/<device_id>.png')
+@login_required
 def serve_label(device_id):
     """Serve a label PNG, generating it on the fly if it doesn't exist."""
     if not barcode_utils.label_exists(device_id):
@@ -218,6 +300,7 @@ def serve_label(device_id):
 
 
 @app.route('/labels/sheet', methods=['POST'])
+@admin_required
 def label_sheet():
     """Generate and download a printable sheet of labels for selected devices."""
     device_ids = request.form.getlist('device_ids')
@@ -248,11 +331,13 @@ def label_sheet():
 # ---------------------------------------------------------------------------
 
 @app.route('/scan')
+@login_required
 def scan_page():
     return render_template('scan.html')
 
 
 @app.route('/api/lookup')
+@login_required
 def api_lookup():
     """JSON API for barcode scanner lookup. Case-insensitive."""
     barcode = request.args.get('barcode', '').strip()
@@ -273,10 +358,11 @@ def api_lookup():
         return jsonify({'found': False}), 404
 
 # ---------------------------------------------------------------------------
-# CSV Export
+# CSV Export (any logged-in user)
 # ---------------------------------------------------------------------------
 
 @app.route('/export')
+@login_required
 def export_csv():
     """Export all devices (including retired) to CSV."""
     devices = db.get_all_devices(include_retired=True)
@@ -298,10 +384,11 @@ def export_csv():
     )
 
 # ---------------------------------------------------------------------------
-# CSV Import
+# CSV Import (admin only)
 # ---------------------------------------------------------------------------
 
 @app.route('/import', methods=['GET', 'POST'])
+@admin_required
 def import_csv():
     if request.method == 'POST':
         file = request.files.get('file')
@@ -309,7 +396,7 @@ def import_csv():
             flash('Please select a CSV file.', 'error')
             return render_template('import.html')
 
-        performed_by = request.form.get('performed_by', 'system')
+        performed_by = current_username()
         imported = 0
         errors = 0
 
@@ -350,13 +437,122 @@ def import_csv():
     return render_template('import.html')
 
 # ---------------------------------------------------------------------------
-# Audit log
+# Audit log (any logged-in user)
 # ---------------------------------------------------------------------------
 
 @app.route('/audit')
+@login_required
 def audit_log():
     entries = db.get_audit_log(limit=200)
     return render_template('audit.html', entries=entries)
+
+# ---------------------------------------------------------------------------
+# User management (admin only)
+# ---------------------------------------------------------------------------
+
+@app.route('/users')
+@admin_required
+def user_list():
+    users = db.get_all_users()
+    return render_template('users.html', users=users)
+
+
+@app.route('/users/add', methods=['GET', 'POST'])
+@admin_required
+def user_add():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '')
+        role = request.form.get('role', 'viewer')
+        display_name = request.form.get('display_name', '').strip()
+
+        if not username or not password:
+            flash('Username and password are required.', 'error')
+            return render_template('user_form.html', user={}, is_edit=False)
+
+        if len(password) < 4:
+            flash('Password must be at least 4 characters.', 'error')
+            return render_template('user_form.html', user=request.form, is_edit=False)
+
+        try:
+            db.create_user(username, password, role, display_name)
+            flash(f'User "{username}" created successfully.', 'success')
+            return redirect(url_for('user_list'))
+        except ValueError as e:
+            flash(str(e), 'error')
+            return render_template('user_form.html', user=request.form, is_edit=False)
+
+    return render_template('user_form.html', user={}, is_edit=False)
+
+
+@app.route('/users/<int:user_id>/edit', methods=['GET', 'POST'])
+@admin_required
+def user_edit(user_id):
+    user = db.get_user(user_id)
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('user_list'))
+
+    if request.method == 'POST':
+        data = {
+            'display_name': request.form.get('display_name', '').strip(),
+            'role': request.form.get('role', user['role']),
+        }
+        password = request.form.get('password', '').strip()
+        if password:
+            if len(password) < 4:
+                flash('Password must be at least 4 characters.', 'error')
+                return render_template('user_form.html', user=user, is_edit=True)
+            data['password'] = password
+
+        db.update_user(user_id, data)
+        flash(f'User "{user["username"]}" updated.', 'success')
+        return redirect(url_for('user_list'))
+
+    return render_template('user_form.html', user=user, is_edit=True)
+
+
+@app.route('/users/<int:user_id>/delete', methods=['POST'])
+@admin_required
+def user_delete(user_id):
+    try:
+        db.delete_user(user_id)
+        flash('User deleted.', 'success')
+    except ValueError as e:
+        flash(str(e), 'error')
+    return redirect(url_for('user_list'))
+
+# ---------------------------------------------------------------------------
+# Change own password (any logged-in user)
+# ---------------------------------------------------------------------------
+
+@app.route('/account', methods=['GET', 'POST'])
+@login_required
+def account():
+    if request.method == 'POST':
+        current_pw = request.form.get('current_password', '')
+        new_pw = request.form.get('new_password', '')
+        confirm_pw = request.form.get('confirm_password', '')
+
+        # Verify current password
+        user = db.authenticate_user(g.user['username'], current_pw)
+        if not user:
+            flash('Current password is incorrect.', 'error')
+            return render_template('account.html')
+
+        if len(new_pw) < 4:
+            flash('New password must be at least 4 characters.', 'error')
+            return render_template('account.html')
+
+        if new_pw != confirm_pw:
+            flash('New passwords do not match.', 'error')
+            return render_template('account.html')
+
+        db.update_user(g.user['user_id'], {'password': new_pw})
+        flash('Password changed successfully.', 'success')
+        return redirect(url_for('account'))
+
+    return render_template('account.html')
 
 # ---------------------------------------------------------------------------
 # Main entry point
@@ -373,6 +569,7 @@ if __name__ == '__main__':
     ║   HP Connectivity Team Inventory System          ║
     ║   Running at: http://{args.host}:{args.port}            ║
     ║   Database: {db.DB_PATH:<36s} ║
+    ║   Default login: admin / admin                   ║
     ║   Press Ctrl+C to stop                           ║
     ╚══════════════════════════════════════════════════╝
     """)

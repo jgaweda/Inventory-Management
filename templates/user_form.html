@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{% if is_edit %}Edit User{% else %}Add User{% endif %}{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">
+    {% if is_edit %}Edit User{% else %}Add New User{% endif %}
+</h2>
+
+<form method="POST" action="{% if is_edit %}{{ url_for('user_edit', user_id=user.user_id) }}{% else %}{{ url_for('user_add') }}{% endif %}" style="max-width: 500px;">
+    <div class="card" style="margin-bottom: 16px; cursor: default;">
+        <div class="section-label">User Details</div>
+
+        {% if not is_edit %}
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                Username <span style="color: var(--accent-red);">*</span>
+            </label>
+            <input type="text" name="username" value="{{ user.get('username', '') if user is mapping else user.username if user else '' }}" required placeholder="e.g. jsmith" autocomplete="off">
+        </div>
+        {% else %}
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Username</label>
+            <div class="font-mono" style="font-size: 14px; padding: 10px 0;">{{ user.username }}</div>
+        </div>
+        {% endif %}
+
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Display Name</label>
+            <input type="text" name="display_name" value="{{ user.get('display_name', '') if user is mapping else user.display_name if user else '' }}" placeholder="e.g. John Smith">
+        </div>
+
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                Password {% if not is_edit %}<span style="color: var(--accent-red);">*</span>{% endif %}
+            </label>
+            <input type="password" name="password" {% if not is_edit %}required{% endif %} placeholder="{% if is_edit %}Leave blank to keep current{% else %}Min 4 characters{% endif %}" autocomplete="new-password">
+        </div>
+
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Role</label>
+            <select name="role">
+                <option value="viewer" {% if (user.get('role', 'viewer') if user is mapping else user.role if user else 'viewer') == 'viewer' %}selected{% endif %}>Viewer (read-only)</option>
+                <option value="admin" {% if (user.get('role', '') if user is mapping else user.role if user else '') == 'admin' %}selected{% endif %}>Admin (full access)</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <a href="{{ url_for('user_list') }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            {% if is_edit %}Save Changes{% else %}Create User{% endif %}
+        </button>
+    </div>
+</form>
+{% endblock %}

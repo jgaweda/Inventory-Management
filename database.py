@@ -10,6 +10,8 @@ import sqlite3
 import uuid
 import json
 import os
+import hashlib
+import secrets
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -102,6 +104,22 @@ def init_db():
             )
         ''')
 
+        # Users table for authentication
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer'
+                    CHECK(role IN ('admin','viewer')),
+                display_name TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_login DATETIME
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+
         # Indexes for common queries
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_category ON devices(category)')
@@ -113,6 +131,16 @@ def init_db():
             conn.execute(
                 'INSERT OR IGNORE INTO categories (name, description) VALUES (?, ?)',
                 (name, desc)
+            )
+
+        # Seed default admin user if no users exist (password: admin)
+        user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        if user_count == 0:
+            salt = secrets.token_hex(16)
+            pw_hash = hashlib.sha256((salt + 'admin').encode()).hexdigest()
+            conn.execute(
+                'INSERT INTO users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)',
+                ('admin', pw_hash, salt, 'admin', 'Administrator')
             )
 
 
@@ -391,3 +419,105 @@ def get_stats():
             'by_connectivity': [dict(r) for r in by_connectivity],
             'recent_activity': [dict(r) for r in recent],
         }
+
+
+# ---------------------------------------------------------------------------
+# User authentication and management
+# ---------------------------------------------------------------------------
+
+def _hash_password(password, salt=None):
+    """Hash a password with a salt. Returns (hash, salt) tuple."""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    pw_hash = hashlib.sha256((salt + password).encode()).hexdigest()
+    return pw_hash, salt
+
+
+def authenticate_user(username, password):
+    """Verify username/password. Returns user dict on success, None on failure."""
+    with db_transaction() as conn:
+        row = conn.execute(
+            'SELECT * FROM users WHERE username = ?', (username,)
+        ).fetchone()
+        if not row:
+            return None
+        expected_hash = hashlib.sha256((row['salt'] + password).encode()).hexdigest()
+        if expected_hash != row['password_hash']:
+            return None
+        # Update last_login timestamp
+        conn.execute(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?',
+            (row['user_id'],)
+        )
+        return dict(row)
+
+
+def get_user(user_id):
+    """Get a user by ID."""
+    with db_transaction() as conn:
+        row = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_username(username):
+    """Get a user by username."""
+    with db_transaction() as conn:
+        row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_all_users():
+    """Get all users ordered by username."""
+    with db_transaction() as conn:
+        rows = conn.execute(
+            'SELECT user_id, username, role, display_name, created_at, last_login FROM users ORDER BY username'
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_user(username, password, role='viewer', display_name=''):
+    """Create a new user. Returns user_id. Raises ValueError if username taken."""
+    pw_hash, salt = _hash_password(password)
+    with db_transaction() as conn:
+        try:
+            conn.execute(
+                'INSERT INTO users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)',
+                (username, pw_hash, salt, role, display_name or username)
+            )
+            return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        except sqlite3.IntegrityError:
+            raise ValueError(f'Username "{username}" already exists')
+
+
+def update_user(user_id, data):
+    """Update user fields (display_name, role). Optionally update password."""
+    with db_transaction() as conn:
+        if 'password' in data and data['password']:
+            pw_hash, salt = _hash_password(data['password'])
+            conn.execute(
+                'UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?',
+                (pw_hash, salt, user_id)
+            )
+        if 'display_name' in data:
+            conn.execute(
+                'UPDATE users SET display_name = ? WHERE user_id = ?',
+                (data['display_name'], user_id)
+            )
+        if 'role' in data:
+            conn.execute(
+                'UPDATE users SET role = ? WHERE user_id = ?',
+                (data['role'], user_id)
+            )
+
+
+def delete_user(user_id):
+    """Delete a user. Cannot delete the last admin."""
+    with db_transaction() as conn:
+        user = conn.execute('SELECT role FROM users WHERE user_id = ?', (user_id,)).fetchone()
+        if not user:
+            raise ValueError('User not found')
+        if user['role'] == 'admin':
+            admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+            if admin_count <= 1:
+                raise ValueError('Cannot delete the last admin user')
+        conn.execute('DELETE FROM users WHERE user_id = ?', (user_id,))

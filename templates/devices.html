@@ -4,10 +4,12 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h2 style="font-size: 24px; font-weight: 700;">Devices</h2>
+    {% if current_user and current_user.role == 'admin' %}
     <a href="{{ url_for('device_add') }}" class="btn btn-primary">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
         Add Device
     </a>
+    {% endif %}
 </div>
 
 <!-- Search and Filters -->

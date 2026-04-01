@@ -8,6 +8,7 @@
         <a href="{{ url_for('device_list') }}" style="color: var(--text-muted); text-decoration: none; font-size: 13px;">← Back to Devices</a>
         <h2 style="font-size: 24px; font-weight: 700; margin-top: 8px;">{{ device.name }}</h2>
     </div>
+    {% if current_user and current_user.role == 'admin' %}
     <div style="display: flex; gap: 8px;">
         <a href="{{ url_for('device_edit', device_id=device.device_id) }}" class="btn btn-secondary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -15,11 +16,11 @@
         </a>
         {% if device.status != 'retired' %}
         <form method="POST" action="{{ url_for('device_retire', device_id=device.device_id) }}" onsubmit="return confirm('Are you sure you want to retire this device? It will be hidden from the default device list.')">
-            <input type="hidden" name="performed_by" value="">
             <button type="submit" class="btn btn-danger btn-sm">Retire</button>
         </form>
         {% endif %}
     </div>
+    {% endif %}
 </div>
 
 <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
@@ -94,7 +95,8 @@
             </div>
         </div>
 
-        <!-- Check-out / Check-in -->
+        <!-- Check-out / Check-in (admin only) -->
+        {% if current_user and current_user.role == 'admin' %}
         {% if device.status == 'available' %}
         <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(16,185,129,0.3);">
             <div class="section-label" style="color: var(--accent-green);">Check Out Device</div>
@@ -102,10 +104,6 @@
                 <div style="flex: 1;">
                     <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assign To</label>
                     <input type="text" name="assigned_to" required placeholder="Person's name">
-                </div>
-                <div>
-                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name</label>
-                    <input type="text" name="performed_by" placeholder="Your name">
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">Check Out</button>
             </form>
@@ -116,13 +114,17 @@
             <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 12px;">
                 Currently assigned to <strong style="color: var(--accent-amber);">{{ device.assigned_to }}</strong>
             </p>
-            <form method="POST" action="{{ url_for('device_checkin', device_id=device.device_id) }}" style="display: flex; gap: 12px; align-items: end;">
-                <div>
-                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name</label>
-                    <input type="text" name="performed_by" placeholder="Your name">
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">Check In</button>
+            <form method="POST" action="{{ url_for('device_checkin', device_id=device.device_id) }}">
+                <button type="submit" class="btn btn-primary btn-sm">Check In</button>
             </form>
+        </div>
+        {% endif %}
+        {% elif device.status == 'checked_out' %}
+        <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(245,158,11,0.3); background: rgba(245,158,11,0.05);">
+            <div class="section-label" style="color: var(--accent-amber);">Device Checked Out</div>
+            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 0;">
+                Currently assigned to <strong style="color: var(--accent-amber);">{{ device.assigned_to }}</strong>
+            </p>
         </div>
         {% endif %}
 

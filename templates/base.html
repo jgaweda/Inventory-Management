@@ -207,10 +207,12 @@
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
             Devices
         </a>
+        {% if current_user and current_user.role == 'admin' %}
         <a href="{{ url_for('device_add') }}" class="nav-link {% if request.endpoint == 'device_add' %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
             Add Device
         </a>
+        {% endif %}
         <a href="{{ url_for('scan_page') }}" class="nav-link {% if request.endpoint == 'scan_page' %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M17 20h3M14 20h0M20 14v3M20 20h0"/></svg>
             Scan
@@ -222,14 +224,43 @@
 
         <div class="nav-separator"></div>
 
+        {% if current_user and current_user.role == 'admin' %}
         <a href="{{ url_for('import_csv') }}" class="nav-link {% if request.endpoint == 'import_csv' %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import CSV
         </a>
+        {% endif %}
         <a href="{{ url_for('export_csv') }}" class="nav-link">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Export CSV
         </a>
+
+        {% if current_user and current_user.role == 'admin' %}
+        <div class="nav-separator"></div>
+        <a href="{{ url_for('user_list') }}" class="nav-link {% if request.endpoint in ['user_list','user_add','user_edit'] %}active{% endif %}">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            Users
+        </a>
+        {% endif %}
+
+        <!-- User info at bottom of sidebar -->
+        {% if current_user %}
+        <div style="margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border-color);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--bg-card); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; color: var(--accent-cyan); flex-shrink: 0;">
+                    {{ current_user.username[0]|upper }}
+                </div>
+                <div style="overflow: hidden;">
+                    <div style="font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ current_user.display_name or current_user.username }}</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">{{ current_user.role }}</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <a href="{{ url_for('account') }}" class="nav-link" style="padding: 4px 8px; font-size: 12px; flex: 1; justify-content: center;">Account</a>
+                <a href="{{ url_for('logout') }}" class="nav-link" style="padding: 4px 8px; font-size: 12px; color: var(--accent-red); flex: 1; justify-content: center;">Log out</a>
+            </div>
+        </div>
+        {% endif %}
     </nav>
 
     <!-- Main Content -->

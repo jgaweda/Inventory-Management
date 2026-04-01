@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}My Account{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">My Account</h2>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 800px;">
+    <!-- Account Info -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">Account Information</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Username</div>
+                <div class="font-mono" style="font-size: 14px;">{{ current_user.username }}</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Display Name</div>
+                <div style="font-size: 14px;">{{ current_user.display_name }}</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Role</div>
+                {% if current_user.role == 'admin' %}
+                <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">admin</span>
+                {% else %}
+                <span style="background: rgba(148,163,184,0.12); color: #94a3b8; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">viewer</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password -->
+    <div class="card" style="cursor: default;">
+        <div class="section-label">Change Password</div>
+        <form method="POST" action="{{ url_for('account') }}">
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Current Password</label>
+                <input type="password" name="current_password" required autocomplete="current-password">
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">New Password</label>
+                <input type="password" name="new_password" required placeholder="Min 4 characters" autocomplete="new-password">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Confirm New Password</label>
+                <input type="password" name="confirm_password" required autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Change Password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
