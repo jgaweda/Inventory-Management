@@ -3,8 +3,8 @@ HP Connectivity Team Inventory Management System — Flask Application
 
 All routes are defined here. Run with: python app.py [--host HOST] [--port PORT]
 
-Authentication: Users must log in. Admins can add/edit/checkout/retire/import devices.
-Viewers have read-only access (dashboard, device list, detail, scan, audit, export).
+Authentication: Admins (scanner terminal) can add/edit/checkout/retire/import devices.
+Anyone on the network can view the inventory without logging in.
 """
 
 import argparse
@@ -120,24 +120,22 @@ def login():
 def logout():
     session.clear()
     flash('You have been logged out.', 'success')
-    return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
 
 # ---------------------------------------------------------------------------
-# Dashboard
+# Dashboard (public)
 # ---------------------------------------------------------------------------
 
 @app.route('/')
-@login_required
 def dashboard():
     stats = db.get_stats()
     return render_template('dashboard.html', stats=stats)
 
 # ---------------------------------------------------------------------------
-# Device list (search & filter)
+# Device list (public)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices')
-@login_required
 def device_list():
     devices = db.search_devices(
         query=request.args.get('q', ''),
@@ -189,11 +187,10 @@ def device_add():
     return render_template('device_form.html', device={}, is_edit=False)
 
 # ---------------------------------------------------------------------------
-# Device detail (any logged-in user)
+# Device detail (public)
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>')
-@login_required
 def device_detail(device_id):
     device = db.get_device(device_id)
     if not device:
@@ -286,7 +283,6 @@ def device_checkin(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/labels/<device_id>.png')
-@login_required
 def serve_label(device_id):
     """Serve a label PNG, generating it on the fly if it doesn't exist."""
     if not barcode_utils.label_exists(device_id):
@@ -331,13 +327,11 @@ def label_sheet():
 # ---------------------------------------------------------------------------
 
 @app.route('/scan')
-@login_required
 def scan_page():
     return render_template('scan.html')
 
 
 @app.route('/api/lookup')
-@login_required
 def api_lookup():
     """JSON API for barcode scanner lookup. Case-insensitive."""
     barcode = request.args.get('barcode', '').strip()
@@ -358,11 +352,10 @@ def api_lookup():
         return jsonify({'found': False}), 404
 
 # ---------------------------------------------------------------------------
-# CSV Export (any logged-in user)
+# CSV Export (public)
 # ---------------------------------------------------------------------------
 
 @app.route('/export')
-@login_required
 def export_csv():
     """Export all devices (including retired) to CSV."""
     devices = db.get_all_devices(include_retired=True)
@@ -437,11 +430,10 @@ def import_csv():
     return render_template('import.html')
 
 # ---------------------------------------------------------------------------
-# Audit log (any logged-in user)
+# Audit log (public)
 # ---------------------------------------------------------------------------
 
 @app.route('/audit')
-@login_required
 def audit_log():
     entries = db.get_audit_log(limit=200)
     return render_template('audit.html', entries=entries)

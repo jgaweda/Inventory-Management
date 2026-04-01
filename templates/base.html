@@ -260,6 +260,14 @@
                 <a href="{{ url_for('logout') }}" class="nav-link" style="padding: 4px 8px; font-size: 12px; color: var(--accent-red); flex: 1; justify-content: center;">Log out</a>
             </div>
         </div>
+        {% else %}
+        <div style="margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border-color);">
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-sm" style="width: 100%; justify-content: center;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+                Admin Log In
+            </a>
+            <p style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px;">Log in to add or edit devices</p>
+        </div>
         {% endif %}
     </nav>
 
