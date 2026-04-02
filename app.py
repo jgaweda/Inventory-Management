@@ -210,10 +210,12 @@ def device_list():
 @admin_required
 def device_add():
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        if not name:
-            flash('Device name is required.', 'error')
+        manufacturer = request.form.get('manufacturer', '').strip()
+        model_number = request.form.get('model_number', '').strip()
+        if not manufacturer:
+            flash('Manufacturer is required.', 'error')
             return render_template('device_form.html', device=request.form, is_edit=False)
+        name = f'{manufacturer} {model_number}'.strip()
 
         data = {
             'name': name,
@@ -271,10 +273,12 @@ def device_edit(device_id):
         return redirect(url_for('device_list'))
 
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        if not name:
-            flash('Device name is required.', 'error')
+        manufacturer = request.form.get('manufacturer', '').strip()
+        model_number = request.form.get('model_number', '').strip()
+        if not manufacturer:
+            flash('Manufacturer is required.', 'error')
             return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+        name = f'{manufacturer} {model_number}'.strip()
 
         data = {
             'name': name,

@@ -10,12 +10,6 @@
     <!-- Identification -->
     <div class="card" style="margin-bottom: 16px; cursor: default;">
         <div class="section-label">Identification</div>
-        <div style="margin-bottom: 16px;">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-                Device Name <span style="color: var(--accent-red);">*</span>
-            </label>
-            <input type="text" name="name" value="{{ device.get('name', '') if device is mapping else device.name if device else '' }}" required placeholder="e.g. Intel AX211 Wi-Fi Module">
-        </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
@@ -38,8 +32,10 @@
         <div class="section-label">Hardware Details</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Manufacturer</label>
-                <input type="text" name="manufacturer" value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" placeholder="e.g. Intel">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                    Manufacturer <span style="color: var(--accent-red);">*</span>
+                </label>
+                <input type="text" name="manufacturer" value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" required placeholder="e.g. Intel">
             </div>
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Number</label>
