@@ -27,14 +27,15 @@
     <div class="card" style="cursor: default;">
         <div class="section-label">Camera Scanner</div>
         <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
-            Use your device camera to scan QR codes.
+            Use your device camera to scan QR codes or barcodes.
         </p>
         <div id="cameraContainer">
             <button id="startCamera" class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="startCameraScanner()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                 Enable Camera
             </button>
-            <div id="qr-reader" style="margin-top: 12px; border-radius: 8px; overflow: hidden;"></div>
+            <div id="cameraError" style="margin-top: 12px; display: none; padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: var(--accent-red); font-size: 13px;"></div>
+            <div id="qr-reader" style="margin-top: 12px; border-radius: 8px; overflow: hidden; width: 100%;"></div>
             <div id="cameraResult" style="margin-top: 12px; display: none;"></div>
             <button id="scanAnother" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 12px; display: none;" onclick="resumeCamera()">
                 Scan Another
@@ -130,58 +131,96 @@
 
     // --- Camera Scanner ---
     let html5QrCode = null;
+    let lastScanTime = 0;
 
     function startCameraScanner() {
-        document.getElementById('startCamera').style.display = 'none';
-        html5QrCode = new Html5Qrcode("qr-reader");
+        var startBtn = document.getElementById('startCamera');
+        var errorEl = document.getElementById('cameraError');
+        startBtn.style.display = 'none';
+        errorEl.style.display = 'none';
+
+        // Specify supported formats: QR codes and Code 128 barcodes
+        var formatsToSupport = [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+        ];
+        html5QrCode = new Html5Qrcode("qr-reader", { formatsToSupport: formatsToSupport, verbose: false });
+
+        // Calculate a responsive qrbox that fits within the container
+        var containerWidth = document.getElementById('qr-reader').offsetWidth || 400;
+        var qrboxSize = Math.min(250, Math.floor(containerWidth * 0.7));
+
         html5QrCode.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 250, height: 250 } },
+            {
+                fps: 10,
+                qrbox: { width: qrboxSize, height: qrboxSize },
+                aspectRatio: 1.0,
+            },
             onCameraScan,
-            () => {}
-        ).catch(err => {
-            document.getElementById('startCamera').style.display = 'flex';
-            alert('Could not start camera: ' + err);
+            function() {} // Called on every frame without a detection — ignore
+        ).catch(function(err) {
+            startBtn.style.display = 'flex';
+            errorEl.style.display = 'block';
+            var msg = String(err);
+            if (msg.indexOf('NotAllowedError') >= 0) {
+                errorEl.textContent = 'Camera access denied. Please allow camera permissions and try again.';
+            } else if (msg.indexOf('NotFoundError') >= 0) {
+                errorEl.textContent = 'No camera found on this device.';
+            } else if (msg.indexOf('NotReadableError') >= 0) {
+                errorEl.textContent = 'Camera is in use by another application.';
+            } else {
+                errorEl.textContent = 'Could not start camera: ' + msg;
+            }
         });
     }
 
-    function onCameraScan(decodedText) {
-        // Pause camera and show result
-        html5QrCode.pause();
+    function onCameraScan(decodedText, decodedResult) {
+        // Debounce: ignore duplicate scans within 2 seconds
+        var now = Date.now();
+        if (now - lastScanTime < 2000) return;
+        lastScanTime = now;
+
+        // Pause scanning (keep video feed visible)
+        html5QrCode.pause(true);
         document.getElementById('scanAnother').style.display = 'flex';
 
         fetch('/api/lookup?barcode=' + encodeURIComponent(decodedText))
-            .then(r => r.json())
-            .then(data => {
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
                 showCameraResult(decodedText, data);
                 addToHistory(decodedText, data);
             })
-            .catch(() => {
+            .catch(function() {
                 showCameraResult(decodedText, { found: false });
                 addToHistory(decodedText, { found: false });
             });
     }
 
     function showCameraResult(barcode, data) {
-        const el = document.getElementById('cameraResult');
+        var el = document.getElementById('cameraResult');
         el.style.display = 'block';
         if (data.found) {
-            el.innerHTML = `
-                <div style="padding: 12px; border-radius: 8px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);">
-                    <div style="font-weight: 600; color: var(--accent-green);">✓ ${data.name}</div>
-                    <a href="/devices/${data.device_id}" class="btn btn-primary btn-sm" style="margin-top: 8px;">View Device →</a>
-                </div>`;
+            el.innerHTML =
+                '<div style="padding: 12px; border-radius: 8px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);">' +
+                    '<div style="font-weight: 600; color: var(--accent-green);">&#10003; ' + data.name + '</div>' +
+                    '<a href="/devices/' + data.device_id + '" class="btn btn-primary btn-sm" style="margin-top: 8px;">View Device &rarr;</a>' +
+                '</div>';
         } else {
-            el.innerHTML = `
-                <div style="padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);">
-                    <div style="font-weight: 600; color: var(--accent-red);">✗ Not Found: <span class="font-mono">${barcode}</span></div>
-                </div>`;
+            el.innerHTML =
+                '<div style="padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);">' +
+                    '<div style="font-weight: 600; color: var(--accent-red);">&#10007; Not Found: <span class="font-mono">' + barcode + '</span></div>' +
+                '</div>';
         }
     }
 
     function resumeCamera() {
         document.getElementById('cameraResult').style.display = 'none';
         document.getElementById('scanAnother').style.display = 'none';
+        lastScanTime = 0;
         html5QrCode.resume();
     }
 
