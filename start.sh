@@ -10,11 +10,6 @@ echo "  Starting HP Connectivity Team Inventory System..."
 echo "  ================================================"
 echo ""
 
-# Activate virtual environment if it exists
-if [ -f "venv/bin/activate" ]; then
-    source venv/bin/activate
-fi
-
 # Use python3 if available, otherwise python
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
 if [ -z "$PYTHON" ]; then

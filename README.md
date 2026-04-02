@@ -7,17 +7,13 @@ A self-contained inventory management system for tracking printers, routers, lap
 ### Linux / macOS
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ./start.sh
 ```
 
 ### Windows
 
 ```cmd
-python -m venv venv
-venv\Scripts\activate
 pip install -r requirements.txt
 start.bat
 ```
