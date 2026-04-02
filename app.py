@@ -982,6 +982,31 @@ def backup_restore(filename):
     return redirect(url_for('backup_list'))
 
 # ---------------------------------------------------------------------------
+# Favicon / Apple Touch Icon (generated in-memory to suppress browser 404s)
+# ---------------------------------------------------------------------------
+
+_FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    '<rect width="32" height="32" rx="6" fill="#3b82f6"/>'
+    '<text x="16" y="23" text-anchor="middle" fill="white" '
+    'font-size="20" font-family="sans-serif" font-weight="bold">I</text></svg>'
+)
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return Response(_FAVICON_SVG, mimetype='image/svg+xml',
+                    headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.route('/apple-touch-icon.png')
+@app.route('/apple-touch-icon-precomposed.png')
+def apple_touch_icon():
+    return Response(_FAVICON_SVG, mimetype='image/svg+xml',
+                    headers={'Cache-Control': 'public, max-age=86400'})
+
+
+# ---------------------------------------------------------------------------
 # Global error handlers
 # ---------------------------------------------------------------------------
 
