@@ -22,17 +22,26 @@
     .level-ERROR   { background: rgba(239,68,68,0.15);  color: #ef4444; }
     .level-DEBUG   { background: rgba(148,163,184,0.15); color: #94a3b8; }
     .level-CRITICAL { background: rgba(239,68,68,0.25); color: #ef4444; }
+    .filter-chip {
+        padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600;
+        border: 1px solid var(--border-color); background: var(--bg-card);
+        color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+        transition: all 0.15s;
+    }
+    .filter-chip:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+    .filter-chip.active { background: rgba(59,130,246,0.15); border-color: var(--accent-blue); color: var(--accent-blue); }
     @media (max-width: 768px) {
         .log-entry { grid-template-columns: 1fr; gap: 4px; }
+        .log-filter-row { flex-wrap: wrap; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <div>
         <h2 style="font-size: 24px; font-weight: 700;">Application Log</h2>
-        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ entries|length }} entries shown (most recent first)</p>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;"><span id="visibleCount">{{ entries|length }}</span> of {{ entries|length }} entries</p>
     </div>
     <div style="display: flex; gap: 8px;">
         <form method="POST" action="{{ url_for('clear_logs') }}" onsubmit="return confirm('Clear all log entries?')">
@@ -44,9 +53,9 @@
     </div>
 </div>
 
-<!-- Filter -->
+<!-- Filters -->
 <div class="card" style="margin-bottom: 16px; cursor: default; padding: 12px 16px;">
-    <div style="display: flex; gap: 12px; align-items: center;">
+    <div class="log-filter-row" style="display: flex; gap: 12px; align-items: center; margin-bottom: 10px;">
         <input type="text" id="logFilter" placeholder="Filter log entries..." style="flex: 1; font-size: 13px; padding: 8px 12px;"
                oninput="filterLogs()">
         <select id="levelFilter" onchange="filterLogs()" style="width: auto; font-size: 13px; padding: 8px 12px;">
@@ -56,6 +65,15 @@
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
         </select>
+    </div>
+    <div class="log-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="filter-chip" data-category="" onclick="setCategoryFilter(this)">All</button>
+        <button class="filter-chip" data-category="device" onclick="setCategoryFilter(this)">Device Updates</button>
+        <button class="filter-chip" data-category="scan" onclick="setCategoryFilter(this)">Scans</button>
+        <button class="filter-chip" data-category="auth" onclick="setCategoryFilter(this)">Auth</button>
+        <button class="filter-chip" data-category="import_export" onclick="setCategoryFilter(this)">Import/Export</button>
+        <button class="filter-chip" data-category="user" onclick="setCategoryFilter(this)">User Mgmt</button>
+        <button class="filter-chip" data-category="error" onclick="setCategoryFilter(this)">Errors</button>
     </div>
 </div>
 
@@ -79,16 +97,61 @@
 </div>
 
 <script>
+// Category filter patterns — each maps to keywords found in log messages
+var categoryPatterns = {
+    '': null,
+    'device': ['device added', 'device updated', 'device retired', 'device checked out', 'device checked in', 'device viewed', 'device not found', 'device search', 'label generated'],
+    'scan': ['barcode scan', 'scan page'],
+    'auth': ['login successful', 'login failed', 'logout', 'password changed'],
+    'import_export': ['csv import', 'csv export'],
+    'user': ['user created', 'user updated', 'user deleted', 'user delete failed'],
+    'error': null  // handled by level filter
+};
+
+var activeCategory = '';
+
+function setCategoryFilter(btn) {
+    document.querySelectorAll('.filter-chip').forEach(function(c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+    activeCategory = btn.getAttribute('data-category');
+    filterLogs();
+}
+
+// Set "All" as active by default
+document.querySelector('.filter-chip[data-category=""]').classList.add('active');
+
 function filterLogs() {
     var text = document.getElementById('logFilter').value.toLowerCase();
     var level = document.getElementById('levelFilter').value;
     var entries = document.querySelectorAll('.log-entry');
+    var visible = 0;
+
     entries.forEach(function(el) {
-        var matchText = !text || el.getAttribute('data-text').indexOf(text) >= 0 ||
+        var msgText = el.getAttribute('data-text');
+        var entryLevel = el.getAttribute('data-level');
+
+        // Text filter
+        var matchText = !text || msgText.indexOf(text) >= 0 ||
                         el.querySelector('.log-ts').textContent.toLowerCase().indexOf(text) >= 0;
-        var matchLevel = !level || el.getAttribute('data-level') === level;
-        el.style.display = (matchText && matchLevel) ? '' : 'none';
+
+        // Level filter
+        var matchLevel = !level || entryLevel === level;
+
+        // Category filter
+        var matchCategory = true;
+        if (activeCategory === 'error') {
+            matchCategory = (entryLevel === 'ERROR' || entryLevel === 'WARNING' || entryLevel === 'CRITICAL');
+        } else if (activeCategory && categoryPatterns[activeCategory]) {
+            var patterns = categoryPatterns[activeCategory];
+            matchCategory = patterns.some(function(p) { return msgText.indexOf(p) >= 0; });
+        }
+
+        var show = matchText && matchLevel && matchCategory;
+        el.style.display = show ? '' : 'none';
+        if (show) visible++;
     });
+
+    document.getElementById('visibleCount').textContent = visible;
 }
 </script>
 {% endblock %}
