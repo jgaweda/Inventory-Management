@@ -994,7 +994,7 @@ def internal_error(e):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='HP Connectivity Team Inventory System')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=5000, help='Port to listen on (default: 5000)')
+    parser.add_argument('--port', type=int, default=8080, help='Port to listen on (default: 8080)')
     parser.add_argument('--dev', action='store_true', help='Run in development mode with debug enabled')
     args = parser.parse_args()
 

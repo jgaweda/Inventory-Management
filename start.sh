@@ -28,4 +28,4 @@ if [ -z "$SECRET_KEY" ]; then
 fi
 
 # Start the production server
-$PYTHON app.py --host 0.0.0.0 --port 5000
+$PYTHON app.py --host 0.0.0.0 --port 8080

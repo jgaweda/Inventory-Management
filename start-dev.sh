@@ -21,4 +21,4 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
-$PYTHON app.py --dev --host 127.0.0.1 --port 5000
+$PYTHON app.py --dev --host 127.0.0.1 --port 8080
