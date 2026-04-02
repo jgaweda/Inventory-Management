@@ -1,7 +1,7 @@
 inventory.db
 static/labels/*.png
-backups/
 logs/
+backup_schedule.json
 __pycache__/
 *.pyc
 *.pyo

@@ -651,6 +651,155 @@ def account():
     return render_template('account.html')
 
 # ---------------------------------------------------------------------------
+# Database backup (admin only)
+# ---------------------------------------------------------------------------
+
+import threading
+import json as _json
+
+SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backup_schedule.json')
+_backup_timer = None  # Global reference to the scheduled timer
+
+
+def _load_schedule():
+    """Load backup schedule config from disk."""
+    try:
+        with open(SCHEDULE_FILE, 'r') as f:
+            return _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        return {'enabled': False, 'interval_hours': 24}
+
+
+def _save_schedule(config):
+    """Persist backup schedule config to disk."""
+    with open(SCHEDULE_FILE, 'w') as f:
+        _json.dump(config, f)
+
+
+def _run_scheduled_backup():
+    """Execute a scheduled backup and re-arm the timer."""
+    global _backup_timer
+    try:
+        result = db.backup_database(performed_by='scheduled')
+        app_logger.info('Scheduled backup completed: %s (%d bytes, git=%s)',
+                        result['filename'], result['size'], result['git_committed'])
+    except Exception as e:
+        app_logger.error('Scheduled backup failed: %s', e)
+    # Re-arm
+    config = _load_schedule()
+    if config.get('enabled'):
+        _start_backup_timer(config['interval_hours'])
+
+
+def _start_backup_timer(interval_hours):
+    """Start (or restart) the recurring backup timer."""
+    global _backup_timer
+    _stop_backup_timer()
+    seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
+    _backup_timer = threading.Timer(seconds, _run_scheduled_backup)
+    _backup_timer.daemon = True
+    _backup_timer.start()
+    app_logger.info('Backup scheduler armed: next backup in %s hours', interval_hours)
+
+
+def _stop_backup_timer():
+    """Cancel any pending scheduled backup."""
+    global _backup_timer
+    if _backup_timer is not None:
+        _backup_timer.cancel()
+        _backup_timer = None
+
+
+# Restore schedule on startup
+_startup_schedule = _load_schedule()
+if _startup_schedule.get('enabled'):
+    _start_backup_timer(_startup_schedule['interval_hours'])
+
+
+@app.route('/backups')
+@admin_required
+def backup_list():
+    """View backup management page."""
+    backups = db.list_backups()
+    schedule = _load_schedule()
+    return render_template('backups.html', backups=backups, schedule=schedule)
+
+
+@app.route('/backups/create', methods=['POST'])
+@admin_required
+def backup_create():
+    """Trigger a manual database backup."""
+    try:
+        result = db.backup_database(performed_by=current_username())
+        app_logger.info('Manual backup created: %s (%d bytes, git=%s) by=%s',
+                        result['filename'], result['size'], result['git_committed'],
+                        current_username())
+        if result['git_committed']:
+            flash(f'Backup created and committed to git: {result["filename"]}', 'success')
+        else:
+            flash(f'Backup created: {result["filename"]} (git commit failed — file still saved locally)', 'warning')
+    except Exception as e:
+        app_logger.error('Manual backup failed: %s by=%s', e, current_username())
+        flash(f'Backup failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/schedule', methods=['POST'])
+@admin_required
+def backup_schedule():
+    """Update the recurring backup schedule."""
+    enabled = request.form.get('enabled') == '1'
+    try:
+        interval_hours = float(request.form.get('interval_hours', 24))
+        if interval_hours < 0.1:
+            interval_hours = 0.1
+    except (ValueError, TypeError):
+        interval_hours = 24
+
+    config = {'enabled': enabled, 'interval_hours': interval_hours}
+    _save_schedule(config)
+
+    if enabled:
+        _start_backup_timer(interval_hours)
+        app_logger.info('Backup schedule enabled: every %s hours by=%s', interval_hours, current_username())
+        flash(f'Automatic backups enabled: every {interval_hours} hours.', 'success')
+    else:
+        _stop_backup_timer()
+        app_logger.info('Backup schedule disabled by=%s', current_username())
+        flash('Automatic backups disabled.', 'success')
+
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/<filename>/delete', methods=['POST'])
+@admin_required
+def backup_delete(filename):
+    """Delete a backup file."""
+    try:
+        db.delete_backup(filename)
+        app_logger.info('Backup deleted: %s by=%s', filename, current_username())
+        flash(f'Backup deleted: {filename}', 'success')
+    except Exception as e:
+        app_logger.error('Backup delete failed: %s error=%s', filename, e)
+        flash(f'Error deleting backup: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/<filename>/download')
+@admin_required
+def backup_download(filename):
+    """Download a backup file."""
+    if not filename.startswith('inventory_backup_') or '..' in filename:
+        flash('Invalid backup file.', 'error')
+        return redirect(url_for('backup_list'))
+    path = os.path.join(db.BACKUP_DIR, filename)
+    if not os.path.isfile(path):
+        flash('Backup file not found.', 'error')
+        return redirect(url_for('backup_list'))
+    app_logger.info('Backup downloaded: %s by=%s', filename, current_username())
+    return send_file(path, as_attachment=True, download_name=filename)
+
+# ---------------------------------------------------------------------------
 # Global error handlers
 # ---------------------------------------------------------------------------
 

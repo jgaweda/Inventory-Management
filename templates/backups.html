@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Database Backups{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+        <h2 style="font-size: 24px; font-weight: 700;">Database Backups</h2>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ backups|length }} backup{{ 's' if backups|length != 1 else '' }} on file</p>
+    </div>
+    <form method="POST" action="{{ url_for('backup_create') }}">
+        <button type="submit" class="btn btn-primary">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Backup Now
+        </button>
+    </form>
+</div>
+
+<!-- Schedule -->
+<div class="card" style="margin-bottom: 24px; cursor: default;">
+    <div class="section-label">Automatic Backup Schedule</div>
+    <form method="POST" action="{{ url_for('backup_schedule') }}">
+        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+                <input type="hidden" name="enabled" value="0">
+                <input type="checkbox" name="enabled" value="1" {{ 'checked' if schedule.enabled }} style="width: 18px; height: 18px;"
+                       onchange="document.getElementById('intervalInput').disabled = !this.checked">
+                Enable recurring backups
+            </label>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 14px; color: var(--text-secondary);">Every</span>
+                <input type="number" id="intervalInput" name="interval_hours" value="{{ schedule.interval_hours }}"
+                       min="0.1" step="0.5" {{ 'disabled' if not schedule.enabled }}
+                       style="width: 80px; text-align: center; font-size: 14px; padding: 8px;">
+                <span style="font-size: 14px; color: var(--text-secondary);">hours</span>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Save Schedule</button>
+        </div>
+        {% if schedule.enabled %}
+        <div style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 13px; color: var(--accent-green);">
+            Automatic backups are <strong>active</strong> — running every {{ schedule.interval_hours }} hour{{ 's' if schedule.interval_hours != 1 else '' }}.
+            Each backup is committed to git automatically.
+        </div>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Backup History -->
+<div class="card" style="cursor: default; padding: 0; overflow: hidden;">
+    <div style="padding: 16px 24px; border-bottom: 1px solid var(--border-color);">
+        <div class="section-label" style="margin-bottom: 0;">Backup History</div>
+    </div>
+    {% if backups %}
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Date</th>
+                <th>Size</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for backup in backups %}
+            <tr>
+                <td class="font-mono" style="font-size: 13px;">{{ backup.filename }}</td>
+                <td style="font-size: 13px; color: var(--text-secondary); white-space: nowrap;">{{ backup.timestamp }}</td>
+                <td class="font-mono" style="font-size: 13px; color: var(--text-muted);">
+                    {% if backup.size >= 1048576 %}
+                        {{ '%.1f'|format(backup.size / 1048576) }} MB
+                    {% else %}
+                        {{ '%.1f'|format(backup.size / 1024) }} KB
+                    {% endif %}
+                </td>
+                <td style="text-align: right; white-space: nowrap;">
+                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                        <a href="{{ url_for('backup_download', filename=backup.filename) }}" class="btn btn-secondary btn-sm" title="Download">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                        </a>
+                        <form method="POST" action="{{ url_for('backup_delete', filename=backup.filename) }}" onsubmit="return confirm('Delete this backup?')" style="margin: 0;">
+                            <button type="submit" class="btn btn-danger btn-sm" title="Delete">
+                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+        <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin: 0 auto 12px; opacity: 0.5;"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <p style="font-size: 14px;">No backups yet. Click "Backup Now" to create your first backup.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

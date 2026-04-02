@@ -10,8 +10,10 @@ import sqlite3
 import uuid
 import json
 import os
+import shutil
 import hashlib
 import secrets
+import subprocess
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -521,3 +523,98 @@ def delete_user(user_id):
             if admin_count <= 1:
                 raise ValueError('Cannot delete the last admin user')
         conn.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+
+
+# ---------------------------------------------------------------------------
+# Database backup
+# ---------------------------------------------------------------------------
+
+BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def backup_database(performed_by='system'):
+    """
+    Create a safe backup of the database using SQLite's online backup API,
+    then commit the backup file to git.
+
+    Returns dict with backup metadata or raises on failure.
+    """
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_filename = f'inventory_backup_{timestamp}.db'
+    backup_path = os.path.join(BACKUP_DIR, backup_filename)
+
+    # Use SQLite online backup API for a consistent snapshot
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(backup_path)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+
+    file_size = os.path.getsize(backup_path)
+
+    # Commit to git
+    git_message = f'Database backup {timestamp} by {performed_by}'
+    git_committed = _git_commit_backup(backup_path, backup_filename, git_message)
+
+    return {
+        'filename': backup_filename,
+        'path': backup_path,
+        'size': file_size,
+        'timestamp': timestamp,
+        'git_committed': git_committed,
+    }
+
+
+def _git_commit_backup(backup_path, filename, message):
+    """Stage and commit a backup file to git. Returns True on success."""
+    try:
+        subprocess.run(
+            ['git', 'add', '-f', backup_path],
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
+        )
+        subprocess.run(
+            ['git', 'commit', '-m', message, '--', backup_path],
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
+        )
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def list_backups():
+    """List existing backup files, most recent first."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backups = []
+    for f in sorted(os.listdir(BACKUP_DIR), reverse=True):
+        if f.startswith('inventory_backup_') and f.endswith('.db'):
+            path = os.path.join(BACKUP_DIR, f)
+            stat = os.stat(path)
+            # Parse timestamp from filename: inventory_backup_20260402_120000.db
+            ts_part = f.replace('inventory_backup_', '').replace('.db', '')
+            try:
+                dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
+                display_time = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                display_time = ts_part
+            backups.append({
+                'filename': f,
+                'size': stat.st_size,
+                'timestamp': display_time,
+            })
+    return backups
+
+
+def delete_backup(filename):
+    """Delete a backup file. Returns True if deleted."""
+    if not filename.startswith('inventory_backup_') or '..' in filename:
+        raise ValueError('Invalid backup filename')
+    path = os.path.join(BACKUP_DIR, filename)
+    if os.path.isfile(path):
+        os.remove(path)
+        return True
+    return False
