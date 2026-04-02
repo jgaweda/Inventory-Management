@@ -6,18 +6,18 @@
 
 <!-- Stat Cards -->
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
-    <div class="card" style="border-left: 3px solid var(--accent-blue);">
+    <a href="{{ url_for('device_list') }}" class="card" style="border-left: 3px solid var(--accent-blue); text-decoration: none; color: inherit;">
         <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Total Active</div>
         <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-blue); margin-top: 4px;">{{ stats.total }}</div>
-    </div>
-    <div class="card" style="border-left: 3px solid var(--accent-green);">
+    </a>
+    <a href="{{ url_for('device_list', status='available') }}" class="card" style="border-left: 3px solid var(--accent-green); text-decoration: none; color: inherit;">
         <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Available</div>
         <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-green); margin-top: 4px;">{{ stats.available }}</div>
-    </div>
-    <div class="card" style="border-left: 3px solid var(--accent-amber);">
+    </a>
+    <a href="{{ url_for('device_list', status='checked_out') }}" class="card" style="border-left: 3px solid var(--accent-amber); text-decoration: none; color: inherit;">
         <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Checked Out</div>
         <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-amber); margin-top: 4px;">{{ stats.checked_out }}</div>
-    </div>
+    </a>
 </div>
 
 <!-- Breakdowns -->
@@ -26,13 +26,14 @@
     <div class="card" style="cursor: default;">
         <div class="section-label">By Category</div>
         {% for item in stats.by_category %}
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+        <a href="{{ url_for('device_list', category=item.category) }}" style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px; text-decoration: none; color: inherit; border-radius: 6px; padding: 4px 6px; margin-left: -6px; margin-right: -6px; transition: background 0.15s;"
+           onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
             <span style="width: 140px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.category }}</span>
             <div style="flex: 1; height: 20px; background: var(--bg-primary); border-radius: 4px; overflow: hidden;">
                 <div style="height: 100%; background: var(--accent-blue); border-radius: 4px; width: {{ (item.count / stats.total * 100) if stats.total else 0 }}%; min-width: 20px;"></div>
             </div>
             <span class="font-mono" style="font-size: 13px; font-weight: 600; color: var(--text-primary); width: 24px; text-align: right;">{{ item.count }}</span>
-        </div>
+        </a>
         {% endfor %}
         {% if not stats.by_category %}
         <p style="color: var(--text-muted); font-size: 13px;">No data yet.</p>
@@ -43,13 +44,14 @@
     <div class="card" style="cursor: default;">
         <div class="section-label">By Connectivity Type/Version</div>
         {% for item in stats.by_connectivity %}
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+        <a href="{{ url_for('device_list', q=item.connectivity) }}" style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px; text-decoration: none; color: inherit; border-radius: 6px; padding: 4px 6px; margin-left: -6px; margin-right: -6px; transition: background 0.15s;"
+           onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
             <span style="width: 140px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ item.connectivity }}</span>
             <div style="flex: 1; height: 20px; background: var(--bg-primary); border-radius: 4px; overflow: hidden;">
                 <div style="height: 100%; background: var(--accent-cyan); border-radius: 4px; width: {{ (item.count / stats.total * 100) if stats.total else 0 }}%; min-width: 20px;"></div>
             </div>
             <span class="font-mono" style="font-size: 13px; font-weight: 600; color: var(--text-primary); width: 24px; text-align: right;">{{ item.count }}</span>
-        </div>
+        </a>
         {% endfor %}
         {% if not stats.by_connectivity %}
         <p style="color: var(--text-muted); font-size: 13px;">No data yet.</p>
