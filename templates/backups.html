@@ -14,14 +14,10 @@
                 Backup Now
             </button>
         </form>
-        <form method="POST" action="{{ url_for('backup_upload') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 8px;">
-            <label class="btn btn-secondary" style="cursor: pointer; margin: 0;">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                Restore from File
-                <input type="file" name="backup_file" accept=".db" style="display: none;"
-                       onchange="if(confirm('Restore database from this file?\\n\\nThis will overwrite the current database. A safety backup will be created first.')) this.form.submit();">
-            </label>
-        </form>
+        <button type="button" class="btn btn-secondary" onclick="openLocalRestoreDialog()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
+            Restore from Local
+        </button>
         <button type="button" class="btn btn-secondary" onclick="openGitRestoreDialog()">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
             Restore from Git
@@ -145,6 +141,36 @@
     {% endif %}
 </div>
 
+<!-- Local Restore Modal -->
+<div id="localRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 18px; font-weight: 700;">Restore from Local Backup</h3>
+            <button onclick="closeLocalRestoreDialog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
+        </div>
+        <div id="localRestoreLoading" style="text-align: center; padding: 32px; color: var(--text-muted);">
+            <p>Loading local backups...</p>
+        </div>
+        <div id="localRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
+        </div>
+        <div id="localRestoreList" style="display:none; overflow-y: auto; flex: 1;">
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Click a backup to restore from it. A safety backup will be created first.</p>
+            <div id="localRestoreBody" style="display: flex; flex-direction: column; gap: 4px;">
+            </div>
+        </div>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <form method="POST" action="{{ url_for('backup_upload') }}" enctype="multipart/form-data">
+                <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0;">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                    Upload a .db file instead
+                    <input type="file" name="backup_file" accept=".db" style="display: none;"
+                           onchange="if(confirm('Restore database from this file?\\n\\nThis will overwrite the current database. A safety backup will be created first.')) this.form.submit();">
+                </label>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Git Restore Modal -->
 <div id="gitRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
     <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
@@ -166,6 +192,73 @@
 </div>
 
 <script>
+function openLocalRestoreDialog() {
+    var modal = document.getElementById('localRestoreModal');
+    modal.style.display = 'flex';
+    document.getElementById('localRestoreLoading').style.display = 'block';
+    document.getElementById('localRestoreError').style.display = 'none';
+    document.getElementById('localRestoreList').style.display = 'none';
+
+    fetch('{{ url_for("backup_local_list") }}')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('localRestoreLoading').style.display = 'none';
+            if (!data.ok) {
+                document.getElementById('localRestoreError').style.display = 'block';
+                document.getElementById('localRestoreError').textContent = data.error;
+                return;
+            }
+            if (data.backups.length === 0) {
+                document.getElementById('localRestoreError').style.display = 'block';
+                document.getElementById('localRestoreError').textContent = 'No local backup files found.';
+                return;
+            }
+            var container = document.getElementById('localRestoreBody');
+            container.innerHTML = '';
+            data.backups.forEach(function(b) {
+                var sizeStr = b.size >= 1048576
+                    ? (b.size / 1048576).toFixed(1) + ' MB'
+                    : (b.size / 1024).toFixed(1) + ' KB';
+                var row = document.createElement('form');
+                row.method = 'POST';
+                row.action = '{{ url_for("backup_restore", filename="PLACEHOLDER") }}'.replace('PLACEHOLDER', b.filename);
+                row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.15s; margin:0;';
+                row.onmouseover = function() { this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)'; };
+                row.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
+                row.onsubmit = function() { return confirm('Restore from this backup?\n\nThe current database will be overwritten. A safety backup will be created first.'); };
+                row.onclick = function(e) { if (e.target === this || e.target.parentElement === this) this.submit(); };
+
+                var info = document.createElement('div');
+                info.style.cssText = 'flex:1; min-width:0;';
+                info.innerHTML =
+                    '<div class="font-mono" style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + b.filename + '</div>' +
+                    '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + b.timestamp + ' &middot; ' + sizeStr + '</div>';
+                row.appendChild(info);
+
+                var arrow = document.createElement('div');
+                arrow.style.cssText = 'color:var(--text-muted); flex-shrink:0;';
+                arrow.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>';
+                row.appendChild(arrow);
+
+                container.appendChild(row);
+            });
+            document.getElementById('localRestoreList').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('localRestoreLoading').style.display = 'none';
+            document.getElementById('localRestoreError').style.display = 'block';
+            document.getElementById('localRestoreError').textContent = 'Failed to fetch: ' + err.message;
+        });
+}
+
+function closeLocalRestoreDialog() {
+    document.getElementById('localRestoreModal').style.display = 'none';
+}
+
+document.getElementById('localRestoreModal').addEventListener('click', function(e) {
+    if (e.target === this) closeLocalRestoreDialog();
+});
+
 function openGitRestoreDialog() {
     var modal = document.getElementById('gitRestoreModal');
     modal.style.display = 'flex';

@@ -845,6 +845,18 @@ def backup_push_git():
     return redirect(url_for('backup_list'))
 
 
+@app.route('/backups/local/list')
+@admin_required
+def backup_local_list():
+    """API: list .db files in the local backup directory."""
+    try:
+        backups = db.list_backups()
+        return jsonify({'ok': True, 'backups': backups})
+    except Exception as e:
+        app_logger.error('Local backup list failed: %s', e)
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
 @app.route('/backups/git/list')
 @admin_required
 def backup_git_list():
