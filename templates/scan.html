@@ -107,8 +107,12 @@
         fetch('/api/lookup?barcode=' + encodeURIComponent(barcode))
             .then(r => r.json())
             .then(data => {
-                showUsbResult(barcode, data);
-                addToHistory(barcode, data);
+                if (data.found) {
+                    window.location.href = '/devices/' + data.device_id;
+                } else {
+                    showUsbResult(barcode, data);
+                    addToHistory(barcode, data);
+                }
             })
             .catch(() => {
                 showUsbResult(barcode, { found: false });
@@ -206,15 +210,20 @@
 
         // Pause scanning (keep video feed visible)
         html5QrCode.pause(true);
-        document.getElementById('scanAnother').style.display = 'flex';
 
         fetch('/api/lookup?barcode=' + encodeURIComponent(decodedText))
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                showCameraResult(decodedText, data);
-                addToHistory(decodedText, data);
+                if (data.found) {
+                    window.location.href = '/devices/' + data.device_id;
+                } else {
+                    document.getElementById('scanAnother').style.display = 'flex';
+                    showCameraResult(decodedText, data);
+                    addToHistory(decodedText, data);
+                }
             })
             .catch(function() {
+                document.getElementById('scanAnother').style.display = 'flex';
                 showCameraResult(decodedText, { found: false });
                 addToHistory(decodedText, { found: false });
             });
