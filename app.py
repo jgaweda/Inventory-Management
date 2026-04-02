@@ -422,12 +422,6 @@ def api_lookup():
 # ---------------------------------------------------------------------------
 
 @app.route('/export')
-def export_page():
-    """Show export page with filter options."""
-    return render_template('export.html')
-
-
-@app.route('/export/download')
 def export_csv():
     """Export devices to CSV with optional filters."""
     # Read filter params
