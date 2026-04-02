@@ -680,6 +680,8 @@ def push_backups_to_git():
         reverse=True,
     )
     backup_files = all_backups[:max_backups]
+    _audit_logger.info('Git push: backup_dir=%s, found %d .db files, zipping %d (max_backups=%d)',
+                       backup_dir, len(all_backups), len(backup_files), max_backups)
     if not backup_files:
         raise ValueError('No backup files to push')
 
