@@ -138,19 +138,3 @@ Environment variables:
 ## Cross-Platform Support
 
 The application runs on **macOS**, **Windows**, and **Linux** with no platform-specific code. Default port is 8080 (avoids macOS AirPlay Receiver conflict on port 5000).
-
-## Troubleshooting
-
-**"Module not found" errors**: Run `pip install -r requirements.txt`
-
-**Waitress not installed warning**: Run `pip install -r requirements.txt` — Waitress is included in the requirements.
-
-**Labels not generating**: The `static/labels/` directory is created automatically on startup.
-
-**Database locked**: The system uses WAL mode for better concurrency. Ensure no other process has an exclusive lock on `inventory.db`.
-
-**Port already in use**: Run with a different port: `python app.py --port 9000`
-
-**Git push fails with 403**: Ensure your Personal Access Token has `repo` scope (classic token) or Contents read/write permission (fine-grained token).
-
-**Reset everything**: Delete `inventory.db` and restart. A fresh empty database will be created.
