@@ -692,6 +692,9 @@ def push_backups_to_git():
         raise ValueError('No backup files to push')
 
     # Use a temporary directory for a clean worktree
+    # Environment for git subprocesses: prevent credential prompts on all platforms
+    git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
             # Create zip archive of the .db files
@@ -703,16 +706,22 @@ def push_backups_to_git():
             zip_size = os.path.getsize(zip_path)
 
             # Initialize a fresh git repo in tmp to build the commit
-            subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True, timeout=15)
+            subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True, timeout=15, env=git_env)
             subprocess.run(['git', 'checkout', '--orphan', git_branch],
-                           cwd=tmpdir, capture_output=True, check=True, timeout=15)
+                           cwd=tmpdir, capture_output=True, check=True, timeout=15, env=git_env)
+
+            # Set a commit identity for the temp repo (required on fresh systems)
+            subprocess.run(['git', 'config', 'user.email', 'inventory@local'],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
+            subprocess.run(['git', 'config', 'user.name', 'Inventory System'],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
 
             subprocess.run(['git', 'add', zip_name],
-                           cwd=tmpdir, capture_output=True, check=True, timeout=30)
+                           cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env)
             subprocess.run(
                 ['git', 'commit', '-m',
                  f'Database backup {datetime.now().strftime("%Y-%m-%d %H:%M")} ({len(backup_files)} files)'],
-                cwd=tmpdir, capture_output=True, check=True, timeout=30,
+                cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env,
             )
 
             # Build the push URL
@@ -738,7 +747,7 @@ def push_backups_to_git():
             # Push from the temp repo to the remote
             subprocess.run(
                 ['git', 'push', '--force', remote_url, f'{git_branch}:{git_branch}'],
-                cwd=tmpdir, capture_output=True, check=True, timeout=120,
+                cwd=tmpdir, capture_output=True, check=True, timeout=120, env=git_env,
             )
 
         except subprocess.CalledProcessError as e:
@@ -861,13 +870,14 @@ def _get_git_push_url():
     config = _get_backup_config()
     git_repo = config.get('git_repo', '').strip()
     git_token = config.get('git_token', '').strip()
+    git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
     if git_repo:
         remote_url = git_repo
     else:
         result = subprocess.run(
             ['git', 'remote', 'get-url', 'origin'],
-            cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=15, env=git_env,
         )
         remote_url = result.stdout.decode().strip()
 
@@ -892,13 +902,14 @@ def list_git_backups():
     config = _get_backup_config()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     remote_url = _get_git_push_url()
+    git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Shallow clone just the backup branch
         result = subprocess.run(
             ['git', 'clone', '--depth', '1', '--branch', git_branch,
              '--single-branch', remote_url, tmpdir],
-            capture_output=True, timeout=60,
+            capture_output=True, timeout=60, env=git_env,
         )
         if result.returncode != 0:
             stderr = result.stderr.decode() if result.stderr else ''
@@ -941,13 +952,14 @@ def restore_from_git(filename):
     config = _get_backup_config()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     remote_url = _get_git_push_url()
+    git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Clone the backup branch
         result = subprocess.run(
             ['git', 'clone', '--depth', '1', '--branch', git_branch,
              '--single-branch', remote_url, tmpdir],
-            capture_output=True, timeout=60,
+            capture_output=True, timeout=60, env=git_env,
         )
         if result.returncode != 0:
             stderr = result.stderr.decode() if result.stderr else ''

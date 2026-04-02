@@ -1,6 +1,6 @@
-#!/bin/bash
-# Backup script for the HP Connectivity Team Inventory System
-# Copies inventory.db to backups/ with a timestamp. Keeps the last 30 backups.
+#!/usr/bin/env bash
+# Legacy backup script — backups are now managed in-app via the Backups page.
+# This script is kept for optional cron-based backup as a safety net.
 #
 # Usage: ./backup.sh
 # Recommended: run via cron, e.g. daily at 2am:
@@ -9,6 +9,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DB_PATH="$SCRIPT_DIR/inventory.db"
 BACKUP_DIR="$SCRIPT_DIR/backups"
+MAX_BACKUPS=30
 
 # Create backup directory if needed
 mkdir -p "$BACKUP_DIR"
@@ -21,7 +22,7 @@ fi
 
 # Create backup with timestamp
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_FILE="$BACKUP_DIR/inventory_${TIMESTAMP}.db"
+BACKUP_FILE="$BACKUP_DIR/auto_backup_${TIMESTAMP}.db"
 cp "$DB_PATH" "$BACKUP_FILE"
 
 if [ $? -eq 0 ]; then
@@ -31,7 +32,9 @@ else
     exit 1
 fi
 
-# Keep only the last 30 backups (delete oldest)
+# Keep only the last N auto backups (works on macOS and Linux)
 cd "$BACKUP_DIR"
-ls -t inventory_*.db 2>/dev/null | tail -n +31 | xargs -r rm --
-echo "Backup cleanup complete. $(ls inventory_*.db 2>/dev/null | wc -l) backups retained."
+ls -t auto_backup_*.db 2>/dev/null | tail -n +$((MAX_BACKUPS + 1)) | while read -r f; do
+    rm -f "$f"
+done
+echo "Backup cleanup complete. $(ls auto_backup_*.db 2>/dev/null | wc -l | tr -d ' ') auto backups retained."
