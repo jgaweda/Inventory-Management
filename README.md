@@ -71,12 +71,6 @@ Runs on `127.0.0.1:8080` with Flask debug mode and auto-reload.
 1. Go to **Devices** and apply any search/filter
 2. Click **Export CSV** — the export matches your current filters
 
-### Importing from CSV
-
-1. Click **Import CSV** in the sidebar
-2. Upload a CSV with headers: `name,category,manufacturer,model_number,serial_number,connectivity,vendor_supplied,location,notes`
-3. Only `name` is required; other fields are optional
-
 ### Configuring Backups
 
 1. Go to **Backups** in the sidebar
@@ -93,47 +87,6 @@ Auto-backups are pruned to the configured maximum. Manual backups (created via "
 - **Database**: SQLite3 (WAL mode, single file)
 - **Labels**: qrcode + python-barcode + Pillow
 - **Frontend**: HTML + Vanilla JS + Tailwind CSS (CDN)
-- **No build step, no Node.js, no React**
-
-## Project Structure
-
-```
-├── app.py              # Flask routes and application entry point
-├── database.py         # SQLite CRUD, schema, migrations, backup/restore
-├── barcode_utils.py    # QR/barcode/label image generation
-├── requirements.txt    # Python dependencies
-├── start.sh            # Production start script (Linux/macOS)
-├── start-dev.sh        # Development start script (Linux/macOS)
-├── start.bat           # Production start script (Windows)
-├── start-dev.bat       # Development start script (Windows)
-├── backup.sh           # Legacy cron-based backup script
-├── inventory.db        # SQLite database (auto-created)
-├── static/
-│   ├── hp_logo.svg     # HP logo
-│   └── labels/         # Generated label PNGs
-├── templates/          # Jinja2 HTML templates
-├── logs/               # Application log files
-└── backups/            # Local database backups
-```
-
-## Configuration
-
-All runtime configuration is managed through the web UI:
-
-| Setting | Location | Description |
-|---------|----------|-------------|
-| Backup directory | Backups page | Where `.db` backup files are stored |
-| Max backups | Backups page | Auto-backups pruned beyond this count |
-| Auto-backup interval | Backups page | Hours between automatic backups |
-| Git repo / branch / token | Backups page | Push compressed backups to a git branch |
-| Log max size | Application Log page | Max size before log rotation (default 2 MB) |
-| User accounts | Users page | Admin-managed credentials and roles |
-
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECRET_KEY` | (generated) | Flask session secret; set for persistent sessions across restarts |
 
 ## Cross-Platform Support
 

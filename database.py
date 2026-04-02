@@ -584,6 +584,8 @@ def _get_backup_config():
         'backup_dir': saved.get('backup_dir', _DEFAULT_BACKUP_DIR),
         'max_backups': saved.get('max_backups', 5),
         'backup_interval_hours': saved.get('backup_interval_hours', 24),
+        'prune_enabled': bool(saved.get('prune_enabled', False)),
+        'prune_interval_hours': saved.get('prune_interval_hours', 24),
         'backup_enabled': bool(saved.get('backup_enabled', False)),
         'git_enabled': bool(saved.get('git_enabled', False)),
         'git_repo': saved.get('git_repo', ''),

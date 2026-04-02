@@ -674,8 +674,10 @@ import threading
 
 _backup_timer = None      # Timer for recurring local backups
 _git_push_timer = None    # Timer for recurring git pushes
+_prune_timer = None       # Timer for recurring backup pruning
 _next_backup_time = None  # datetime of next scheduled backup
 _next_git_push_time = None  # datetime of next scheduled git push
+_next_prune_time = None   # datetime of next scheduled prune
 
 
 def _run_scheduled_backup():
@@ -750,12 +752,50 @@ def _stop_git_push_timer():
     _next_git_push_time = None
 
 
+def _run_scheduled_prune():
+    """Execute a scheduled prune and re-arm the timer."""
+    try:
+        config = db._get_backup_config()
+        pruned = db._prune_old_backups(config['max_backups'])
+        if pruned:
+            app_logger.info('Scheduled prune completed: removed %d old auto-backups', pruned)
+    except Exception as e:
+        app_logger.error('Scheduled prune failed: %s', e)
+    config = db._get_backup_config()
+    if config.get('prune_enabled'):
+        _start_prune_timer(config['prune_interval_hours'])
+
+
+def _start_prune_timer(interval_hours):
+    """Start (or restart) the recurring prune timer."""
+    global _prune_timer, _next_prune_time
+    _stop_prune_timer()
+    seconds = max(interval_hours * 3600, 300)
+    from datetime import timedelta
+    _next_prune_time = datetime.now() + timedelta(seconds=seconds)
+    _prune_timer = threading.Timer(seconds, _run_scheduled_prune)
+    _prune_timer.daemon = True
+    _prune_timer.start()
+    app_logger.info('Prune scheduler armed: next prune in %s hours', interval_hours)
+
+
+def _stop_prune_timer():
+    """Cancel any pending scheduled prune."""
+    global _prune_timer, _next_prune_time
+    if _prune_timer is not None:
+        _prune_timer.cancel()
+        _prune_timer = None
+    _next_prune_time = None
+
+
 # Restore timers on startup
 _startup_config = db._get_backup_config()
 if _startup_config.get('backup_enabled'):
     _start_backup_timer(_startup_config['backup_interval_hours'])
 if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
     _start_git_push_timer(_startup_config['git_push_interval_hours'])
+if _startup_config.get('prune_enabled'):
+    _start_prune_timer(_startup_config['prune_interval_hours'])
 
 
 @app.route('/backups')
@@ -766,8 +806,10 @@ def backup_list():
     config = db._get_backup_config()
     next_backup = _next_backup_time.strftime('%Y-%m-%d %H:%M:%S') if _next_backup_time else None
     next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
+    next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
     return render_template('backups.html', backups=backups, config=config,
-                           next_backup_time=next_backup, next_git_push_time=next_push)
+                           next_backup_time=next_backup, next_git_push_time=next_push,
+                           next_prune_time=next_prune)
 
 
 @app.route('/backups/create', methods=['POST'])
@@ -841,6 +883,13 @@ def backup_config():
     except (ValueError, TypeError):
         config['backup_interval_hours'] = 24
 
+    # Prune settings
+    config['prune_enabled'] = '1' in request.form.getlist('prune_enabled')
+    try:
+        config['prune_interval_hours'] = max(0.1, float(request.form.get('prune_interval_hours', 24)))
+    except (ValueError, TypeError):
+        config['prune_interval_hours'] = 24
+
     # Git push settings
     config['git_enabled'] = '1' in request.form.getlist('git_enabled')
     config['git_repo'] = request.form.get('git_repo', '').strip()
@@ -868,6 +917,14 @@ def backup_config():
                         config['git_push_interval_hours'], config['git_repo'], current_username())
     else:
         _stop_git_push_timer()
+
+    # Manage prune timer
+    if config['prune_enabled']:
+        _start_prune_timer(config['prune_interval_hours'])
+        app_logger.info('Prune schedule enabled: every %s hours by=%s',
+                        config['prune_interval_hours'], current_username())
+    else:
+        _stop_prune_timer()
 
     app_logger.info('Backup config updated by=%s', current_username())
     flash('Backup configuration saved.', 'success')
