@@ -28,20 +28,45 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = 'hp-connectivity-inventory-system-secret-key'
 
 # ---------------------------------------------------------------------------
-# Application logging (rotating file)
+# Application logging (rotating file, single file that overwrites at limit)
 # ---------------------------------------------------------------------------
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, 'app.log')
+LOG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log_config.json')
+
+
+def _load_log_config():
+    try:
+        with open(LOG_CONFIG_FILE, 'r') as f:
+            import json as _j
+            return _j.load(f)
+    except (FileNotFoundError, ValueError):
+        return {'max_size_mb': 2}
+
+
+def _save_log_config(config):
+    import json as _j
+    with open(LOG_CONFIG_FILE, 'w') as f:
+        _j.dump(config, f)
+
+
+_log_config = _load_log_config()
+_log_max_bytes = int(_log_config.get('max_size_mb', 2) * 1024 * 1024)
 
 app_logger = logging.getLogger('inventory')
 app_logger.setLevel(logging.DEBUG)
-_handler = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5)
-_handler.setFormatter(logging.Formatter(
+_log_handler = RotatingFileHandler(LOG_FILE, maxBytes=_log_max_bytes, backupCount=0)
+_log_handler.setFormatter(logging.Formatter(
     '%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
 ))
-app_logger.addHandler(_handler)
+app_logger.addHandler(_log_handler)
+
+
+def _reconfigure_log_handler(max_size_mb):
+    """Update the log handler's max size at runtime."""
+    _log_handler.maxBytes = int(max_size_mb * 1024 * 1024)
 
 # ---------------------------------------------------------------------------
 # Startup: initialize the database
@@ -591,7 +616,9 @@ def app_logs():
 
     # Limit to 500 most recent entries
     entries = entries[:500]
-    return render_template('app_log.html', entries=entries)
+    log_config = _load_log_config()
+    log_file_size = os.path.getsize(LOG_FILE) if os.path.exists(LOG_FILE) else 0
+    return render_template('app_log.html', entries=entries, log_config=log_config, log_file_size=log_file_size)
 
 
 @app.route('/logs/clear', methods=['POST'])
@@ -605,6 +632,27 @@ def clear_logs():
         flash('Application log cleared.', 'success')
     except Exception as e:
         flash(f'Error clearing log: {e}', 'error')
+    return redirect(url_for('app_logs'))
+
+
+@app.route('/logs/config', methods=['POST'])
+@admin_required
+def update_log_config():
+    """Update application log max size."""
+    try:
+        max_size_mb = float(request.form.get('max_size_mb', 2))
+        if max_size_mb < 0.1:
+            max_size_mb = 0.1
+        if max_size_mb > 100:
+            max_size_mb = 100
+    except (ValueError, TypeError):
+        max_size_mb = 2
+
+    config = {'max_size_mb': max_size_mb}
+    _save_log_config(config)
+    _reconfigure_log_handler(max_size_mb)
+    app_logger.info('Log max size changed to %.1f MB by %s', max_size_mb, current_username())
+    flash(f'Log max size set to {max_size_mb} MB. Log will overwrite oldest entries when this limit is reached.', 'success')
     return redirect(url_for('app_logs'))
 
 # ---------------------------------------------------------------------------
