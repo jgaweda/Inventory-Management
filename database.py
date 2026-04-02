@@ -830,3 +830,148 @@ def delete_backup(filename):
         os.remove(path)
         return True
     return False
+
+
+def _get_git_push_url():
+    """Build the authenticated URL for git operations."""
+    config = _get_backup_config()
+    git_repo = config.get('git_repo', '').strip()
+    git_token = config.get('git_token', '').strip()
+
+    if git_repo:
+        remote_url = git_repo
+    else:
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+        )
+        remote_url = result.stdout.decode().strip()
+
+    if git_token and remote_url.startswith('git@github.com:'):
+        path = remote_url.replace('git@github.com:', '')
+        remote_url = f'https://github.com/{path}'
+
+    if git_token and remote_url.startswith('https://'):
+        remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
+
+    return remote_url
+
+
+def list_git_backups():
+    """
+    Fetch the backup zip from git and list the .db files inside it.
+    Returns list of dicts with filename and size info.
+    """
+    import tempfile
+    import zipfile
+
+    config = _get_backup_config()
+    git_branch = config.get('git_branch', 'backups').strip() or 'backups'
+    remote_url = _get_git_push_url()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Shallow clone just the backup branch
+        result = subprocess.run(
+            ['git', 'clone', '--depth', '1', '--branch', git_branch,
+             '--single-branch', remote_url, tmpdir],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode() if result.stderr else ''
+            if 'not found' in stderr.lower() or 'could not find' in stderr.lower():
+                raise ValueError(f'Branch "{git_branch}" not found on remote. Push backups first.')
+            raise RuntimeError(f'Git clone failed: {stderr}')
+
+        zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        if not os.path.isfile(zip_path):
+            raise ValueError('No inventory_backups.zip found on the git branch.')
+
+        entries = []
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for info in zf.infolist():
+                if info.filename.startswith('inventory_backup_') and info.filename.endswith('.db'):
+                    ts_part = info.filename.replace('inventory_backup_', '').replace('.db', '')
+                    try:
+                        from datetime import datetime as _dt
+                        dt = _dt.strptime(ts_part.split('_uploaded')[0], '%Y%m%d_%H%M%S')
+                        display_time = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        display_time = ts_part
+                    entries.append({
+                        'filename': info.filename,
+                        'size': info.file_size,
+                        'timestamp': display_time,
+                    })
+
+        # Sort most recent first
+        entries.sort(key=lambda e: e['filename'], reverse=True)
+        return entries
+
+
+def restore_from_git(filename):
+    """
+    Extract a specific .db file from the git backup zip and restore it.
+    Creates a safety backup first. Returns restore metadata.
+    """
+    import tempfile
+    import zipfile
+
+    if not filename.startswith('inventory_backup_') or '..' in filename:
+        raise ValueError('Invalid backup filename')
+
+    config = _get_backup_config()
+    git_branch = config.get('git_branch', 'backups').strip() or 'backups'
+    remote_url = _get_git_push_url()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Clone the backup branch
+        result = subprocess.run(
+            ['git', 'clone', '--depth', '1', '--branch', git_branch,
+             '--single-branch', remote_url, tmpdir],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode() if result.stderr else ''
+            raise RuntimeError(f'Git clone failed: {stderr}')
+
+        zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        if not os.path.isfile(zip_path):
+            raise ValueError('No inventory_backups.zip found on the git branch.')
+
+        # Extract the requested file
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            if filename not in zf.namelist():
+                raise ValueError(f'File "{filename}" not found in backup zip.')
+            zf.extract(filename, tmpdir)
+
+        extracted_path = os.path.join(tmpdir, filename)
+
+        # Validate it's a real SQLite database
+        test_conn = sqlite3.connect(extracted_path)
+        try:
+            test_conn.execute('SELECT COUNT(*) FROM devices')
+            test_conn.execute('SELECT COUNT(*) FROM users')
+        except sqlite3.DatabaseError as e:
+            test_conn.close()
+            raise ValueError(f'File is not a valid database: {e}')
+        finally:
+            test_conn.close()
+
+        # Safety backup before restore
+        safety = backup_database(performed_by='pre-git-restore-safety')
+
+        # Restore using backup API
+        src = sqlite3.connect(extracted_path)
+        dst = sqlite3.connect(DB_PATH)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+
+        init_db()
+
+        return {
+            'restored_from': f'git:{filename}',
+            'safety_backup': safety['filename'],
+        }

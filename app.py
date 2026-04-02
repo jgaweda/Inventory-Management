@@ -845,6 +845,37 @@ def backup_push_git():
     return redirect(url_for('backup_list'))
 
 
+@app.route('/backups/git/list')
+@admin_required
+def backup_git_list():
+    """API: list .db files available in the git backup zip."""
+    try:
+        entries = db.list_git_backups()
+        return jsonify({'ok': True, 'backups': entries})
+    except Exception as e:
+        app_logger.error('Git backup list failed: %s', e)
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
+@app.route('/backups/git/restore', methods=['POST'])
+@admin_required
+def backup_git_restore():
+    """Restore database from a file in the git backup zip."""
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('backup_list'))
+    try:
+        result = db.restore_from_git(filename)
+        app_logger.info('Database restored from git: %s (safety: %s) by=%s',
+                        result['restored_from'], result['safety_backup'], current_username())
+        flash(f'Database restored from git backup: {filename}. Safety backup: {result["safety_backup"]}', 'success')
+    except Exception as e:
+        app_logger.error('Git restore failed: %s by=%s', e, current_username())
+        flash(f'Restore from git failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
 @app.route('/backups/<filename>/delete', methods=['POST'])
 @admin_required
 def backup_delete(filename):

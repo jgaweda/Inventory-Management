@@ -22,6 +22,10 @@
                        onchange="if(confirm('Restore database from this file?\\n\\nThis will overwrite the current database. A safety backup will be created first.')) this.form.submit();">
             </label>
         </form>
+        <button type="button" class="btn btn-secondary" onclick="openGitRestoreDialog()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            Restore from Git
+        </button>
     </div>
 </div>
 
@@ -199,4 +203,93 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Git Restore Modal -->
+<div id="gitRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 18px; font-weight: 700;">Restore from Git</h3>
+            <button onclick="closeGitRestoreDialog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
+        </div>
+        <div id="gitRestoreLoading" style="text-align: center; padding: 32px; color: var(--text-muted);">
+            <p>Fetching backups from git...</p>
+        </div>
+        <div id="gitRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
+        </div>
+        <div id="gitRestoreList" style="display:none; overflow-y: auto; flex: 1;">
+            <table style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Date</th>
+                        <th>Size</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="gitRestoreBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function openGitRestoreDialog() {
+    var modal = document.getElementById('gitRestoreModal');
+    modal.style.display = 'flex';
+    document.getElementById('gitRestoreLoading').style.display = 'block';
+    document.getElementById('gitRestoreError').style.display = 'none';
+    document.getElementById('gitRestoreList').style.display = 'none';
+
+    fetch('{{ url_for("backup_git_list") }}')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('gitRestoreLoading').style.display = 'none';
+            if (!data.ok) {
+                document.getElementById('gitRestoreError').style.display = 'block';
+                document.getElementById('gitRestoreError').textContent = data.error;
+                return;
+            }
+            if (data.backups.length === 0) {
+                document.getElementById('gitRestoreError').style.display = 'block';
+                document.getElementById('gitRestoreError').textContent = 'No backup files found in git.';
+                return;
+            }
+            var tbody = document.getElementById('gitRestoreBody');
+            tbody.innerHTML = '';
+            data.backups.forEach(function(b) {
+                var sizeStr = b.size >= 1048576
+                    ? (b.size / 1048576).toFixed(1) + ' MB'
+                    : (b.size / 1024).toFixed(1) + ' KB';
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td class="font-mono" style="font-size:12px;">' + b.filename + '</td>' +
+                    '<td style="font-size:12px; color:var(--text-secondary); white-space:nowrap;">' + b.timestamp + '</td>' +
+                    '<td class="font-mono" style="font-size:12px; color:var(--text-muted);">' + sizeStr + '</td>' +
+                    '<td style="text-align:right;">' +
+                        '<form method="POST" action="{{ url_for("backup_git_restore") }}" ' +
+                        'onsubmit="return confirm(\'Restore from this git backup?\\n\\nThe current database will be overwritten. A safety backup will be created first.\')" style="margin:0;">' +
+                        '<input type="hidden" name="filename" value="' + b.filename + '">' +
+                        '<button type="submit" class="btn btn-primary btn-sm">Restore</button>' +
+                        '</form>' +
+                    '</td>';
+                tbody.appendChild(tr);
+            });
+            document.getElementById('gitRestoreList').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('gitRestoreLoading').style.display = 'none';
+            document.getElementById('gitRestoreError').style.display = 'block';
+            document.getElementById('gitRestoreError').textContent = 'Failed to fetch: ' + err.message;
+        });
+}
+
+function closeGitRestoreDialog() {
+    document.getElementById('gitRestoreModal').style.display = 'none';
+}
+
+document.getElementById('gitRestoreModal').addEventListener('click', function(e) {
+    if (e.target === this) closeGitRestoreDialog();
+});
+</script>
 {% endblock %}
