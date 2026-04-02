@@ -53,17 +53,8 @@
     </div>
 </form>
 
-<!-- Label Print Form wraps the table -->
-<form method="POST" action="{{ url_for('label_sheet') }}">
+<!-- Device list -->
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
-            <input type="checkbox" id="selectAll" onchange="document.querySelectorAll('.device-check').forEach(c => c.checked = this.checked)">
-            Select All
-        </label>
-        <button type="submit" class="btn btn-secondary btn-sm">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            Print Labels
-        </button>
         <a id="exportCsvLink" href="{{ url_for('export_csv', q=q, category=selected_category, status=selected_status, connectivity=selected_connectivity, location=selected_location) }}" class="btn btn-secondary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Export CSV
@@ -75,7 +66,6 @@
         <table>
             <thead>
                 <tr>
-                    <th style="width: 40px;"></th>
                     <th>Name</th>
                     <th>Category</th>
                     <th>Connectivity Type/Version</th>
@@ -89,9 +79,6 @@
             <tbody>
                 {% for device in devices %}
                 <tr style="cursor: pointer;" onclick="if(!event.target.closest('input'))window.location='{{ url_for('device_detail', device_id=device.device_id) }}'">
-                    <td onclick="event.stopPropagation()">
-                        <input type="checkbox" name="device_ids" value="{{ device.device_id }}" class="device-check">
-                    </td>
                     <td style="font-weight: 600;">{{ device.name }}</td>
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.category }}</td>
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.connectivity }}</td>
@@ -120,5 +107,4 @@
         </div>
         {% endif %}
     </div>
-</form>
 {% endblock %}
