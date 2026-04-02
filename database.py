@@ -661,60 +661,45 @@ def _prune_old_backups(max_backups):
 
 def push_backups_to_git():
     """
-    Push all local .db backup files to a dedicated git branch.
-    Uses the configured branch (defaults to 'backups'). If pushing to the
-    same repo as the app code, this uses an orphan branch so backup files
-    don't pollute the main working tree.
+    Zip all local .db backup files into a single archive and push to a
+    dedicated git branch. The zip overwrites the previous one each push.
     Returns dict with push metadata.
     """
     import tempfile
+    import zipfile
 
     config = _get_backup_config()
     backup_dir = _get_backup_dir()
+    max_backups = config.get('max_backups', 5)
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     git_repo = config.get('git_repo', '').strip()
 
-    backup_files = sorted(
-        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')]
+    # Get the most recent N backup files (respecting max_backups)
+    all_backups = sorted(
+        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')],
+        reverse=True,
     )
+    backup_files = all_backups[:max_backups]
     if not backup_files:
         raise ValueError('No backup files to push')
 
-    # Use a temporary directory for a clean worktree to avoid polluting main branch
+    # Use a temporary directory for a clean worktree
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
-            # Determine the remote to push to
-            remote = 'origin'
-            if git_repo:
-                # Set up or update a dedicated remote
-                subprocess.run(
-                    ['git', 'remote', 'set-url', 'backup-remote', git_repo],
-                    cwd=REPO_DIR, capture_output=True, timeout=15,
-                )
-                result = subprocess.run(
-                    ['git', 'remote', 'get-url', 'backup-remote'],
-                    cwd=REPO_DIR, capture_output=True, timeout=15,
-                )
-                if result.returncode != 0:
-                    subprocess.run(
-                        ['git', 'remote', 'add', 'backup-remote', git_repo],
-                        cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
-                    )
-                remote = 'backup-remote'
+            # Create zip archive of the .db files
+            zip_name = 'inventory_backups.zip'
+            zip_path = os.path.join(tmpdir, zip_name)
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for bf in backup_files:
+                    zf.write(os.path.join(backup_dir, bf), bf)
+            zip_size = os.path.getsize(zip_path)
 
             # Initialize a fresh git repo in tmp to build the commit
             subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True, timeout=15)
             subprocess.run(['git', 'checkout', '--orphan', git_branch],
                            cwd=tmpdir, capture_output=True, check=True, timeout=15)
 
-            # Copy .db files into the temp repo
-            total_size = 0
-            for bf in backup_files:
-                src_path = os.path.join(backup_dir, bf)
-                shutil.copy2(src_path, os.path.join(tmpdir, bf))
-                total_size += os.path.getsize(src_path)
-
-            subprocess.run(['git', 'add', '.'],
+            subprocess.run(['git', 'add', zip_name],
                            cwd=tmpdir, capture_output=True, check=True, timeout=30)
             subprocess.run(
                 ['git', 'commit', '-m',
@@ -735,14 +720,11 @@ def push_backups_to_git():
 
             # Convert SSH URL to HTTPS if a token is provided
             if git_token and remote_url.startswith('git@github.com:'):
-                # git@github.com:user/repo.git -> https://github.com/user/repo.git
                 path = remote_url.replace('git@github.com:', '')
                 remote_url = f'https://github.com/{path}'
 
             # Inject token into HTTPS URL for authentication
             if git_token and remote_url.startswith('https://'):
-                # https://github.com/... -> https://<token>@github.com/...
-                # Works with both classic PATs (ghp_...) and fine-grained (github_pat_...)
                 remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
 
             # Push from the temp repo to the remote
@@ -764,7 +746,7 @@ def push_backups_to_git():
     push_target = git_repo or 'origin'
     return {
         'files_pushed': len(backup_files),
-        'total_size': total_size,
+        'zip_size': zip_size,
         'pushed_to': f'{push_target} ({git_branch})',
     }
 

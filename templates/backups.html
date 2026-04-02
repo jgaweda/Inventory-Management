@@ -66,7 +66,7 @@
         <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 16px;">
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Git Push</div>
             <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                Pushes all local <code>.db</code> backup files to a dedicated git branch. Uses an orphan branch so backups don't mix with application code. Leave repo blank to use the same repo as the app (origin).
+                Zips the most recent backups (up to "max backups to keep") into <code>inventory_backups.zip</code> and pushes to a dedicated git branch. Each push overwrites the previous zip. Leave repo blank to use origin.
             </p>
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
