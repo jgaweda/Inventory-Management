@@ -474,16 +474,6 @@ def import_csv():
     return render_template('import.html')
 
 # ---------------------------------------------------------------------------
-# Audit log (admin only)
-# ---------------------------------------------------------------------------
-
-@app.route('/audit')
-@admin_required
-def audit_log():
-    entries = db.get_audit_log(limit=200)
-    return render_template('audit.html', entries=entries)
-
-# ---------------------------------------------------------------------------
 # User management (admin only)
 # ---------------------------------------------------------------------------
 

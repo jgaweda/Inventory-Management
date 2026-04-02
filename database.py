@@ -9,6 +9,7 @@ concurrency and a context manager for safe transactions.
 import sqlite3
 import uuid
 import json
+import logging
 import os
 import shutil
 import hashlib
@@ -16,9 +17,21 @@ import secrets
 import subprocess
 from contextlib import contextmanager
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 # Path to the SQLite database file (same directory as this script)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inventory.db')
+
+# Shared application logger (same file as app.py uses)
+_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+os.makedirs(_LOG_DIR, exist_ok=True)
+_audit_logger = logging.getLogger('inventory')
+# Only add handler if the logger doesn't already have one (app.py may have set it up)
+if not _audit_logger.handlers:
+    _audit_logger.setLevel(logging.DEBUG)
+    _h = RotatingFileHandler(os.path.join(_LOG_DIR, 'app.log'), maxBytes=2*1024*1024, backupCount=5)
+    _h.setFormatter(logging.Formatter('%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    _audit_logger.addHandler(_h)
 
 # Default categories seeded on first run
 DEFAULT_CATEGORIES = [
@@ -338,11 +351,14 @@ def checkin_device(device_id, performed_by='system'):
 
 
 def log_action(conn, device_id, action, performed_by='', details=''):
-    """Append an entry to the audit log. Uses an existing connection (caller manages transaction)."""
+    """Append an entry to the audit log and application log."""
     conn.execute(
         'INSERT INTO audit_log (device_id, action, performed_by, details) VALUES (?, ?, ?, ?)',
         (device_id, action, performed_by, details)
     )
+    # Also write to the application log so audit events appear in the unified log viewer
+    detail_str = f' — {details}' if details else ''
+    _audit_logger.info('AUDIT device_id=%s action=%s by=%s%s', device_id, action, performed_by or 'system', detail_str)
 
 
 def get_audit_log(device_id=None, limit=100):
