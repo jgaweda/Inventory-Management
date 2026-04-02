@@ -13,7 +13,7 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
-                <select name="category">
+                <select name="category" id="categorySelect" onchange="toggleCodename()">
                     <option value="">Select category...</option>
                     {% for cat in categories %}
                     <option value="{{ cat.name }}" {% if (device.get('category', '') if device is mapping else device.category if device else '') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
@@ -25,7 +25,21 @@
                 <input type="text" name="connectivity" value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
+        <div id="codenameRow" style="margin-top: 16px; display: none;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                Codename <span style="color: var(--accent-red);">*</span>
+            </label>
+            <input type="text" name="codename" id="codenameInput" value="{{ device.get('codename', '') if device is mapping else '' }}" placeholder="e.g. Phoenix — name will be 'Phoenix (Manufacturer Model)'">
+        </div>
     </div>
+    <script>
+    function toggleCodename() {
+        var cat = document.getElementById('categorySelect').value;
+        var row = document.getElementById('codenameRow');
+        row.style.display = (cat === 'Printer') ? 'block' : 'none';
+    }
+    toggleCodename();
+    </script>
 
     <!-- Hardware Details -->
     <div class="card" style="margin-bottom: 16px; cursor: default;">

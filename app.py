@@ -212,14 +212,24 @@ def device_add():
     if request.method == 'POST':
         manufacturer = request.form.get('manufacturer', '').strip()
         model_number = request.form.get('model_number', '').strip()
-        if not manufacturer:
-            flash('Manufacturer is required.', 'error')
-            return render_template('device_form.html', device=request.form, is_edit=False)
-        name = f'{manufacturer} {model_number}'.strip()
+        category = request.form.get('category', '').strip()
+        codename = request.form.get('codename', '').strip()
+
+        if category == 'Printer':
+            if not codename:
+                flash('Codename is required for printers.', 'error')
+                return render_template('device_form.html', device=request.form, is_edit=False)
+            mfg_model = f'{manufacturer} {model_number}'.strip()
+            name = f'{codename} ({mfg_model})' if mfg_model else codename
+        else:
+            if not manufacturer:
+                flash('Manufacturer is required.', 'error')
+                return render_template('device_form.html', device=request.form, is_edit=False)
+            name = f'{manufacturer} {model_number}'.strip()
 
         data = {
             'name': name,
-            'category': request.form.get('category', ''),
+            'category': category,
             'manufacturer': request.form.get('manufacturer', ''),
             'model_number': request.form.get('model_number', ''),
             'serial_number': request.form.get('serial_number', ''),
@@ -275,16 +285,26 @@ def device_edit(device_id):
     if request.method == 'POST':
         manufacturer = request.form.get('manufacturer', '').strip()
         model_number = request.form.get('model_number', '').strip()
-        if not manufacturer:
-            flash('Manufacturer is required.', 'error')
-            return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
-        name = f'{manufacturer} {model_number}'.strip()
+        category = request.form.get('category', '').strip()
+        codename = request.form.get('codename', '').strip()
+
+        if category == 'Printer':
+            if not codename:
+                flash('Codename is required for printers.', 'error')
+                return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+            mfg_model = f'{manufacturer} {model_number}'.strip()
+            name = f'{codename} ({mfg_model})' if mfg_model else codename
+        else:
+            if not manufacturer:
+                flash('Manufacturer is required.', 'error')
+                return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+            name = f'{manufacturer} {model_number}'.strip()
 
         data = {
             'name': name,
-            'category': request.form.get('category', ''),
-            'manufacturer': request.form.get('manufacturer', ''),
-            'model_number': request.form.get('model_number', ''),
+            'category': category,
+            'manufacturer': manufacturer,
+            'model_number': model_number,
             'serial_number': request.form.get('serial_number', ''),
             'connectivity': request.form.get('connectivity', ''),
             'vendor_supplied': 1 if request.form.get('vendor_supplied') else 0,
