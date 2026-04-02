@@ -2,6 +2,7 @@ inventory.db
 static/labels/*.png
 logs/
 backup_schedule.json
+backup_config.json
 log_config.json
 __pycache__/
 *.pyc

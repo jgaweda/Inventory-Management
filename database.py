@@ -33,12 +33,12 @@ if not _audit_logger.handlers:
     _h.setFormatter(logging.Formatter('%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
     _audit_logger.addHandler(_h)
 
-# Default categories seeded on first run
+# Default categories seeded on first run (sort_order determines dropdown order)
 DEFAULT_CATEGORIES = [
-    ('Printer', 'Printers and multifunction devices'),
-    ('Router/AP', 'Routers and wireless access points'),
-    ('Laptop/Phone/Tablet', 'Laptops, phones, and tablets'),
-    ('Other', 'Uncategorized items'),
+    ('Printer', 'Printers and multifunction devices', 1),
+    ('Router/AP', 'Routers and wireless access points', 2),
+    ('Laptop/Phone/Tablet', 'Laptops, phones, and tablets', 3),
+    ('Other', 'Uncategorized items', 4),
 ]
 
 # Fields that can be updated via update_device()
@@ -115,7 +115,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS categories (
                 category_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
-                description TEXT DEFAULT ''
+                description TEXT DEFAULT '',
+                sort_order INTEGER DEFAULT 99
             )
         ''')
 
@@ -142,10 +143,16 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_device ON audit_log(device_id)')
 
         # Seed default categories
-        for name, desc in DEFAULT_CATEGORIES:
+        for name, desc, sort_ord in DEFAULT_CATEGORIES:
             conn.execute(
-                'INSERT OR IGNORE INTO categories (name, description) VALUES (?, ?)',
-                (name, desc)
+                'INSERT OR IGNORE INTO categories (name, description, sort_order) VALUES (?, ?, ?)',
+                (name, desc, sort_ord)
+            )
+        # Ensure sort_order is up to date for existing databases
+        for name, desc, sort_ord in DEFAULT_CATEGORIES:
+            conn.execute(
+                'UPDATE categories SET sort_order = ? WHERE name = ?',
+                (sort_ord, name)
             )
 
         # Seed default admin user if no users exist (password: admin)
@@ -383,9 +390,9 @@ def get_audit_log(device_id=None, limit=100):
 
 
 def get_categories():
-    """Get all categories ordered by name."""
+    """Get all categories ordered by sort_order."""
     with db_transaction() as conn:
-        rows = conn.execute('SELECT * FROM categories ORDER BY name').fetchall()
+        rows = conn.execute('SELECT * FROM categories ORDER BY sort_order, name').fetchall()
         return [dict(r) for r in rows]
 
 
@@ -545,22 +552,66 @@ def delete_user(user_id):
 # Database backup
 # ---------------------------------------------------------------------------
 
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
+import gzip as _gzip
+
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKUP_CONFIG_FILE = os.path.join(REPO_DIR, 'backup_config.json')
+
+# Default backup directory (used when no config exists)
+_DEFAULT_BACKUP_DIR = os.path.join(REPO_DIR, 'backups')
+
+
+def _load_backup_config():
+    """Load backup configuration from disk."""
+    try:
+        with open(BACKUP_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _get_backup_config():
+    """Return full backup config with defaults applied."""
+    saved = _load_backup_config()
+    return {
+        'backup_dir': saved.get('backup_dir', _DEFAULT_BACKUP_DIR),
+        'max_backups': saved.get('max_backups', 5),
+        'backup_interval_hours': saved.get('backup_interval_hours', 24),
+        'backup_enabled': saved.get('backup_enabled', False),
+        'git_enabled': saved.get('git_enabled', False),
+        'git_repo': saved.get('git_repo', ''),
+        'git_branch': saved.get('git_branch', 'main'),
+        'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
+        'last_git_push': saved.get('last_git_push', ''),
+    }
+
+
+def save_backup_config(config):
+    """Persist backup configuration to disk."""
+    with open(BACKUP_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+
+def _get_backup_dir():
+    """Get the configured backup directory, creating it if needed."""
+    config = _get_backup_config()
+    backup_dir = config['backup_dir'] or _DEFAULT_BACKUP_DIR
+    os.makedirs(backup_dir, exist_ok=True)
+    return backup_dir
 
 
 def backup_database(performed_by='system'):
     """
-    Create a safe backup of the database using SQLite's online backup API,
-    then commit the backup file to git.
-
-    Returns dict with backup metadata or raises on failure.
+    Create a safe backup of the database using SQLite's online backup API.
+    Prunes old backups beyond max_backups.
+    Returns dict with backup metadata.
     """
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backup_dir = _get_backup_dir()
+    config = _get_backup_config()
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_filename = f'inventory_backup_{timestamp}.db'
-    backup_path = os.path.join(BACKUP_DIR, backup_filename)
+    backup_path = os.path.join(backup_dir, backup_filename)
 
     # Use SQLite online backup API for a consistent snapshot
     src = sqlite3.connect(DB_PATH)
@@ -573,44 +624,124 @@ def backup_database(performed_by='system'):
 
     file_size = os.path.getsize(backup_path)
 
-    # Commit to git
-    git_message = f'Database backup {timestamp} by {performed_by}'
-    git_committed = _git_commit_backup(backup_path, backup_filename, git_message)
+    # Prune old backups beyond max_backups
+    pruned = _prune_old_backups(config['max_backups'])
 
     return {
         'filename': backup_filename,
         'path': backup_path,
         'size': file_size,
         'timestamp': timestamp,
-        'git_committed': git_committed,
+        'pruned': pruned,
     }
 
 
-def _git_commit_backup(backup_path, filename, message):
-    """Stage and commit a backup file to git. Returns True on success."""
+def _prune_old_backups(max_backups):
+    """Remove oldest backups beyond the max count. Returns number pruned."""
+    backup_dir = _get_backup_dir()
+    all_backups = sorted(
+        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')],
+        reverse=True,
+    )
+    pruned = 0
+    for old_file in all_backups[max_backups:]:
+        try:
+            os.remove(os.path.join(backup_dir, old_file))
+            pruned += 1
+        except OSError:
+            pass
+    return pruned
+
+
+def push_backups_to_git():
+    """
+    Compress all local backups into a single .tar.gz bundle and push to git.
+    The bundle overwrites the previous one in the repo.
+    Returns dict with push metadata.
+    """
+    import tarfile
+
+    config = _get_backup_config()
+    backup_dir = _get_backup_dir()
+    git_repo = config.get('git_repo', '').strip()
+    git_branch = config.get('git_branch', 'main').strip() or 'main'
+
+    if not git_repo:
+        raise ValueError('No git repository configured')
+
+    # Create compressed tar bundle
+    bundle_name = 'inventory_backups.tar.gz'
+    bundle_path = os.path.join(backup_dir, bundle_name)
+
+    backup_files = sorted(
+        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')]
+    )
+    if not backup_files:
+        raise ValueError('No backup files to push')
+
+    with tarfile.open(bundle_path, 'w:gz') as tar:
+        for bf in backup_files:
+            tar.add(os.path.join(backup_dir, bf), arcname=bf)
+
+    bundle_size = os.path.getsize(bundle_path)
+
+    # Git operations: add, commit, push
     try:
+        # Ensure the remote exists or add it
         subprocess.run(
-            ['git', 'add', '-f', backup_path],
+            ['git', 'remote', 'set-url', 'backup-remote', git_repo],
+            cwd=REPO_DIR, capture_output=True, timeout=15,
+        )
+        # If set-url fails because remote doesn't exist, add it
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'backup-remote'],
+            cwd=REPO_DIR, capture_output=True, timeout=15,
+        )
+        if result.returncode != 0:
+            subprocess.run(
+                ['git', 'remote', 'add', 'backup-remote', git_repo],
+                cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+            )
+
+        subprocess.run(
+            ['git', 'add', '-f', bundle_path],
             cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
         )
         subprocess.run(
-            ['git', 'commit', '-m', message, '--', backup_path],
+            ['git', 'commit', '-m', f'Database backup bundle {datetime.now().strftime("%Y-%m-%d %H:%M")}',
+             '--', bundle_path],
             cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
         )
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+        subprocess.run(
+            ['git', 'push', '-u', 'backup-remote', f'HEAD:{git_branch}', '--force'],
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=120,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode() if e.stderr else str(e)
+        raise RuntimeError(f'Git push failed: {stderr}')
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Git push timed out')
+
+    # Update last push timestamp
+    config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    save_backup_config(config)
+
+    return {
+        'bundle_name': bundle_name,
+        'bundle_size': bundle_size,
+        'files_included': len(backup_files),
+        'pushed_to': f'{git_repo} ({git_branch})',
+    }
 
 
 def list_backups():
     """List existing backup files, most recent first."""
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    backup_dir = _get_backup_dir()
     backups = []
-    for f in sorted(os.listdir(BACKUP_DIR), reverse=True):
+    for f in sorted(os.listdir(backup_dir), reverse=True):
         if f.startswith('inventory_backup_') and f.endswith('.db'):
-            path = os.path.join(BACKUP_DIR, f)
+            path = os.path.join(backup_dir, f)
             stat = os.stat(path)
-            # Parse timestamp from filename: inventory_backup_20260402_120000.db
             ts_part = f.replace('inventory_backup_', '').replace('.db', '')
             try:
                 dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
@@ -631,9 +762,10 @@ def restore_database(filename):
     Creates a safety backup of the current DB first.
     Returns dict with restore metadata.
     """
+    backup_dir = _get_backup_dir()
     if not filename.startswith('inventory_backup_') or '..' in filename:
         raise ValueError('Invalid backup filename')
-    backup_path = os.path.join(BACKUP_DIR, filename)
+    backup_path = os.path.join(backup_dir, filename)
     if not os.path.isfile(backup_path):
         raise FileNotFoundError(f'Backup file not found: {filename}')
 
@@ -668,9 +800,10 @@ def restore_database(filename):
 
 def delete_backup(filename):
     """Delete a backup file. Returns True if deleted."""
+    backup_dir = _get_backup_dir()
     if not filename.startswith('inventory_backup_') or '..' in filename:
         raise ValueError('Invalid backup filename')
-    path = os.path.join(BACKUP_DIR, filename)
+    path = os.path.join(backup_dir, filename)
     if os.path.isfile(path):
         os.remove(path)
         return True

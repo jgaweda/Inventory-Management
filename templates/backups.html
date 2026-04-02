@@ -15,33 +15,114 @@
     </form>
 </div>
 
-<!-- Schedule -->
+<!-- Backup Configuration -->
 <div class="card" style="margin-bottom: 24px; cursor: default;">
-    <div class="section-label">Automatic Backup Schedule</div>
-    <form method="POST" action="{{ url_for('backup_schedule') }}">
-        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
-                <input type="hidden" name="enabled" value="0">
-                <input type="checkbox" name="enabled" value="1" {{ 'checked' if schedule.enabled }} style="width: 18px; height: 18px;"
-                       onchange="document.getElementById('intervalInput').disabled = !this.checked">
-                Enable recurring backups
-            </label>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 14px; color: var(--text-secondary);">Every</span>
-                <input type="number" id="intervalInput" name="interval_hours" value="{{ schedule.interval_hours }}"
-                       min="0.1" step="0.5" {{ 'disabled' if not schedule.enabled }}
-                       style="width: 80px; text-align: center; font-size: 14px; padding: 8px;">
-                <span style="font-size: 14px; color: var(--text-secondary);">hours</span>
+    <div class="section-label">Backup Configuration</div>
+    <form method="POST" action="{{ url_for('backup_config') }}">
+
+        <!-- Local Backup Settings -->
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Local Backups</div>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Backup directory</label>
+                    <input type="text" name="backup_dir" value="{{ config.backup_dir }}"
+                           placeholder="/path/to/backups"
+                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Max backups to keep</label>
+                    <input type="number" name="max_backups" value="{{ config.max_backups }}"
+                           min="1" max="100" step="1"
+                           style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
+                        <input type="hidden" name="backup_enabled" value="0">
+                        <input type="checkbox" name="backup_enabled" value="1" {{ 'checked' if config.backup_enabled }}
+                               style="width: 16px; height: 16px;"
+                               onchange="document.getElementById('backupInterval').disabled = !this.checked">
+                        Auto-backup every
+                    </label>
+                    <input type="number" id="backupInterval" name="backup_interval_hours" value="{{ config.backup_interval_hours }}"
+                           min="0.1" step="0.5" {{ 'disabled' if not config.backup_enabled }}
+                           style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
+                    <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                </div>
             </div>
-            <button type="submit" class="btn btn-secondary btn-sm">Save Schedule</button>
         </div>
-        {% if schedule.enabled %}
-        <div style="margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 13px; color: var(--accent-green);">
-            Automatic backups are <strong>active</strong> — running every {{ schedule.interval_hours }} hour{{ 's' if schedule.interval_hours != 1 else '' }}.
-            Each backup is committed to git automatically.
+
+        <!-- Git Push Settings -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 16px;">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Git Push</div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+                Compresses all local backups into a single <code>inventory_backups.tar.gz</code> and pushes to a git repository. Each push overwrites the previous bundle.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Git repository</label>
+                    <input type="text" name="git_repo" value="{{ config.git_repo }}"
+                           placeholder="https://github.com/user/repo.git"
+                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Branch</label>
+                    <input type="text" name="git_branch" value="{{ config.git_branch }}"
+                           placeholder="main"
+                           style="width: 160px; font-size: 13px; padding: 8px 12px;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
+                        <input type="hidden" name="git_enabled" value="0">
+                        <input type="checkbox" name="git_enabled" value="1" {{ 'checked' if config.git_enabled }}
+                               style="width: 16px; height: 16px;"
+                               onchange="document.getElementById('gitPushInterval').disabled = !this.checked">
+                        Auto-push every
+                    </label>
+                    <input type="number" id="gitPushInterval" name="git_push_interval_hours" value="{{ config.git_push_interval_hours }}"
+                           min="0.1" step="0.5" {{ 'disabled' if not config.git_enabled }}
+                           style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
+                    <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status + Save -->
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
+            {% if config.last_git_push %}
+            <span style="font-size: 12px; color: var(--text-muted);">Last git push: {{ config.last_git_push }}</span>
+            {% endif %}
+        </div>
+    </form>
+
+    <!-- Manual git push button (separate form) -->
+    {% if config.git_repo %}
+    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+        <form method="POST" action="{{ url_for('backup_push_git') }}" style="display: inline;">
+            <button type="submit" class="btn btn-secondary btn-sm">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                Push to Git Now
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Active status indicators -->
+    {% if config.backup_enabled or config.git_enabled %}
+    <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+        {% if config.backup_enabled %}
+        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
+            Auto-backup <strong>active</strong> — every {{ config.backup_interval_hours }} hour{{ 's' if config.backup_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} backup{{ 's' if config.max_backups != 1 else '' }}
         </div>
         {% endif %}
-    </form>
+        {% if config.git_enabled and config.git_repo %}
+        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15); font-size: 12px; color: var(--accent-blue, #6366f1);">
+            Git push <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_repo }} ({{ config.git_branch }})
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- Backup History -->

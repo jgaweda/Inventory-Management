@@ -75,7 +75,7 @@ def _reconfigure_log_handler(max_size_mb):
 with app.app_context():
     db.init_db()
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
-    os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups'), exist_ok=True)
+    os.makedirs(db._get_backup_dir(), exist_ok=True)
     app_logger.info('Application started — database initialized')
 
 # ---------------------------------------------------------------------------
@@ -638,40 +638,37 @@ def account():
 # ---------------------------------------------------------------------------
 
 import threading
-import json as _json
 
-SCHEDULE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backup_schedule.json')
-_backup_timer = None  # Global reference to the scheduled timer
-
-
-def _load_schedule():
-    """Load backup schedule config from disk."""
-    try:
-        with open(SCHEDULE_FILE, 'r') as f:
-            return _json.load(f)
-    except (FileNotFoundError, _json.JSONDecodeError):
-        return {'enabled': False, 'interval_hours': 24}
-
-
-def _save_schedule(config):
-    """Persist backup schedule config to disk."""
-    with open(SCHEDULE_FILE, 'w') as f:
-        _json.dump(config, f)
+_backup_timer = None      # Timer for recurring local backups
+_git_push_timer = None    # Timer for recurring git pushes
 
 
 def _run_scheduled_backup():
     """Execute a scheduled backup and re-arm the timer."""
-    global _backup_timer
     try:
         result = db.backup_database(performed_by='scheduled')
-        app_logger.info('Scheduled backup completed: %s (%d bytes, git=%s)',
-                        result['filename'], result['size'], result['git_committed'])
+        app_logger.info('Scheduled backup completed: %s (%d bytes)',
+                        result['filename'], result['size'])
     except Exception as e:
         app_logger.error('Scheduled backup failed: %s', e)
-    # Re-arm
-    config = _load_schedule()
-    if config.get('enabled'):
-        _start_backup_timer(config['interval_hours'])
+    # Re-arm from latest config
+    config = db._get_backup_config()
+    if config.get('backup_enabled'):
+        _start_backup_timer(config['backup_interval_hours'])
+
+
+def _run_scheduled_git_push():
+    """Execute a scheduled git push and re-arm the timer."""
+    try:
+        result = db.push_backups_to_git()
+        app_logger.info('Scheduled git push completed: %d files to %s',
+                        result['files_included'], result['pushed_to'])
+    except Exception as e:
+        app_logger.error('Scheduled git push failed: %s', e)
+    # Re-arm from latest config
+    config = db._get_backup_config()
+    if config.get('git_enabled'):
+        _start_git_push_timer(config['git_push_interval_hours'])
 
 
 def _start_backup_timer(interval_hours):
@@ -693,10 +690,31 @@ def _stop_backup_timer():
         _backup_timer = None
 
 
-# Restore schedule on startup
-_startup_schedule = _load_schedule()
-if _startup_schedule.get('enabled'):
-    _start_backup_timer(_startup_schedule['interval_hours'])
+def _start_git_push_timer(interval_hours):
+    """Start (or restart) the recurring git push timer."""
+    global _git_push_timer
+    _stop_git_push_timer()
+    seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
+    _git_push_timer = threading.Timer(seconds, _run_scheduled_git_push)
+    _git_push_timer.daemon = True
+    _git_push_timer.start()
+    app_logger.info('Git push scheduler armed: next push in %s hours', interval_hours)
+
+
+def _stop_git_push_timer():
+    """Cancel any pending scheduled git push."""
+    global _git_push_timer
+    if _git_push_timer is not None:
+        _git_push_timer.cancel()
+        _git_push_timer = None
+
+
+# Restore timers on startup
+_startup_config = db._get_backup_config()
+if _startup_config.get('backup_enabled'):
+    _start_backup_timer(_startup_config['backup_interval_hours'])
+if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
+    _start_git_push_timer(_startup_config['git_push_interval_hours'])
 
 
 @app.route('/backups')
@@ -704,8 +722,8 @@ if _startup_schedule.get('enabled'):
 def backup_list():
     """View backup management page."""
     backups = db.list_backups()
-    schedule = _load_schedule()
-    return render_template('backups.html', backups=backups, schedule=schedule)
+    config = db._get_backup_config()
+    return render_template('backups.html', backups=backups, config=config)
 
 
 @app.route('/backups/create', methods=['POST'])
@@ -714,43 +732,82 @@ def backup_create():
     """Trigger a manual database backup."""
     try:
         result = db.backup_database(performed_by=current_username())
-        app_logger.info('Manual backup created: %s (%d bytes, git=%s) by=%s',
-                        result['filename'], result['size'], result['git_committed'],
+        app_logger.info('Manual backup created: %s (%d bytes, pruned=%d) by=%s',
+                        result['filename'], result['size'], result['pruned'],
                         current_username())
-        if result['git_committed']:
-            flash(f'Backup created and committed to git: {result["filename"]}', 'success')
-        else:
-            flash(f'Backup created: {result["filename"]} (git commit failed — file still saved locally)', 'warning')
+        flash(f'Backup created: {result["filename"]}', 'success')
     except Exception as e:
         app_logger.error('Manual backup failed: %s by=%s', e, current_username())
         flash(f'Backup failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
 
-@app.route('/backups/schedule', methods=['POST'])
+@app.route('/backups/config', methods=['POST'])
 @admin_required
-def backup_schedule():
-    """Update the recurring backup schedule."""
-    enabled = request.form.get('enabled') == '1'
+def backup_config():
+    """Update all backup configuration settings."""
+    config = db._get_backup_config()
+
+    # Local backup settings
+    backup_dir = request.form.get('backup_dir', '').strip()
+    if backup_dir:
+        config['backup_dir'] = backup_dir
+
     try:
-        interval_hours = float(request.form.get('interval_hours', 24))
-        if interval_hours < 0.1:
-            interval_hours = 0.1
+        config['max_backups'] = max(1, int(request.form.get('max_backups', 5)))
     except (ValueError, TypeError):
-        interval_hours = 24
+        config['max_backups'] = 5
 
-    config = {'enabled': enabled, 'interval_hours': interval_hours}
-    _save_schedule(config)
+    config['backup_enabled'] = request.form.get('backup_enabled') == '1'
+    try:
+        config['backup_interval_hours'] = max(0.1, float(request.form.get('backup_interval_hours', 24)))
+    except (ValueError, TypeError):
+        config['backup_interval_hours'] = 24
 
-    if enabled:
-        _start_backup_timer(interval_hours)
-        app_logger.info('Backup schedule enabled: every %s hours by=%s', interval_hours, current_username())
-        flash(f'Automatic backups enabled: every {interval_hours} hours.', 'success')
+    # Git push settings
+    config['git_enabled'] = request.form.get('git_enabled') == '1'
+    config['git_repo'] = request.form.get('git_repo', '').strip()
+    config['git_branch'] = request.form.get('git_branch', 'main').strip() or 'main'
+    try:
+        config['git_push_interval_hours'] = max(0.1, float(request.form.get('git_push_interval_hours', 24)))
+    except (ValueError, TypeError):
+        config['git_push_interval_hours'] = 24
+
+    db.save_backup_config(config)
+
+    # Manage backup timer
+    if config['backup_enabled']:
+        _start_backup_timer(config['backup_interval_hours'])
+        app_logger.info('Backup schedule enabled: every %s hours by=%s',
+                        config['backup_interval_hours'], current_username())
     else:
         _stop_backup_timer()
-        app_logger.info('Backup schedule disabled by=%s', current_username())
-        flash('Automatic backups disabled.', 'success')
 
+    # Manage git push timer
+    if config['git_enabled'] and config['git_repo']:
+        _start_git_push_timer(config['git_push_interval_hours'])
+        app_logger.info('Git push schedule enabled: every %s hours to %s by=%s',
+                        config['git_push_interval_hours'], config['git_repo'], current_username())
+    else:
+        _stop_git_push_timer()
+
+    app_logger.info('Backup config updated by=%s', current_username())
+    flash('Backup configuration saved.', 'success')
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/push', methods=['POST'])
+@admin_required
+def backup_push_git():
+    """Manually trigger a git push of backup bundle."""
+    try:
+        result = db.push_backups_to_git()
+        app_logger.info('Manual git push: %d files to %s by=%s',
+                        result['files_included'], result['pushed_to'], current_username())
+        flash(f'Backups pushed to git: {result["files_included"]} files bundled, pushed to {result["pushed_to"]}', 'success')
+    except Exception as e:
+        app_logger.error('Git push failed: %s by=%s', e, current_username())
+        flash(f'Git push failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
 
@@ -775,7 +832,8 @@ def backup_download(filename):
     if not filename.startswith('inventory_backup_') or '..' in filename:
         flash('Invalid backup file.', 'error')
         return redirect(url_for('backup_list'))
-    path = os.path.join(db.BACKUP_DIR, filename)
+    backup_dir = db._get_backup_dir()
+    path = os.path.join(backup_dir, filename)
     if not os.path.isfile(path):
         flash('Backup file not found.', 'error')
         return redirect(url_for('backup_list'))
