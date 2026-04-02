@@ -4,25 +4,35 @@
 {% block extra_head %}
 <style>
     @media print {
-        /* Hide everything except the label */
-        body * { display: none !important; }
-        #printable-label { display: block !important; }
-        #printable-label * { display: initial !important; }
-        #printable-label {
-            position: fixed; top: 0; left: 0;
-            width: auto; text-align: left;
-            padding: 0; margin: 0; background: white;
+        /* Hide UI chrome */
+        .sidebar, .mobile-toggle, .flash, nav, header, footer { display: none !important; }
+        /* Reset the main content wrapper */
+        .main-content {
+            margin: 0 !important; padding: 0 !important;
+            width: auto !important; min-height: 0 !important;
         }
-        /* DYMO LabelWriter 450: 3.5" x 1.125" address labels (30252)
-           Adjust width below if using a different label size */
+        /* Hide everything inside the page content, then reveal only the label */
+        .main-content * { display: none !important; }
+        #printable-label,
+        #printable-label * { display: block !important; }
+        html, body {
+            margin: 0 !important; padding: 0 !important;
+            width: auto !important; height: auto !important;
+            overflow: visible !important;
+        }
+        #printable-label {
+            position: absolute; top: 0; left: 0;
+            padding: 0; margin: 0; background: white;
+            width: 3.4in; height: 1.0in;
+            overflow: hidden;
+        }
+        /* DYMO LabelWriter 450: 3.5" x 1.125" address labels (30252) */
         #printable-label img {
             display: block !important;
             width: 3.4in; height: auto;
             max-height: 1.0in;
             object-fit: contain;
         }
-        .sidebar, .mobile-toggle, .flash { display: none !important; }
-        .main-content { margin: 0 !important; padding: 0 !important; }
         @page { size: 3.5in 1.125in; margin: 0.05in; }
     }
 
