@@ -3,12 +3,17 @@
 
 {% block extra_head %}
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+    @media (max-width: 768px) {
+        .scan-grid { grid-template-columns: 1fr !important; }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Barcode Scanner</h2>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;" class="scan-grid">
     <!-- USB Scanner / Manual Entry -->
     <div class="card" style="cursor: default;">
         <div class="section-label">USB Scanner / Manual Entry</div>
@@ -29,6 +34,9 @@
         <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
             Use your device camera to scan QR codes or barcodes.
         </p>
+        <div id="cameraUnsupported" style="display: none; padding: 16px; border-radius: 8px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2); color: #f59e0b; font-size: 13px;">
+            Camera scanning is not available. Your browser requires a secure (HTTPS) connection to access the camera. Please access this page via <strong>https://</strong>.
+        </div>
         <div id="cameraContainer">
             <button id="startCamera" class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="startCameraScanner()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -133,13 +141,21 @@
     let html5QrCode = null;
     let lastScanTime = 0;
 
+    // Pre-flight: check if camera API is available
+    (function() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            document.getElementById('cameraContainer').style.display = 'none';
+            document.getElementById('cameraUnsupported').style.display = 'block';
+        }
+    })();
+
     function startCameraScanner() {
         var startBtn = document.getElementById('startCamera');
         var errorEl = document.getElementById('cameraError');
         startBtn.style.display = 'none';
         errorEl.style.display = 'none';
 
-        // Specify supported formats: QR codes and Code 128 barcodes
+        // Specify supported formats: QR codes and common barcodes
         var formatsToSupport = [
             Html5QrcodeSupportedFormats.QR_CODE,
             Html5QrcodeSupportedFormats.CODE_128,
@@ -149,16 +165,18 @@
         ];
         html5QrCode = new Html5Qrcode("qr-reader", { formatsToSupport: formatsToSupport, verbose: false });
 
-        // Calculate a responsive qrbox that fits within the container
-        var containerWidth = document.getElementById('qr-reader').offsetWidth || 400;
-        var qrboxSize = Math.min(250, Math.floor(containerWidth * 0.7));
+        // Use a dynamic qrbox function so it adapts to the actual video dimensions
+        function qrboxFunction(viewfinderWidth, viewfinderHeight) {
+            var minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            var size = Math.floor(minEdge * 0.7);
+            return { width: size, height: size };
+        }
 
         html5QrCode.start(
             { facingMode: "environment" },
             {
                 fps: 10,
-                qrbox: { width: qrboxSize, height: qrboxSize },
-                aspectRatio: 1.0,
+                qrbox: qrboxFunction,
             },
             onCameraScan,
             function() {} // Called on every frame without a detection — ignore
@@ -172,6 +190,8 @@
                 errorEl.textContent = 'No camera found on this device.';
             } else if (msg.indexOf('NotReadableError') >= 0) {
                 errorEl.textContent = 'Camera is in use by another application.';
+            } else if (msg.indexOf('OverconstrainedError') >= 0) {
+                errorEl.textContent = 'Camera does not support the requested settings. Try a different device.';
             } else {
                 errorEl.textContent = 'Could not start camera: ' + msg;
             }
