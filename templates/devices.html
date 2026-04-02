@@ -2,7 +2,7 @@
 {% block title %}Devices{% endblock %}
 
 {% block content %}
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h2 style="font-size: 24px; font-weight: 700;">Devices</h2>
     {% if current_user and current_user.role == 'admin' %}
     <a href="{{ url_for('device_add') }}" class="btn btn-primary">
@@ -22,7 +22,7 @@
         <button type="submit" class="btn btn-primary btn-sm">Search</button>
         <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('filters').style.display = document.getElementById('filters').style.display === 'none' ? 'grid' : 'none'">Filters</button>
     </div>
-    <div id="filters" style="display: {% if selected_category or selected_status or selected_connectivity or selected_location %}grid{% else %}none{% endif %}; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+    <div id="filters" class="filter-grid" style="display: {% if selected_category or selected_status or selected_connectivity or selected_location %}grid{% else %}none{% endif %}; grid-template-columns: repeat(4, 1fr); gap: 12px;">
         <div>
             <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Category</label>
             <select name="category">
@@ -67,6 +67,7 @@
     </div>
 
     <div class="card" style="padding: 0; cursor: default;">
+        <div class="table-wrap">
         <table>
             <thead>
                 <tr>
@@ -105,6 +106,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
 
         {% if not devices %}
         <div style="text-align: center; padding: 48px 24px;">

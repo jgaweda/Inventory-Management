@@ -25,7 +25,7 @@
 </div>
 
 <!-- Breakdowns -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+<div class="grid-responsive" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
     <!-- By Category -->
     <div class="card" style="cursor: default;">
         <div class="section-label">By Category</div>
@@ -67,6 +67,7 @@
         <div class="section-label" style="margin-bottom: 0;">Recent Activity</div>
         <a href="{{ url_for('audit_log') }}" style="color: var(--accent-blue); font-size: 13px; text-decoration: none;">View all →</a>
     </div>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -93,6 +94,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% if not stats.recent_activity %}
     <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">No activity yet.</p>
     {% endif %}

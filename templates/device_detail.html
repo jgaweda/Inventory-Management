@@ -23,7 +23,7 @@
 
 {% block content %}
 <!-- Header -->
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <div>
         <a href="{{ url_for('device_list') }}" style="color: var(--text-muted); text-decoration: none; font-size: 13px;">← Back to Devices</a>
         <h2 style="font-size: 24px; font-weight: 700; margin-top: 8px;">{{ device.name }}</h2>
@@ -43,13 +43,13 @@
     {% endif %}
 </div>
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+<div class="grid-responsive" style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
     <!-- Left column: Device info -->
     <div>
         <!-- Device Information -->
         <div class="card" style="margin-bottom: 16px; cursor: default;">
             <div class="section-label">Device Information</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="grid-responsive" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div>
                     <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Category</div>
                     <div style="font-size: 14px;">{{ device.category or '—' }}</div>
