@@ -9,14 +9,26 @@
         #printable-label, #printable-label * { visibility: visible !important; }
         #printable-label {
             position: fixed; top: 0; left: 0;
-            width: 100%; text-align: center;
+            width: auto; text-align: left;
             padding: 0; margin: 0; background: white;
         }
         #printable-label img {
-            max-width: 100%; height: auto;
+            width: 3in; height: auto;
         }
         .sidebar, .mobile-toggle, .flash { display: none !important; }
         .main-content { margin: 0 !important; padding: 0 !important; }
+        @page { size: auto; margin: 0.25in; }
+    }
+
+    /* Lightbox overlay */
+    #labelLightbox {
+        display: none; position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.75); align-items: center; justify-content: center;
+        cursor: zoom-out;
+    }
+    #labelLightbox img {
+        max-width: 90vw; max-height: 90vh; border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
 </style>
 {% endblock %}
@@ -184,7 +196,8 @@
         <!-- Label Preview -->
         <div class="card" style="margin-bottom: 16px; cursor: default; text-align: center;">
             <div class="section-label">Device Label</div>
-            <div id="printable-label" style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+            <div id="printable-label" style="background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px; cursor: zoom-in;"
+                 onclick="document.getElementById('labelLightbox').style.display='flex'">
                 <img src="{{ url_for('serve_label', device_id=device.device_id) }}" alt="Device Label"
                      style="max-width: 100%; height: auto;">
             </div>
@@ -218,5 +231,10 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Label Lightbox -->
+<div id="labelLightbox" onclick="this.style.display='none'">
+    <img src="{{ url_for('serve_label', device_id=device.device_id) }}" alt="Device Label (full size)">
 </div>
 {% endblock %}
