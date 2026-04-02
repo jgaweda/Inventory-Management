@@ -66,13 +66,13 @@
         <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 16px;">
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Git Push</div>
             <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                Compresses all local backups into a single <code>inventory_backups.tar.gz</code> and pushes to a git repository. Each push overwrites the previous bundle.
+                Pushes all local <code>.db</code> backup files to a dedicated git branch. Uses an orphan branch so backups don't mix with application code. Leave repo blank to use the same repo as the app (origin).
             </p>
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Git repository</label>
                     <input type="text" name="git_repo" value="{{ config.git_repo }}"
-                           placeholder="https://github.com/user/repo.git"
+                           placeholder="Leave blank to use origin"
                            style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -107,7 +107,6 @@
     </form>
 
     <!-- Manual git push button (separate form) -->
-    {% if config.git_repo %}
     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
         <form method="POST" action="{{ url_for('backup_push_git') }}" style="display: inline;">
             <button type="submit" class="btn btn-secondary btn-sm">
@@ -116,7 +115,6 @@
             </button>
         </form>
     </div>
-    {% endif %}
 
     <!-- Active status indicators -->
     {% if config.backup_enabled or config.git_enabled %}

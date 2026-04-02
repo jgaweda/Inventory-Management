@@ -585,7 +585,7 @@ def _get_backup_config():
         'backup_enabled': saved.get('backup_enabled', False),
         'git_enabled': saved.get('git_enabled', False),
         'git_repo': saved.get('git_repo', ''),
-        'git_branch': saved.get('git_branch', 'main'),
+        'git_branch': saved.get('git_branch', 'backups'),
         'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
         'last_git_push': saved.get('last_git_push', ''),
     }
@@ -660,23 +660,18 @@ def _prune_old_backups(max_backups):
 
 def push_backups_to_git():
     """
-    Compress all local backups into a single .tar.gz bundle and push to git.
-    The bundle overwrites the previous one in the repo.
+    Push all local .db backup files to a dedicated git branch.
+    Uses the configured branch (defaults to 'backups'). If pushing to the
+    same repo as the app code, this uses an orphan branch so backup files
+    don't pollute the main working tree.
     Returns dict with push metadata.
     """
-    import tarfile
+    import tempfile
 
     config = _get_backup_config()
     backup_dir = _get_backup_dir()
+    git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     git_repo = config.get('git_repo', '').strip()
-    git_branch = config.get('git_branch', 'main').strip() or 'main'
-
-    if not git_repo:
-        raise ValueError('No git repository configured')
-
-    # Create compressed tar bundle
-    bundle_name = 'inventory_backups.tar.gz'
-    bundle_path = os.path.join(backup_dir, bundle_name)
 
     backup_files = sorted(
         [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')]
@@ -684,58 +679,76 @@ def push_backups_to_git():
     if not backup_files:
         raise ValueError('No backup files to push')
 
-    with tarfile.open(bundle_path, 'w:gz') as tar:
-        for bf in backup_files:
-            tar.add(os.path.join(backup_dir, bf), arcname=bf)
+    # Use a temporary directory for a clean worktree to avoid polluting main branch
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            # Determine the remote to push to
+            remote = 'origin'
+            if git_repo:
+                # Set up or update a dedicated remote
+                subprocess.run(
+                    ['git', 'remote', 'set-url', 'backup-remote', git_repo],
+                    cwd=REPO_DIR, capture_output=True, timeout=15,
+                )
+                result = subprocess.run(
+                    ['git', 'remote', 'get-url', 'backup-remote'],
+                    cwd=REPO_DIR, capture_output=True, timeout=15,
+                )
+                if result.returncode != 0:
+                    subprocess.run(
+                        ['git', 'remote', 'add', 'backup-remote', git_repo],
+                        cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+                    )
+                remote = 'backup-remote'
 
-    bundle_size = os.path.getsize(bundle_path)
+            # Initialize a fresh git repo in tmp to build the commit
+            subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True, timeout=15)
+            subprocess.run(['git', 'checkout', '--orphan', git_branch],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=15)
 
-    # Git operations: add, commit, push
-    try:
-        # Ensure the remote exists or add it
-        subprocess.run(
-            ['git', 'remote', 'set-url', 'backup-remote', git_repo],
-            cwd=REPO_DIR, capture_output=True, timeout=15,
-        )
-        # If set-url fails because remote doesn't exist, add it
-        result = subprocess.run(
-            ['git', 'remote', 'get-url', 'backup-remote'],
-            cwd=REPO_DIR, capture_output=True, timeout=15,
-        )
-        if result.returncode != 0:
+            # Copy .db files into the temp repo
+            total_size = 0
+            for bf in backup_files:
+                src_path = os.path.join(backup_dir, bf)
+                shutil.copy2(src_path, os.path.join(tmpdir, bf))
+                total_size += os.path.getsize(src_path)
+
+            subprocess.run(['git', 'add', '.'],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=30)
             subprocess.run(
-                ['git', 'remote', 'add', 'backup-remote', git_repo],
-                cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+                ['git', 'commit', '-m',
+                 f'Database backup {datetime.now().strftime("%Y-%m-%d %H:%M")} ({len(backup_files)} files)'],
+                cwd=tmpdir, capture_output=True, check=True, timeout=30,
             )
 
-        subprocess.run(
-            ['git', 'add', '-f', bundle_path],
-            cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
-        )
-        subprocess.run(
-            ['git', 'commit', '-m', f'Database backup bundle {datetime.now().strftime("%Y-%m-%d %H:%M")}',
-             '--', bundle_path],
-            cwd=REPO_DIR, capture_output=True, check=True, timeout=30,
-        )
-        subprocess.run(
-            ['git', 'push', '-u', 'backup-remote', f'HEAD:{git_branch}', '--force'],
-            cwd=REPO_DIR, capture_output=True, check=True, timeout=120,
-        )
-    except subprocess.CalledProcessError as e:
-        stderr = e.stderr.decode() if e.stderr else str(e)
-        raise RuntimeError(f'Git push failed: {stderr}')
-    except subprocess.TimeoutExpired:
-        raise RuntimeError('Git push timed out')
+            # Get the remote URL from the main repo
+            url_result = subprocess.run(
+                ['git', 'remote', 'get-url', remote],
+                cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+            )
+            remote_url = url_result.stdout.decode().strip()
+
+            # Push from the temp repo to the remote
+            subprocess.run(
+                ['git', 'push', '--force', remote_url, f'{git_branch}:{git_branch}'],
+                cwd=tmpdir, capture_output=True, check=True, timeout=120,
+            )
+
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode() if e.stderr else str(e)
+            raise RuntimeError(f'Git push failed: {stderr}')
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('Git push timed out')
 
     # Update last push timestamp
     config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     save_backup_config(config)
 
+    push_target = git_repo or 'origin'
     return {
-        'bundle_name': bundle_name,
-        'bundle_size': bundle_size,
-        'files_included': len(backup_files),
-        'pushed_to': f'{git_repo} ({git_branch})',
+        'files_pushed': len(backup_files),
+        'total_size': total_size,
+        'pushed_to': f'{push_target} ({git_branch})',
     }
 
 

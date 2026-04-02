@@ -662,7 +662,7 @@ def _run_scheduled_git_push():
     try:
         result = db.push_backups_to_git()
         app_logger.info('Scheduled git push completed: %d files to %s',
-                        result['files_included'], result['pushed_to'])
+                        result['files_pushed'], result['pushed_to'])
     except Exception as e:
         app_logger.error('Scheduled git push failed: %s', e)
     # Re-arm from latest config
@@ -800,7 +800,7 @@ def backup_config():
     # Git push settings
     config['git_enabled'] = request.form.get('git_enabled') == '1'
     config['git_repo'] = request.form.get('git_repo', '').strip()
-    config['git_branch'] = request.form.get('git_branch', 'main').strip() or 'main'
+    config['git_branch'] = request.form.get('git_branch', 'backups').strip() or 'backups'
     try:
         config['git_push_interval_hours'] = max(0.1, float(request.form.get('git_push_interval_hours', 24)))
     except (ValueError, TypeError):
@@ -836,8 +836,8 @@ def backup_push_git():
     try:
         result = db.push_backups_to_git()
         app_logger.info('Manual git push: %d files to %s by=%s',
-                        result['files_included'], result['pushed_to'], current_username())
-        flash(f'Backups pushed to git: {result["files_included"]} files bundled, pushed to {result["pushed_to"]}', 'success')
+                        result['files_pushed'], result['pushed_to'], current_username())
+        flash(f'Backups pushed to git: {result["files_pushed"]} .db files pushed to {result["pushed_to"]}', 'success')
     except Exception as e:
         app_logger.error('Git push failed: %s by=%s', e, current_username())
         flash(f'Git push failed: {e}', 'error')
