@@ -422,10 +422,49 @@ def api_lookup():
 # ---------------------------------------------------------------------------
 
 @app.route('/export')
+def export_page():
+    """Show export page with filter options."""
+    return render_template('export.html')
+
+
+@app.route('/export/download')
 def export_csv():
-    """Export all devices (including retired) to CSV."""
-    devices = db.get_all_devices(include_retired=True)
-    app_logger.info('CSV export: %d devices ip=%s', len(devices), request.remote_addr)
+    """Export devices to CSV with optional filters."""
+    # Read filter params
+    category = request.args.get('category', '')
+    status = request.args.get('status', '')
+    connectivity = request.args.get('connectivity', '')
+    location = request.args.get('location', '')
+    q = request.args.get('q', '')
+    include_retired = request.args.get('include_retired') == '1'
+
+    if category or status or connectivity or location or q:
+        # Use search with filters
+        if not status and include_retired:
+            status = ''  # search_devices excludes retired by default
+        devices = db.search_devices(
+            query=q,
+            category=category,
+            status=status if status else ('retired' if include_retired else ''),
+            connectivity=connectivity,
+            location=location,
+        )
+        # If include_retired and no specific status, we need all devices
+        if include_retired and not status:
+            non_retired = db.search_devices(query=q, category=category, connectivity=connectivity, location=location)
+            retired = db.search_devices(query=q, category=category, status='retired', connectivity=connectivity, location=location)
+            # Merge without duplicates
+            seen = set()
+            devices = []
+            for d in non_retired + retired:
+                if d['device_id'] not in seen:
+                    seen.add(d['device_id'])
+                    devices.append(d)
+    else:
+        devices = db.get_all_devices(include_retired=include_retired)
+
+    app_logger.info('CSV export: %d devices (filters: cat=%s status=%s q=%s) ip=%s',
+                    len(devices), category or 'all', status or 'all', q or 'none', request.remote_addr)
 
     output = io.StringIO()
     fields = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',

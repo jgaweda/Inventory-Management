@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Export CSV{% endblock %}
+
+{% block content %}
+<h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Export CSV</h2>
+
+<div class="card" style="cursor: default; max-width: 600px;">
+    <div class="section-label">Export Filters</div>
+    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        Select filters to narrow down the export. Leave all filters empty to export everything.
+    </p>
+
+    <form action="{{ url_for('export_csv') }}" method="GET">
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Search</label>
+                <input type="text" name="q" placeholder="Name, serial, barcode, notes..." style="width: 100%;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Category</label>
+                    <select name="category">
+                        <option value="">All Categories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.name }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Status</label>
+                    <select name="status">
+                        <option value="">All Statuses</option>
+                        <option value="available">Available</option>
+                        <option value="checked_out">Checked Out</option>
+                        <option value="retired">Retired</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Connectivity</label>
+                    <input type="text" name="connectivity" placeholder="e.g. Wi-Fi, Ethernet...">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Location</label>
+                    <input type="text" name="location" placeholder="e.g. Lab, Office...">
+                </div>
+            </div>
+
+            <div>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
+                    <input type="checkbox" name="include_retired" value="1" style="width: 16px; height: 16px;">
+                    Include retired devices
+                </label>
+            </div>
+
+            <div style="padding-top: 8px;">
+                <button type="submit" class="btn btn-primary">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Download CSV
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

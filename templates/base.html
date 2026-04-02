@@ -285,7 +285,7 @@
 
         <div class="nav-separator"></div>
 
-        <a href="{{ url_for('export_csv') }}" class="nav-link">
+        <a href="{{ url_for('export_page') }}" class="nav-link {% if request.endpoint == 'export_page' %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Export CSV
         </a>
