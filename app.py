@@ -674,6 +674,8 @@ import threading
 
 _backup_timer = None      # Timer for recurring local backups
 _git_push_timer = None    # Timer for recurring git pushes
+_next_backup_time = None  # datetime of next scheduled backup
+_next_git_push_time = None  # datetime of next scheduled git push
 
 
 def _run_scheduled_backup():
@@ -706,9 +708,11 @@ def _run_scheduled_git_push():
 
 def _start_backup_timer(interval_hours):
     """Start (or restart) the recurring backup timer."""
-    global _backup_timer
+    global _backup_timer, _next_backup_time
     _stop_backup_timer()
     seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
+    from datetime import timedelta
+    _next_backup_time = datetime.now() + timedelta(seconds=seconds)
     _backup_timer = threading.Timer(seconds, _run_scheduled_backup)
     _backup_timer.daemon = True
     _backup_timer.start()
@@ -717,17 +721,20 @@ def _start_backup_timer(interval_hours):
 
 def _stop_backup_timer():
     """Cancel any pending scheduled backup."""
-    global _backup_timer
+    global _backup_timer, _next_backup_time
     if _backup_timer is not None:
         _backup_timer.cancel()
         _backup_timer = None
+    _next_backup_time = None
 
 
 def _start_git_push_timer(interval_hours):
     """Start (or restart) the recurring git push timer."""
-    global _git_push_timer
+    global _git_push_timer, _next_git_push_time
     _stop_git_push_timer()
     seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
+    from datetime import timedelta
+    _next_git_push_time = datetime.now() + timedelta(seconds=seconds)
     _git_push_timer = threading.Timer(seconds, _run_scheduled_git_push)
     _git_push_timer.daemon = True
     _git_push_timer.start()
@@ -736,10 +743,11 @@ def _start_git_push_timer(interval_hours):
 
 def _stop_git_push_timer():
     """Cancel any pending scheduled git push."""
-    global _git_push_timer
+    global _git_push_timer, _next_git_push_time
     if _git_push_timer is not None:
         _git_push_timer.cancel()
         _git_push_timer = None
+    _next_git_push_time = None
 
 
 # Restore timers on startup
@@ -756,7 +764,10 @@ def backup_list():
     """View backup management page."""
     backups = db.list_backups()
     config = db._get_backup_config()
-    return render_template('backups.html', backups=backups, config=config)
+    next_backup = _next_backup_time.strftime('%Y-%m-%d %H:%M:%S') if _next_backup_time else None
+    next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
+    return render_template('backups.html', backups=backups, config=config,
+                           next_backup_time=next_backup, next_git_push_time=next_push)
 
 
 @app.route('/backups/create', methods=['POST'])
