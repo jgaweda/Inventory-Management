@@ -824,14 +824,14 @@ def backup_config():
     except (ValueError, TypeError):
         config['max_backups'] = 5
 
-    config['backup_enabled'] = request.form.get('backup_enabled') == '1'
+    config['backup_enabled'] = '1' in request.form.getlist('backup_enabled')
     try:
         config['backup_interval_hours'] = max(0.1, float(request.form.get('backup_interval_hours', 24)))
     except (ValueError, TypeError):
         config['backup_interval_hours'] = 24
 
     # Git push settings
-    config['git_enabled'] = request.form.get('git_enabled') == '1'
+    config['git_enabled'] = '1' in request.form.getlist('git_enabled')
     config['git_repo'] = request.form.get('git_repo', '').strip()
     config['git_branch'] = request.form.get('git_branch', 'backups').strip() or 'backups'
     config['git_token'] = request.form.get('git_token', '').strip()
