@@ -4,34 +4,22 @@
 {% block extra_head %}
 <style>
     @media print {
-        /* Hide UI chrome */
-        .sidebar, .mobile-toggle, .flash, nav, header, footer { display: none !important; }
-        /* Reset the main content wrapper */
-        .main-content {
-            margin: 0 !important; padding: 0 !important;
-            width: auto !important; min-height: 0 !important;
-        }
-        /* Hide everything inside the page content, then reveal only the label */
-        .main-content * { display: none !important; }
-        #printable-label,
-        #printable-label * { display: block !important; }
-        html, body {
-            margin: 0 !important; padding: 0 !important;
-            width: auto !important; height: auto !important;
-            overflow: visible !important;
-        }
-        #printable-label {
-            position: absolute; top: 0; left: 0;
-            padding: 0; margin: 0; background: white;
-            width: 3.4in; height: 1.0in;
-            overflow: hidden;
-        }
-        /* DYMO LabelWriter 450: 3.5" x 1.125" address labels (30252) */
-        #printable-label img {
+        /* Hide everything */
+        body > *:not(#print-only) { display: none !important; }
+        /* Show only the print container */
+        #print-only {
             display: block !important;
+            position: absolute; top: 0; left: 0;
+            margin: 0; padding: 0; background: white;
+        }
+        #print-only img {
             width: 3.4in; height: auto;
             max-height: 1.0in;
             object-fit: contain;
+        }
+        html, body {
+            margin: 0 !important; padding: 0 !important;
+            height: auto !important; overflow: hidden !important;
         }
         @page { size: 3.5in 1.125in; margin: 0.05in; }
     }
@@ -218,7 +206,7 @@
                      style="max-width: 100%; height: auto;">
             </div>
             <div style="display: flex; gap: 8px;">
-                <button onclick="window.print()" class="btn btn-primary btn-sm" style="flex: 1; justify-content: center;">
+                <button onclick="printLabel()" class="btn btn-primary btn-sm" style="flex: 1; justify-content: center;">
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     Print Label
                 </button>
@@ -253,4 +241,20 @@
 <div id="labelLightbox" onclick="this.style.display='none'">
     <img src="{{ url_for('serve_label', device_id=device.device_id) }}" alt="Device Label (full size)">
 </div>
+
+<script>
+function printLabel() {
+    // Create a temporary container as a direct child of body with just the label image
+    var container = document.createElement('div');
+    container.id = 'print-only';
+    container.style.display = 'none';
+    var img = document.createElement('img');
+    img.src = '{{ url_for("serve_label", device_id=device.device_id) }}';
+    container.appendChild(img);
+    document.body.appendChild(container);
+    // Wait for image to be ready then print
+    img.onload = function() { window.print(); document.body.removeChild(container); };
+    if (img.complete) { window.print(); document.body.removeChild(container); }
+}
+</script>
 {% endblock %}
