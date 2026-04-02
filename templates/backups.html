@@ -78,8 +78,16 @@
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Branch</label>
                     <input type="text" name="git_branch" value="{{ config.git_branch }}"
-                           placeholder="main"
+                           placeholder="backups"
                            style="width: 160px; font-size: 13px; padding: 8px 12px;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Access token</label>
+                    <input type="password" name="git_token" value="{{ config.git_token }}"
+                           placeholder="ghp_... (Personal Access Token)"
+                           autocomplete="off"
+                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                    <span style="font-size: 11px; color: var(--text-muted);">GitHub PAT with repo Contents read/write</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">

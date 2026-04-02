@@ -586,6 +586,7 @@ def _get_backup_config():
         'git_enabled': saved.get('git_enabled', False),
         'git_repo': saved.get('git_repo', ''),
         'git_branch': saved.get('git_branch', 'backups'),
+        'git_token': saved.get('git_token', ''),
         'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
         'last_git_push': saved.get('last_git_push', ''),
     }
@@ -721,12 +722,27 @@ def push_backups_to_git():
                 cwd=tmpdir, capture_output=True, check=True, timeout=30,
             )
 
-            # Get the remote URL from the main repo
-            url_result = subprocess.run(
-                ['git', 'remote', 'get-url', remote],
-                cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
-            )
-            remote_url = url_result.stdout.decode().strip()
+            # Build the push URL
+            git_token = config.get('git_token', '').strip()
+            if git_repo:
+                remote_url = git_repo
+            else:
+                url_result = subprocess.run(
+                    ['git', 'remote', 'get-url', 'origin'],
+                    cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+                )
+                remote_url = url_result.stdout.decode().strip()
+
+            # Convert SSH URL to HTTPS if a token is provided
+            if git_token and remote_url.startswith('git@github.com:'):
+                # git@github.com:user/repo.git -> https://github.com/user/repo.git
+                path = remote_url.replace('git@github.com:', '')
+                remote_url = f'https://github.com/{path}'
+
+            # Inject token into HTTPS URL for authentication
+            if git_token and remote_url.startswith('https://'):
+                # https://github.com/... -> https://x-access-token:<token>@github.com/...
+                remote_url = remote_url.replace('https://', f'https://x-access-token:{git_token}@', 1)
 
             # Push from the temp repo to the remote
             subprocess.run(

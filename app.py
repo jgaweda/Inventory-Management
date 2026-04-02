@@ -801,6 +801,7 @@ def backup_config():
     config['git_enabled'] = request.form.get('git_enabled') == '1'
     config['git_repo'] = request.form.get('git_repo', '').strip()
     config['git_branch'] = request.form.get('git_branch', 'backups').strip() or 'backups'
+    config['git_token'] = request.form.get('git_token', '').strip()
     try:
         config['git_push_interval_hours'] = max(0.1, float(request.form.get('git_push_interval_hours', 24)))
     except (ValueError, TypeError):
