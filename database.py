@@ -625,6 +625,47 @@ def list_backups():
     return backups
 
 
+def restore_database(filename):
+    """
+    Restore the database from a backup file using SQLite online backup API.
+    Creates a safety backup of the current DB first.
+    Returns dict with restore metadata.
+    """
+    if not filename.startswith('inventory_backup_') or '..' in filename:
+        raise ValueError('Invalid backup filename')
+    backup_path = os.path.join(BACKUP_DIR, filename)
+    if not os.path.isfile(backup_path):
+        raise FileNotFoundError(f'Backup file not found: {filename}')
+
+    # Validate the backup file is a valid SQLite database
+    test_conn = sqlite3.connect(backup_path)
+    try:
+        test_conn.execute('SELECT COUNT(*) FROM devices')
+        test_conn.execute('SELECT COUNT(*) FROM users')
+    except sqlite3.DatabaseError as e:
+        test_conn.close()
+        raise ValueError(f'Backup file is not a valid database: {e}')
+    finally:
+        test_conn.close()
+
+    # Create a safety backup of the current DB before overwriting
+    safety_backup = backup_database(performed_by='pre-restore-safety')
+
+    # Restore: copy backup over the live database using the backup API
+    src = sqlite3.connect(backup_path)
+    dst = sqlite3.connect(DB_PATH)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+
+    return {
+        'restored_from': filename,
+        'safety_backup': safety_backup['filename'],
+    }
+
+
 def delete_backup(filename):
     """Delete a backup file. Returns True if deleted."""
     if not filename.startswith('inventory_backup_') or '..' in filename:

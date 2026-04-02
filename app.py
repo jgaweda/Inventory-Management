@@ -444,61 +444,6 @@ def export_csv():
     )
 
 # ---------------------------------------------------------------------------
-# CSV Import (admin only)
-# ---------------------------------------------------------------------------
-
-@app.route('/import', methods=['GET', 'POST'])
-@admin_required
-def import_csv():
-    if request.method == 'POST':
-        file = request.files.get('file')
-        if not file or not file.filename:
-            flash('Please select a CSV file.', 'error')
-            return render_template('import.html')
-
-        performed_by = current_username()
-        imported = 0
-        errors = 0
-
-        try:
-            stream = io.TextIOWrapper(file.stream, encoding='utf-8-sig')
-            reader = csv.DictReader(stream)
-            for row in reader:
-                name = row.get('name', '').strip()
-                if not name:
-                    errors += 1
-                    continue
-                try:
-                    vendor_val = row.get('vendor_supplied', '0').strip().lower()
-                    data = {
-                        'name': name,
-                        'category': row.get('category', ''),
-                        'manufacturer': row.get('manufacturer', ''),
-                        'model_number': row.get('model_number', ''),
-                        'serial_number': row.get('serial_number', ''),
-                        'connectivity': row.get('connectivity', ''),
-                        'vendor_supplied': 1 if vendor_val in ('1', 'yes', 'true') else 0,
-                        'location': row.get('location', ''),
-                        'notes': row.get('notes', ''),
-                    }
-                    device_id = db.add_device(data, performed_by=performed_by)
-                    device = db.get_device(device_id)
-                    barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
-                    imported += 1
-                except Exception:
-                    errors += 1
-        except Exception as e:
-            app_logger.error('CSV import failed: %s by=%s', e, current_username())
-            flash(f'Error reading CSV file: {e}', 'error')
-            return render_template('import.html')
-
-        app_logger.info('CSV import: %d imported, %d errors, by=%s', imported, errors, current_username())
-        flash(f'Import complete: {imported} devices imported, {errors} errors.', 'success')
-        return redirect(url_for('device_list'))
-
-    return render_template('import.html')
-
-# ---------------------------------------------------------------------------
 # User management (admin only)
 # ---------------------------------------------------------------------------
 
@@ -836,6 +781,26 @@ def backup_download(filename):
         return redirect(url_for('backup_list'))
     app_logger.info('Backup downloaded: %s by=%s', filename, current_username())
     return send_file(path, as_attachment=True, download_name=filename)
+
+
+@app.route('/backups/<filename>/restore', methods=['POST'])
+@admin_required
+def backup_restore(filename):
+    """Restore the database from a backup file."""
+    try:
+        result = db.restore_database(filename)
+        app_logger.info('Database restored from %s (safety backup: %s) by=%s',
+                        result['restored_from'], result['safety_backup'], current_username())
+        flash(f'Database restored from {filename}. A safety backup was created: {result["safety_backup"]}', 'success')
+    except FileNotFoundError:
+        flash('Backup file not found.', 'error')
+    except ValueError as e:
+        app_logger.error('Restore failed: %s by=%s', e, current_username())
+        flash(f'Restore failed: {e}', 'error')
+    except Exception as e:
+        app_logger.error('Restore failed: %s by=%s', e, current_username())
+        flash(f'Restore failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
 
 # ---------------------------------------------------------------------------
 # Global error handlers

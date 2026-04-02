@@ -74,6 +74,12 @@
                 </td>
                 <td style="text-align: right; white-space: nowrap;">
                     <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                        <form method="POST" action="{{ url_for('backup_restore', filename=backup.filename) }}" onsubmit="return confirm('Restore database from this backup?\n\nThis will overwrite the current database. A safety backup will be created first.')" style="margin: 0;">
+                            <button type="submit" class="btn btn-primary btn-sm" title="Restore">
+                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
+                                Restore
+                            </button>
+                        </form>
                         <a href="{{ url_for('backup_download', filename=backup.filename) }}" class="btn btn-secondary btn-sm" title="Download">
                             <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                         </a>
