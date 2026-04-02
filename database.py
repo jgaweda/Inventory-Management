@@ -142,6 +142,11 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_barcode ON devices(barcode_value)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_device ON audit_log(device_id)')
 
+        # Migrate: add sort_order column if missing (existing databases)
+        cols = [row[1] for row in conn.execute('PRAGMA table_info(categories)').fetchall()]
+        if 'sort_order' not in cols:
+            conn.execute('ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 99')
+
         # Seed default categories
         for name, desc, sort_ord in DEFAULT_CATEGORIES:
             conn.execute(
