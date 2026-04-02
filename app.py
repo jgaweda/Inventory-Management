@@ -742,6 +742,39 @@ def backup_create():
     return redirect(url_for('backup_list'))
 
 
+@app.route('/backups/upload', methods=['POST'])
+@admin_required
+def backup_upload():
+    """Restore database from an uploaded .db file."""
+    file = request.files.get('backup_file')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('backup_list'))
+    if not file.filename.endswith('.db'):
+        flash('Invalid file type. Please upload a .db file.', 'error')
+        return redirect(url_for('backup_list'))
+    try:
+        # Save uploaded file to backup dir
+        backup_dir = db._get_backup_dir()
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        dest_filename = f'inventory_backup_{timestamp}_uploaded.db'
+        dest_path = os.path.join(backup_dir, dest_filename)
+        file.save(dest_path)
+
+        # Restore from the uploaded file
+        result = db.restore_database(dest_filename)
+        app_logger.info('Database restored from upload: %s (safety: %s) by=%s',
+                        dest_filename, result['safety_backup'], current_username())
+        flash(f'Database restored from uploaded file. Safety backup: {result["safety_backup"]}', 'success')
+    except ValueError as e:
+        app_logger.error('Upload restore failed: %s by=%s', e, current_username())
+        flash(f'Restore failed: {e}', 'error')
+    except Exception as e:
+        app_logger.error('Upload restore failed: %s by=%s', e, current_username())
+        flash(f'Restore failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
 @app.route('/backups/config', methods=['POST'])
 @admin_required
 def backup_config():

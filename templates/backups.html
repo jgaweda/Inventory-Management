@@ -7,12 +7,22 @@
         <h2 style="font-size: 24px; font-weight: 700;">Database Backups</h2>
         <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ backups|length }} backup{{ 's' if backups|length != 1 else '' }} on file</p>
     </div>
-    <form method="POST" action="{{ url_for('backup_create') }}">
-        <button type="submit" class="btn btn-primary">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Backup Now
-        </button>
-    </form>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <form method="POST" action="{{ url_for('backup_create') }}">
+            <button type="submit" class="btn btn-primary">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Backup Now
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('backup_upload') }}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 8px;">
+            <label class="btn btn-secondary" style="cursor: pointer; margin: 0;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                Restore from File
+                <input type="file" name="backup_file" accept=".db" style="display: none;"
+                       onchange="if(confirm('Restore database from this file?\\n\\nThis will overwrite the current database. A safety backup will be created first.')) this.form.submit();">
+            </label>
+        </form>
+    </div>
 </div>
 
 <!-- Backup Configuration -->
