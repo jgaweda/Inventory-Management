@@ -25,7 +25,7 @@ import database as db
 import barcode_utils
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-app.secret_key = 'hp-connectivity-inventory-system-secret-key'
+app.secret_key = os.environ.get('SECRET_KEY', 'hp-connectivity-inventory-system-change-me')
 
 # ---------------------------------------------------------------------------
 # Application logging (rotating file, single file that overwrites at limit)
@@ -993,18 +993,30 @@ def internal_error(e):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='HP Connectivity Team Inventory System')
-    parser.add_argument('--host', default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=5000, help='Port to listen on (default: 5000)')
+    parser.add_argument('--dev', action='store_true', help='Run in development mode with debug enabled')
     args = parser.parse_args()
 
     print(f"""
     ╔══════════════════════════════════════════════════╗
     ║   HP Connectivity Team Inventory System          ║
-    ║   Running at: http://{args.host}:{args.port}            ║
-    ║   Database: {db.DB_PATH:<36s} ║
+    ║   Running at: http://{args.host}:{args.port:<5d}               ║
+    ║   Mode: {'DEVELOPMENT' if args.dev else 'PRODUCTION':<14s}                          ║
     ║   Default login: admin / admin                   ║
     ║   Press Ctrl+C to stop                           ║
     ╚══════════════════════════════════════════════════╝
     """)
 
-    app.run(host=args.host, port=args.port, debug=True)
+    if args.dev:
+        app.run(host=args.host, port=args.port, debug=True)
+    else:
+        try:
+            from waitress import serve
+            app_logger.info('Starting production server (waitress) on %s:%s', args.host, args.port)
+            serve(app, host=args.host, port=args.port, threads=4)
+        except ImportError:
+            print("  WARNING: waitress not installed. Install it for production:")
+            print("    pip install waitress")
+            print("  Falling back to Flask development server.\n")
+            app.run(host=args.host, port=args.port, debug=False)

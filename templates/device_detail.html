@@ -12,12 +12,16 @@
             width: auto; text-align: left;
             padding: 0; margin: 0; background: white;
         }
+        /* DYMO LabelWriter 450: 3.5" x 1.125" address labels (30252)
+           Adjust width below if using a different label size */
         #printable-label img {
-            width: 3in; height: auto;
+            width: 3.4in; height: auto;
+            max-height: 1.0in;
+            object-fit: contain;
         }
         .sidebar, .mobile-toggle, .flash { display: none !important; }
         .main-content { margin: 0 !important; padding: 0 !important; }
-        @page { size: auto; margin: 0.25in; }
+        @page { size: 3.5in 1.125in; margin: 0.05in; }
     }
 
     /* Lightbox overlay */
