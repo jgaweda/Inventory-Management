@@ -741,7 +741,7 @@ def push_backups_to_git():
         except subprocess.TimeoutExpired:
             raise RuntimeError('Git push timed out')
 
-    # Update last push timestamp
+    # Update last push timestamp and record which files were pushed
     config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     save_backup_config(config)
 
