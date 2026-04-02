@@ -85,6 +85,13 @@
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
         </select>
+        <select id="timeFilter" onchange="filterLogs()" style="width: auto; font-size: 13px; padding: 8px 12px;">
+            <option value="">All Time</option>
+            <option value="1">Past Hour</option>
+            <option value="24">Past 24 Hours</option>
+            <option value="168">Past 7 Days</option>
+            <option value="720">Past 30 Days</option>
+        </select>
     </div>
     <div class="log-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="filter-chip" data-category="" onclick="setCategoryFilter(this)">All</button>
@@ -141,6 +148,8 @@ document.querySelector('.filter-chip[data-category=""]').classList.add('active')
 function filterLogs() {
     var text = document.getElementById('logFilter').value.toLowerCase();
     var level = document.getElementById('levelFilter').value;
+    var timeHours = parseInt(document.getElementById('timeFilter').value) || 0;
+    var cutoff = timeHours ? new Date(Date.now() - timeHours * 3600000) : null;
     var entries = document.querySelectorAll('.log-entry');
     var visible = 0;
 
@@ -155,6 +164,14 @@ function filterLogs() {
         // Level filter
         var matchLevel = !level || entryLevel === level;
 
+        // Time filter
+        var matchTime = true;
+        if (cutoff) {
+            var tsText = el.querySelector('.log-ts').textContent.trim();
+            var entryDate = new Date(tsText.replace(' ', 'T'));
+            matchTime = entryDate >= cutoff;
+        }
+
         // Category filter
         var matchCategory = true;
         if (activeCategory && categoryPatterns[activeCategory]) {
@@ -162,7 +179,7 @@ function filterLogs() {
             matchCategory = patterns.some(function(p) { return msgText.indexOf(p) >= 0; });
         }
 
-        var show = matchText && matchLevel && matchCategory;
+        var show = matchText && matchLevel && matchTime && matchCategory;
         el.style.display = show ? '' : 'none';
         if (show) visible++;
     });
