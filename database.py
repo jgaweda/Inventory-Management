@@ -301,12 +301,14 @@ def search_devices(query='', category='', status='', connectivity='', location='
 
         if query:
             conditions.append("""
-                (name LIKE ? OR manufacturer LIKE ? OR model_number LIKE ?
-                 OR serial_number LIKE ? OR barcode_value LIKE ?
+                (name LIKE ? OR category LIKE ? OR manufacturer LIKE ?
+                 OR model_number LIKE ? OR serial_number LIKE ?
+                 OR connectivity LIKE ? OR barcode_value LIKE ?
+                 OR status LIKE ? OR location LIKE ?
                  OR assigned_to LIKE ? OR notes LIKE ?)
             """)
             like_q = f"%{query}%"
-            params.extend([like_q] * 7)
+            params.extend([like_q] * 11)
 
         where = " AND ".join(conditions) if conditions else "1=1"
         sql = f"SELECT * FROM devices WHERE {where} ORDER BY updated_at DESC"
