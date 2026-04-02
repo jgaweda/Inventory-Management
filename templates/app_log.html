@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Application Log{% endblock %}
+
+{% block extra_head %}
+<style>
+    .log-entry {
+        display: grid; grid-template-columns: 170px 70px 1fr;
+        gap: 12px; padding: 8px 12px; font-size: 13px;
+        border-bottom: 1px solid var(--border-color);
+        font-family: 'JetBrains Mono', monospace;
+        align-items: center;
+    }
+    .log-entry:hover { background: var(--bg-card-hover); }
+    .log-ts { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+    .log-msg { color: var(--text-primary); word-break: break-word; }
+    .log-level {
+        font-size: 11px; font-weight: 700; padding: 2px 8px;
+        border-radius: 4px; text-align: center; white-space: nowrap;
+    }
+    .level-INFO    { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .level-WARNING { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .level-ERROR   { background: rgba(239,68,68,0.15);  color: #ef4444; }
+    .level-DEBUG   { background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .level-CRITICAL { background: rgba(239,68,68,0.25); color: #ef4444; }
+    @media (max-width: 768px) {
+        .log-entry { grid-template-columns: 1fr; gap: 4px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+        <h2 style="font-size: 24px; font-weight: 700;">Application Log</h2>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ entries|length }} entries shown (most recent first)</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <form method="POST" action="{{ url_for('clear_logs') }}" onsubmit="return confirm('Clear all log entries?')">
+            <button type="submit" class="btn btn-danger btn-sm">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                Clear Log
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Filter -->
+<div class="card" style="margin-bottom: 16px; cursor: default; padding: 12px 16px;">
+    <div style="display: flex; gap: 12px; align-items: center;">
+        <input type="text" id="logFilter" placeholder="Filter log entries..." style="flex: 1; font-size: 13px; padding: 8px 12px;"
+               oninput="filterLogs()">
+        <select id="levelFilter" onchange="filterLogs()" style="width: auto; font-size: 13px; padding: 8px 12px;">
+            <option value="">All Levels</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+        </select>
+    </div>
+</div>
+
+<div class="card" style="cursor: default; padding: 0; overflow: hidden;">
+    {% if entries %}
+    <div id="logEntries">
+        {% for entry in entries %}
+        <div class="log-entry" data-level="{{ entry.level }}" data-text="{{ entry.message|lower }}">
+            <span class="log-ts">{{ entry.timestamp }}</span>
+            <span class="log-level level-{{ entry.level }}">{{ entry.level }}</span>
+            <span class="log-msg">{{ entry.message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+        <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin: 0 auto 12px; opacity: 0.5;"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+        <p style="font-size: 14px;">No log entries yet.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function filterLogs() {
+    var text = document.getElementById('logFilter').value.toLowerCase();
+    var level = document.getElementById('levelFilter').value;
+    var entries = document.querySelectorAll('.log-entry');
+    entries.forEach(function(el) {
+        var matchText = !text || el.getAttribute('data-text').indexOf(text) >= 0 ||
+                        el.querySelector('.log-ts').textContent.toLowerCase().indexOf(text) >= 0;
+        var matchLevel = !level || el.getAttribute('data-level') === level;
+        el.style.display = (matchText && matchLevel) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

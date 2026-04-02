@@ -10,9 +10,11 @@ Anyone on the network can view the inventory without logging in.
 import argparse
 import csv
 import io
+import logging
 import os
 from functools import wraps
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -26,6 +28,22 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = 'hp-connectivity-inventory-system-secret-key'
 
 # ---------------------------------------------------------------------------
+# Application logging (rotating file)
+# ---------------------------------------------------------------------------
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, 'app.log')
+
+app_logger = logging.getLogger('inventory')
+app_logger.setLevel(logging.DEBUG)
+_handler = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5)
+_handler.setFormatter(logging.Formatter(
+    '%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
+))
+app_logger.addHandler(_handler)
+
+# ---------------------------------------------------------------------------
 # Startup: initialize the database
 # ---------------------------------------------------------------------------
 
@@ -33,6 +51,7 @@ with app.app_context():
     db.init_db()
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
     os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups'), exist_ok=True)
+    app_logger.info('Application started — database initialized')
 
 # ---------------------------------------------------------------------------
 # Authentication helpers
@@ -108,9 +127,11 @@ def login():
         if user:
             session['user_id'] = user['user_id']
             session['role'] = user['role']
+            app_logger.info('Login successful: user=%s role=%s ip=%s', username, user['role'], request.remote_addr)
             next_url = request.form.get('next') or url_for('dashboard')
             return redirect(next_url)
         else:
+            app_logger.warning('Login failed: user=%s ip=%s', username, request.remote_addr)
             flash('Invalid username or password.', 'error')
 
     return render_template('login.html', next=request.args.get('next', ''))
@@ -181,6 +202,7 @@ def device_add():
         device = db.get_device(device_id)
         barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
 
+        app_logger.info('Device added: id=%s name="%s" by=%s', device_id, name, current_username())
         flash(f'Device "{name}" added successfully.', 'success')
         return redirect(url_for('device_detail', device_id=device_id))
 
@@ -238,6 +260,7 @@ def device_edit(device_id):
 
         barcode_utils.generate_label(device_id, device['barcode_value'], name)
 
+        app_logger.info('Device updated: id=%s name="%s" by=%s', device_id, name, current_username())
         flash(f'Device "{name}" updated successfully.', 'success')
         return redirect(url_for('device_detail', device_id=device_id))
 
@@ -251,6 +274,7 @@ def device_edit(device_id):
 @admin_required
 def device_retire(device_id):
     db.retire_device(device_id, performed_by=current_username())
+    app_logger.info('Device retired: id=%s by=%s', device_id, current_username())
     flash('Device retired successfully.', 'success')
     return redirect(url_for('device_list'))
 
@@ -267,6 +291,7 @@ def device_checkout(device_id):
         return redirect(url_for('device_detail', device_id=device_id))
 
     db.checkout_device(device_id, assigned_to, performed_by=current_username())
+    app_logger.info('Device checked out: id=%s to=%s by=%s', device_id, assigned_to, current_username())
     flash(f'Device checked out to {assigned_to}.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
@@ -275,6 +300,7 @@ def device_checkout(device_id):
 @admin_required
 def device_checkin(device_id):
     db.checkin_device(device_id, performed_by=current_username())
+    app_logger.info('Device checked in: id=%s by=%s', device_id, current_username())
     flash('Device checked in successfully.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
@@ -424,6 +450,7 @@ def import_csv():
             flash(f'Error reading CSV file: {e}', 'error')
             return render_template('import.html')
 
+        app_logger.info('CSV import: %d imported, %d errors, by=%s', imported, errors, current_username())
         flash(f'Import complete: {imported} devices imported, {errors} errors.', 'success')
         return redirect(url_for('device_list'))
 
@@ -468,6 +495,7 @@ def user_add():
 
         try:
             db.create_user(username, password, role, display_name)
+            app_logger.info('User created: username=%s role=%s by=%s', username, role, current_username())
             flash(f'User "{username}" created successfully.', 'success')
             return redirect(url_for('user_list'))
         except ValueError as e:
@@ -509,10 +537,66 @@ def user_edit(user_id):
 def user_delete(user_id):
     try:
         db.delete_user(user_id)
+        app_logger.info('User deleted: user_id=%s by=%s', user_id, current_username())
         flash('User deleted.', 'success')
     except ValueError as e:
+        app_logger.warning('User delete failed: user_id=%s error=%s', user_id, e)
         flash(str(e), 'error')
     return redirect(url_for('user_list'))
+
+# ---------------------------------------------------------------------------
+# Application Log viewer (admin only)
+# ---------------------------------------------------------------------------
+
+@app.route('/logs')
+@admin_required
+def app_logs():
+    """View application log entries. Most recent first."""
+    lines = []
+    try:
+        with open(LOG_FILE, 'r') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        pass
+
+    # Parse into structured entries, most recent first
+    entries = []
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        # Format: "2026-04-02 12:00:00 | INFO    | message"
+        parts = line.split(' | ', 2)
+        if len(parts) == 3:
+            entries.append({
+                'timestamp': parts[0],
+                'level': parts[1].strip(),
+                'message': parts[2],
+            })
+        else:
+            entries.append({
+                'timestamp': '',
+                'level': '',
+                'message': line,
+            })
+
+    # Limit to 500 most recent entries
+    entries = entries[:500]
+    return render_template('app_log.html', entries=entries)
+
+
+@app.route('/logs/clear', methods=['POST'])
+@admin_required
+def clear_logs():
+    """Clear the application log file."""
+    try:
+        with open(LOG_FILE, 'w') as f:
+            f.write('')
+        app_logger.info('Application log cleared by %s', current_username())
+        flash('Application log cleared.', 'success')
+    except Exception as e:
+        flash(f'Error clearing log: {e}', 'error')
+    return redirect(url_for('app_logs'))
 
 # ---------------------------------------------------------------------------
 # Change own password (any logged-in user)
