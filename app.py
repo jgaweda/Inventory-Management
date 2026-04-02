@@ -13,7 +13,7 @@ import io
 import logging
 import os
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
 from flask import (
@@ -107,7 +107,7 @@ def current_username():
 def inject_globals():
     return {
         'categories': db.get_categories(),
-        'now': datetime.utcnow(),
+        'now': datetime.now(timezone.utc),
         'current_user': g.user,
     }
 
@@ -139,7 +139,9 @@ def login():
 
 @app.route('/logout')
 def logout():
+    username = current_username()
     session.clear()
+    app_logger.info('Logout: user=%s ip=%s', username, request.remote_addr)
     flash('You have been logged out.', 'success')
     return redirect(url_for('dashboard'))
 
@@ -158,15 +160,18 @@ def dashboard():
 
 @app.route('/devices')
 def device_list():
+    q = request.args.get('q', '')
     devices = db.search_devices(
-        query=request.args.get('q', ''),
+        query=q,
         category=request.args.get('category', ''),
         status=request.args.get('status', ''),
         connectivity=request.args.get('connectivity', ''),
         location=request.args.get('location', ''),
     )
+    if q:
+        app_logger.info('Device search: query="%s" results=%d ip=%s', q, len(devices), request.remote_addr)
     return render_template('devices.html', devices=devices,
-                           q=request.args.get('q', ''),
+                           q=q,
                            selected_category=request.args.get('category', ''),
                            selected_status=request.args.get('status', ''),
                            selected_connectivity=request.args.get('connectivity', ''),
@@ -216,12 +221,15 @@ def device_add():
 def device_detail(device_id):
     device = db.get_device(device_id)
     if not device:
+        app_logger.warning('Device not found: id=%s ip=%s', device_id, request.remote_addr)
         flash('Device not found.', 'error')
         return redirect(url_for('device_list'))
 
     if not barcode_utils.label_exists(device_id):
         barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
+        app_logger.debug('Label generated on-the-fly: id=%s', device_id)
 
+    app_logger.info('Device viewed: id=%s name="%s" ip=%s', device_id, device['name'], request.remote_addr)
     audit = db.get_audit_log(device_id=device_id, limit=50)
     return render_template('device_detail.html', device=device, audit=audit)
 
@@ -314,8 +322,10 @@ def serve_label(device_id):
     if not barcode_utils.label_exists(device_id):
         device = db.get_device(device_id)
         if not device:
+            app_logger.warning('Label requested for unknown device: id=%s', device_id)
             return 'Device not found', 404
         barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
+        app_logger.info('Label generated: id=%s name="%s"', device_id, device['name'])
 
     path = barcode_utils.get_label_path(device_id)
     return send_file(path, mimetype='image/png')
@@ -345,6 +355,7 @@ def label_sheet():
     sheet.save(buffer, format='PNG')
     buffer.seek(0)
 
+    app_logger.info('Label sheet generated: %d devices by=%s', len(devices), current_username())
     return send_file(buffer, mimetype='image/png', as_attachment=True,
                      download_name='label_sheet.png')
 
@@ -354,6 +365,7 @@ def label_sheet():
 
 @app.route('/scan')
 def scan_page():
+    app_logger.debug('Scan page accessed: ip=%s', request.remote_addr)
     return render_template('scan.html')
 
 
@@ -362,10 +374,12 @@ def api_lookup():
     """JSON API for barcode scanner lookup. Case-insensitive."""
     barcode = request.args.get('barcode', '').strip()
     if not barcode:
+        app_logger.warning('Barcode lookup: empty barcode ip=%s', request.remote_addr)
         return jsonify({'found': False, 'error': 'No barcode provided'}), 400
 
     device = db.get_device_by_barcode(barcode)
     if device:
+        app_logger.info('Barcode scan: barcode=%s found="%s" (id=%s) ip=%s', barcode, device['name'], device['device_id'], request.remote_addr)
         return jsonify({
             'found': True,
             'device_id': device['device_id'],
@@ -375,6 +389,7 @@ def api_lookup():
             'location': device['location'],
         })
     else:
+        app_logger.info('Barcode scan: barcode=%s not_found ip=%s', barcode, request.remote_addr)
         return jsonify({'found': False}), 404
 
 # ---------------------------------------------------------------------------
@@ -385,6 +400,7 @@ def api_lookup():
 def export_csv():
     """Export all devices (including retired) to CSV."""
     devices = db.get_all_devices(include_retired=True)
+    app_logger.info('CSV export: %d devices ip=%s', len(devices), request.remote_addr)
 
     output = io.StringIO()
     fields = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
@@ -447,6 +463,7 @@ def import_csv():
                 except Exception:
                     errors += 1
         except Exception as e:
+            app_logger.error('CSV import failed: %s by=%s', e, current_username())
             flash(f'Error reading CSV file: {e}', 'error')
             return render_template('import.html')
 
@@ -526,6 +543,7 @@ def user_edit(user_id):
             data['password'] = password
 
         db.update_user(user_id, data)
+        app_logger.info('User updated: username=%s by=%s', user['username'], current_username())
         flash(f'User "{user["username"]}" updated.', 'success')
         return redirect(url_for('user_list'))
 
@@ -625,10 +643,28 @@ def account():
             return render_template('account.html')
 
         db.update_user(g.user['user_id'], {'password': new_pw})
+        app_logger.info('Password changed: user=%s', g.user['username'])
         flash('Password changed successfully.', 'success')
         return redirect(url_for('account'))
 
     return render_template('account.html')
+
+# ---------------------------------------------------------------------------
+# Global error handlers
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(404)
+def not_found(e):
+    app_logger.warning('404 Not Found: %s ip=%s', request.path, request.remote_addr)
+    flash('Page not found.', 'error')
+    return redirect(url_for('dashboard'))
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    app_logger.error('500 Internal Server Error: %s — %s', request.path, e)
+    flash('An unexpected error occurred.', 'error')
+    return redirect(url_for('dashboard'))
 
 # ---------------------------------------------------------------------------
 # Main entry point
