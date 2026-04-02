@@ -731,7 +731,7 @@ def backup_list():
 def backup_create():
     """Trigger a manual database backup."""
     try:
-        result = db.backup_database(performed_by=current_username())
+        result = db.backup_database(performed_by=current_username(), manual=True)
         app_logger.info('Manual backup created: %s (%d bytes, pruned=%d) by=%s',
                         result['filename'], result['size'], result['pruned'],
                         current_username())
@@ -757,7 +757,7 @@ def backup_upload():
         # Save uploaded file to backup dir
         backup_dir = db._get_backup_dir()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        dest_filename = f'inventory_backup_{timestamp}_uploaded.db'
+        dest_filename = f'manual_backup_{timestamp}_uploaded.db'
         dest_path = os.path.join(backup_dir, dest_filename)
         file.save(dest_path)
 
@@ -906,7 +906,7 @@ def backup_delete(filename):
 @admin_required
 def backup_download(filename):
     """Download a backup file."""
-    if not filename.startswith('inventory_backup_') or '..' in filename:
+    if not db._is_backup_file(filename) or '..' in filename:
         flash('Invalid backup file.', 'error')
         return redirect(url_for('backup_list'))
     backup_dir = db._get_backup_dir()

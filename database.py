@@ -606,17 +606,21 @@ def _get_backup_dir():
     return backup_dir
 
 
-def backup_database(performed_by='system'):
+def backup_database(performed_by='system', manual=False):
     """
     Create a safe backup of the database using SQLite's online backup API.
-    Prunes old backups beyond max_backups.
+    Automated backups are prefixed 'auto_backup_' and pruned to max_backups.
+    Manual backups are prefixed 'manual_backup_' and never auto-pruned.
     Returns dict with backup metadata.
     """
     backup_dir = _get_backup_dir()
     config = _get_backup_config()
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_filename = f'inventory_backup_{timestamp}.db'
+    if manual:
+        backup_filename = f'manual_backup_{timestamp}.db'
+    else:
+        backup_filename = f'auto_backup_{timestamp}.db'
     backup_path = os.path.join(backup_dir, backup_filename)
 
     # Use SQLite online backup API for a consistent snapshot
@@ -630,7 +634,7 @@ def backup_database(performed_by='system'):
 
     file_size = os.path.getsize(backup_path)
 
-    # Prune old backups beyond max_backups
+    # Only prune automated backups beyond max_backups
     pruned = _prune_old_backups(config['max_backups'])
 
     return {
@@ -643,14 +647,14 @@ def backup_database(performed_by='system'):
 
 
 def _prune_old_backups(max_backups):
-    """Remove oldest backups beyond the max count. Returns number pruned."""
+    """Remove oldest automated backups beyond the max count. Manual backups are never pruned."""
     backup_dir = _get_backup_dir()
-    all_backups = sorted(
-        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')],
+    auto_backups = sorted(
+        [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and f.endswith('.db')],
         reverse=True,
     )
     pruned = 0
-    for old_file in all_backups[max_backups:]:
+    for old_file in auto_backups[max_backups:]:
         try:
             os.remove(os.path.join(backup_dir, old_file))
             pruned += 1
@@ -674,14 +678,14 @@ def push_backups_to_git():
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     git_repo = config.get('git_repo', '').strip()
 
-    # Get the most recent N backup files (respecting max_backups)
-    all_backups = sorted(
-        [f for f in os.listdir(backup_dir) if f.startswith('inventory_backup_') and f.endswith('.db')],
+    # Collect all backup files (auto + manual)
+    all_files = sorted(
+        [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
         reverse=True,
     )
-    backup_files = all_backups[:max_backups]
-    _audit_logger.info('Git push: backup_dir=%s, found %d .db files, zipping %d (max_backups=%d)',
-                       backup_dir, len(all_backups), len(backup_files), max_backups)
+    backup_files = all_files
+    _audit_logger.info('Git push: backup_dir=%s, found %d .db files to zip',
+                       backup_dir, len(backup_files))
     if not backup_files:
         raise ValueError('No backup files to push')
 
@@ -753,24 +757,42 @@ def push_backups_to_git():
     }
 
 
+def _is_backup_file(filename):
+    """Check if a filename is a recognized backup file."""
+    return (filename.endswith('.db') and
+            (filename.startswith('auto_backup_') or
+             filename.startswith('manual_backup_') or
+             filename.startswith('inventory_backup_')))  # legacy support
+
+
+def _parse_backup_timestamp(filename):
+    """Extract display timestamp from a backup filename."""
+    ts_part = filename.replace('.db', '')
+    for prefix in ('auto_backup_', 'manual_backup_', 'inventory_backup_'):
+        ts_part = ts_part.replace(prefix, '')
+    # Strip _uploaded suffix from uploaded files
+    ts_part = ts_part.split('_uploaded')[0]
+    try:
+        dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return ts_part
+
+
 def list_backups():
     """List existing backup files, most recent first."""
     backup_dir = _get_backup_dir()
     backups = []
     for f in sorted(os.listdir(backup_dir), reverse=True):
-        if f.startswith('inventory_backup_') and f.endswith('.db'):
+        if _is_backup_file(f):
             path = os.path.join(backup_dir, f)
             stat = os.stat(path)
-            ts_part = f.replace('inventory_backup_', '').replace('.db', '')
-            try:
-                dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
-                display_time = dt.strftime('%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                display_time = ts_part
+            backup_type = 'manual' if f.startswith('manual_backup_') else 'auto'
             backups.append({
                 'filename': f,
                 'size': stat.st_size,
-                'timestamp': display_time,
+                'timestamp': _parse_backup_timestamp(f),
+                'type': backup_type,
             })
     return backups
 
@@ -782,7 +804,7 @@ def restore_database(filename):
     Returns dict with restore metadata.
     """
     backup_dir = _get_backup_dir()
-    if not filename.startswith('inventory_backup_') or '..' in filename:
+    if not _is_backup_file(filename) or '..' in filename:
         raise ValueError('Invalid backup filename')
     backup_path = os.path.join(backup_dir, filename)
     if not os.path.isfile(backup_path):
@@ -823,7 +845,7 @@ def restore_database(filename):
 def delete_backup(filename):
     """Delete a backup file. Returns True if deleted."""
     backup_dir = _get_backup_dir()
-    if not filename.startswith('inventory_backup_') or '..' in filename:
+    if not _is_backup_file(filename) or '..' in filename:
         raise ValueError('Invalid backup filename')
     path = os.path.join(backup_dir, filename)
     if os.path.isfile(path):
@@ -889,18 +911,13 @@ def list_git_backups():
         entries = []
         with zipfile.ZipFile(zip_path, 'r') as zf:
             for info in zf.infolist():
-                if info.filename.startswith('inventory_backup_') and info.filename.endswith('.db'):
-                    ts_part = info.filename.replace('inventory_backup_', '').replace('.db', '')
-                    try:
-                        from datetime import datetime as _dt
-                        dt = _dt.strptime(ts_part.split('_uploaded')[0], '%Y%m%d_%H%M%S')
-                        display_time = dt.strftime('%Y-%m-%d %H:%M:%S')
-                    except ValueError:
-                        display_time = ts_part
+                if _is_backup_file(info.filename):
+                    backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
                     entries.append({
                         'filename': info.filename,
                         'size': info.file_size,
-                        'timestamp': display_time,
+                        'timestamp': _parse_backup_timestamp(info.filename),
+                        'type': backup_type,
                     })
 
         # Sort most recent first
@@ -916,7 +933,7 @@ def restore_from_git(filename):
     import tempfile
     import zipfile
 
-    if not filename.startswith('inventory_backup_') or '..' in filename:
+    if not _is_backup_file(filename) or '..' in filename:
         raise ValueError('Invalid backup filename')
 
     config = _get_backup_config()
