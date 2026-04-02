@@ -3,27 +3,6 @@
 
 {% block extra_head %}
 <style>
-    @media print {
-        /* Hide everything */
-        body > *:not(#print-only) { display: none !important; }
-        /* Show only the print container */
-        #print-only {
-            display: block !important;
-            position: absolute; top: 0; left: 0;
-            margin: 0; padding: 0; background: white;
-        }
-        #print-only img {
-            width: 3.4in; height: auto;
-            max-height: 1.0in;
-            object-fit: contain;
-        }
-        html, body {
-            margin: 0 !important; padding: 0 !important;
-            height: auto !important; overflow: hidden !important;
-        }
-        @page { size: 3.5in 1.125in; margin: 0.05in; }
-    }
-
     /* Lightbox overlay */
     #labelLightbox {
         display: none; position: fixed; inset: 0; z-index: 1000;
@@ -244,17 +223,23 @@
 
 <script>
 function printLabel() {
-    // Create a temporary container as a direct child of body with just the label image
-    var container = document.createElement('div');
-    container.id = 'print-only';
-    container.style.display = 'none';
-    var img = document.createElement('img');
-    img.src = '{{ url_for("serve_label", device_id=device.device_id) }}';
-    container.appendChild(img);
-    document.body.appendChild(container);
-    // Wait for image to be ready then print
-    img.onload = function() { window.print(); document.body.removeChild(container); };
-    if (img.complete) { window.print(); document.body.removeChild(container); }
+    var w = window.open('', '_blank', 'width=400,height=200');
+    w.document.write(
+        '<!DOCTYPE html><html><head>' +
+        '<style>' +
+        'html,body{margin:0;padding:0;height:auto}' +
+        'img{width:3.4in;height:auto;max-height:1.0in;object-fit:contain}' +
+        '@page{size:3.5in 1.125in;margin:0.05in}' +
+        '</style></head><body>' +
+        '<img src="{{ url_for("serve_label", device_id=device.device_id) }}">' +
+        '</body></html>'
+    );
+    w.document.close();
+    w.document.querySelector('img').onload = function() {
+        w.focus();
+        w.print();
+        w.close();
+    };
 }
 </script>
 {% endblock %}
