@@ -4,22 +4,6 @@
 {% block content %}
 <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Dashboard</h2>
 
-<!-- Stat Cards -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
-    <a href="{{ url_for('device_list') }}" class="card" style="border-left: 3px solid var(--accent-blue); text-decoration: none; color: inherit;">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Total Active</div>
-        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-blue); margin-top: 4px;">{{ stats.total }}</div>
-    </a>
-    <a href="{{ url_for('device_list', status='available') }}" class="card" style="border-left: 3px solid var(--accent-green); text-decoration: none; color: inherit;">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Available</div>
-        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-green); margin-top: 4px;">{{ stats.available }}</div>
-    </a>
-    <a href="{{ url_for('device_list', status='checked_out') }}" class="card" style="border-left: 3px solid var(--accent-amber); text-decoration: none; color: inherit;">
-        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Checked Out</div>
-        <div class="font-mono" style="font-size: 36px; font-weight: 700; color: var(--accent-amber); margin-top: 4px;">{{ stats.checked_out }}</div>
-    </a>
-</div>
-
 <!-- Breakdowns -->
 <div class="grid-responsive" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
     <!-- By Category -->
