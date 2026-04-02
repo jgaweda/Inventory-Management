@@ -797,6 +797,9 @@ def restore_database(filename):
         dst.close()
         src.close()
 
+    # Re-run init_db to apply any migrations the restored DB may be missing
+    init_db()
+
     return {
         'restored_from': filename,
         'safety_backup': safety_backup['filename'],
