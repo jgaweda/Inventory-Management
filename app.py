@@ -1003,7 +1003,7 @@ if __name__ == '__main__':
     ║   HP Connectivity Team Inventory System          ║
     ║   Running at: http://{args.host}:{args.port:<5d}               ║
     ║   Mode: {'DEVELOPMENT' if args.dev else 'PRODUCTION':<14s}                          ║
-    ║   Default login: admin / admin                   ║
+    ║                                                  ║
     ║   Press Ctrl+C to stop                           ║
     ╚══════════════════════════════════════════════════╝
     """)
