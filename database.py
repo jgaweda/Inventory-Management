@@ -741,8 +741,9 @@ def push_backups_to_git():
 
             # Inject token into HTTPS URL for authentication
             if git_token and remote_url.startswith('https://'):
-                # https://github.com/... -> https://x-access-token:<token>@github.com/...
-                remote_url = remote_url.replace('https://', f'https://x-access-token:{git_token}@', 1)
+                # https://github.com/... -> https://<token>@github.com/...
+                # Works with both classic PATs (ghp_...) and fine-grained (github_pat_...)
+                remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
 
             # Push from the temp repo to the remote
             subprocess.run(
