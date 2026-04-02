@@ -93,7 +93,6 @@
         <button class="filter-chip" data-category="auth" onclick="setCategoryFilter(this)">Auth</button>
         <button class="filter-chip" data-category="import_export" onclick="setCategoryFilter(this)">Import/Export</button>
         <button class="filter-chip" data-category="user" onclick="setCategoryFilter(this)">User Mgmt</button>
-        <button class="filter-chip" data-category="backup" onclick="setCategoryFilter(this)">Backups</button>
     </div>
 </div>
 
@@ -123,9 +122,8 @@ var categoryPatterns = {
     'device': ['device added', 'device updated', 'device retired', 'device checked out', 'device checked in', 'device viewed', 'device not found', 'device search', 'label generated', 'audit device_id='],
     'scan': ['barcode scan', 'scan page'],
     'auth': ['login successful', 'login failed', 'logout', 'password changed'],
-    'import_export': ['csv import', 'csv export', 'restored from', 'restore failed', 'upload restore', 'git restore', 'git push', 'git clone'],
-    'user': ['user created', 'user updated', 'user deleted', 'user delete failed'],
-    'backup': ['backup created', 'backup completed', 'backup failed', 'backup deleted', 'backup downloaded', 'backup schedule', 'backup scheduler']
+    'import_export': ['csv import', 'csv export', 'restored from', 'restore failed', 'upload restore', 'git restore', 'git push', 'git clone', 'backup created', 'backup completed', 'backup failed', 'backup deleted', 'backup downloaded', 'backup schedule', 'backup scheduler'],
+    'user': ['user created', 'user updated', 'user deleted', 'user delete failed']
 };
 
 var activeCategory = '';
