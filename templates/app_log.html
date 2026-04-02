@@ -68,7 +68,6 @@
     </div>
     <div class="log-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="filter-chip" data-category="" onclick="setCategoryFilter(this)">All</button>
-        <button class="filter-chip" data-category="audit" onclick="setCategoryFilter(this)">Audit</button>
         <button class="filter-chip" data-category="device" onclick="setCategoryFilter(this)">Device Updates</button>
         <button class="filter-chip" data-category="scan" onclick="setCategoryFilter(this)">Scans</button>
         <button class="filter-chip" data-category="auth" onclick="setCategoryFilter(this)">Auth</button>
@@ -102,7 +101,6 @@
 // Category filter patterns — each maps to keywords found in log messages
 var categoryPatterns = {
     '': null,
-    'audit': ['audit device_id='],
     'device': ['device added', 'device updated', 'device retired', 'device checked out', 'device checked in', 'device viewed', 'device not found', 'device search', 'label generated', 'audit device_id='],
     'scan': ['barcode scan', 'scan page'],
     'auth': ['login successful', 'login failed', 'logout', 'password changed'],
