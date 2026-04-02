@@ -228,8 +228,8 @@ function printLabel() {
         '<!DOCTYPE html><html><head>' +
         '<style>' +
         'html,body{margin:0;padding:0;height:auto}' +
-        'img{width:3.4in;height:auto;max-height:1.0in;object-fit:contain}' +
-        '@page{size:3.5in 1.125in;margin:0.05in}' +
+        'img{width:100%;height:auto;object-fit:contain}' +
+        '@page{margin:0.5in}' +
         '</style></head><body>' +
         '<img src="{{ url_for("serve_label", device_id=device.device_id) }}">' +
         '</body></html>'
