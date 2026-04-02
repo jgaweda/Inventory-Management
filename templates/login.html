@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — HP Connectivity Inventory</title>
+    <script>
+        (function(){var m=document.cookie.match(/(?:^|;\s*)theme=(\w+)/);document.documentElement.setAttribute('data-theme',m?m[1]:'dark')})();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root, [data-theme="dark"] {
+            --bg-primary: #0a0f1a; --bg-card: #161f32; --border-color: #1e2d4a;
+            --text-primary: #e2e8f0; --text-secondary: #94a3b8; --text-muted: #64748b;
+            --accent-blue: #3b82f6; --accent-cyan: #06b6d4;
+        }
+        [data-theme="light"] {
+            --bg-primary: #f1f5f9; --bg-card: #ffffff; --border-color: #e2e8f0;
+            --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+            --accent-blue: #2563eb; --accent-cyan: #0891b2;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .brand {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .brand h1 {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-cyan);
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+        }
+        .brand p {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 6px;
+        }
+        input[type="text"], input[type="password"] {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 14px;
+            width: 100%;
+            font-family: 'DM Sans', sans-serif;
+            transition: border-color 0.15s;
+            margin-bottom: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+        }
+        button[type="submit"] {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            font-family: 'DM Sans', sans-serif;
+            transition: background 0.15s;
+        }
+        button[type="submit"]:hover { background: #2563eb; }
+        .flash {
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        .flash-error { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+        .flash-success { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+        .flash-warning { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+        .back-link {
+            display: block; text-align: center; margin-top: 16px;
+            color: var(--text-muted); font-size: 13px; text-decoration: none;
+        }
+        .back-link:hover { color: var(--text-secondary); }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="brand">
+            <h1>INVENTORY SYSTEM</h1>
+            <p>HP Connectivity Team</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <input type="hidden" name="next" value="{{ next }}">
+            <label>Username</label>
+            <input type="text" name="username" autofocus autocomplete="username" placeholder="Enter username">
+            <label>Password</label>
+            <input type="password" name="password" autocomplete="current-password" placeholder="Enter password">
+            <button type="submit">Log In</button>
+        </form>
+        <a href="{{ url_for('dashboard') }}" class="back-link">← Back to inventory (view only)</a>
+    </div>
+</body>
+</html>

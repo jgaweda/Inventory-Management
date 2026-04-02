@@ -90,20 +90,12 @@
         </div>
     </div>
 
-    <!-- Audit info -->
-    <div class="card" style="cursor: default; border-top: 1px solid var(--border-color);">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: end;">
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Your Name (for audit log)</label>
-                <input type="text" name="performed_by" placeholder="e.g. John Smith" value="">
-            </div>
-            <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                <a href="{% if is_edit %}{{ url_for('device_detail', device_id=device_id) }}{% else %}{{ url_for('device_list') }}{% endif %}" class="btn btn-secondary">Cancel</a>
-                <button type="submit" class="btn btn-primary">
-                    {% if is_edit %}Save Changes{% else %}Add Device{% endif %}
-                </button>
-            </div>
-        </div>
+    <!-- Actions -->
+    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+        <a href="{% if is_edit %}{{ url_for('device_detail', device_id=device_id) }}{% else %}{{ url_for('device_list') }}{% endif %}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            {% if is_edit %}Save Changes{% else %}Add Device{% endif %}
+        </button>
     </div>
 </form>
 {% endblock %}
