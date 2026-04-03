@@ -1232,6 +1232,10 @@ def product_reference_import():
         return redirect(url_for('product_reference_list'))
 
     try:
+        import_mode = request.form.get('import_mode', 'add')
+        if import_mode == 'overwrite':
+            db.clear_all_product_references()
+
         imported = 0
         skipped = 0
 

@@ -1303,3 +1303,9 @@ def delete_product_reference(ref_id):
     """Delete a product reference entry."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM product_reference WHERE ref_id = ?', (ref_id,))
+
+
+def clear_all_product_references():
+    """Delete all product reference entries."""
+    with db_transaction() as conn:
+        conn.execute('DELETE FROM product_reference')

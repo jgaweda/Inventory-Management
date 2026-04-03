@@ -142,6 +142,17 @@
                 <input type="file" name="import_file" accept=".xlsx,.csv" required
                        style="font-size:13px; width:100%; padding:8px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary);">
             </div>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:8px;">Import Mode</label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
+                    <input type="radio" name="import_mode" value="add" checked style="accent-color:var(--accent-blue);">
+                    <span><strong>Add</strong> — append to existing products</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary);">
+                    <input type="radio" name="import_mode" value="overwrite" style="accent-color:var(--accent-red);">
+                    <span><strong>Overwrite</strong> — replace all existing products</span>
+                </label>
+            </div>
             <div style="display:flex; gap:8px; justify-content:flex-end;">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('importModal').style.display='none'">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm">Import</button>
