@@ -52,7 +52,7 @@ def generate_barcode_image(data, width=350, height=80):
     code.render(writer_options={
         'font_size': 0,
         'text_distance': 0,
-        'quiet_zone': 2,
+        'quiet_zone': 0,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
@@ -134,13 +134,20 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # Right side starts at same y as QR code top
     y = qr_y
 
-    draw.text((right_x, y), device_name, fill='black', font=font_name)
+    # Compensate for font left bearing so text aligns with barcode left edge
+    name_bbox_at_pos = draw.textbbox((right_x, y), device_name, font=font_name)
+    name_offset_x = name_bbox_at_pos[0] - right_x
+    draw.text((right_x - name_offset_x, y), device_name, fill='black', font=font_name)
     y += name_h + spacing
 
-    draw.text((right_x, y), barcode_value, fill='#222222', font=font_barcode_id)
+    id_bbox_at_pos = draw.textbbox((right_x, y), barcode_value, font=font_barcode_id)
+    id_offset_x = id_bbox_at_pos[0] - right_x
+    draw.text((right_x - id_offset_x, y), barcode_value, fill='#222222', font=font_barcode_id)
     y += id_h + spacing
 
-    draw.text((right_x, y), 'HP Connectivity Team', fill='#666666', font=font_team)
+    team_bbox_at_pos = draw.textbbox((right_x, y), 'HP Connectivity Team', font=font_team)
+    team_offset_x = team_bbox_at_pos[0] - right_x
+    draw.text((right_x - team_offset_x, y), 'HP Connectivity Team', fill='#666666', font=font_team)
     y += team_h + spacing * 2
 
     # Code 128 barcode — fill remaining space down to match QR bottom
