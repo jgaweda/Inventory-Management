@@ -1511,14 +1511,18 @@ if __name__ == '__main__':
     parser.add_argument('--dev', action='store_true', help='Run in development mode with debug enabled')
     args = parser.parse_args()
 
+    url = f'http://{args.host}:{args.port}'
+    mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
+    w = 48  # inner width between ║ chars
     print(f"""
-    ╔══════════════════════════════════════════════════╗
-    ║   HP Connectivity Team Inventory System          ║
-    ║   Running at: http://{args.host}:{args.port:<5d}               ║
-    ║   Mode: {'DEVELOPMENT' if args.dev else 'PRODUCTION':<14s}                          ║
-    ║                                                  ║
-    ║   Press Ctrl+C to stop                           ║
-    ╚══════════════════════════════════════════════════╝
+    ╔{'═' * w}╗
+    ║{'HP Connectivity Team Inventory System':^{w}}║
+    ║{'':^{w}}║
+    ║{f'  Running at: {url}':<{w}}║
+    ║{f'  Mode: {mode}':<{w}}║
+    ║{'':^{w}}║
+    ║{'  Press Ctrl+C to stop':<{w}}║
+    ╚{'═' * w}╝
     """)
 
     if args.dev:
