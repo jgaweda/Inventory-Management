@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import traceback
 from PIL import Image
 from functools import wraps
 from datetime import datetime, timezone
@@ -224,6 +225,12 @@ def device_add():
         category = request.form.get('category', '').strip()
         codename = request.form.get('codename', '').strip()
 
+        # "Other" with custom detail becomes "Other - <detail>"
+        if category == 'Other':
+            other_detail = request.form.get('other_detail', '').strip()
+            if other_detail:
+                category = f'Other - {other_detail}'
+
         if category == 'Printer':
             if not codename:
                 flash('Codename is required for printers.', 'error')
@@ -257,7 +264,7 @@ def device_add():
         device = db.get_device(device_id)
         barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
 
-        app_logger.info('Device added: id=%s name="%s" by=%s', device_id, name, current_username())
+        app_logger.info('Device added: id=%s name="%s" cat="%s" by=%s', device_id, name, category, current_username())
         flash(f'Device "{name}" added successfully.', 'success')
         return redirect(url_for('device_detail', device_id=device_id))
 
@@ -311,6 +318,12 @@ def device_edit(device_id):
         category = request.form.get('category', '').strip()
         codename = request.form.get('codename', '').strip()
 
+        # "Other" with custom detail becomes "Other - <detail>"
+        if category == 'Other':
+            other_detail = request.form.get('other_detail', '').strip()
+            if other_detail:
+                category = f'Other - {other_detail}'
+
         if category == 'Printer':
             if not codename:
                 flash('Codename is required for printers.', 'error')
@@ -345,7 +358,7 @@ def device_edit(device_id):
         updated_device = db.get_device(device_id)
         barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(updated_device))
 
-        app_logger.info('Device updated: id=%s name="%s" by=%s', device_id, name, current_username())
+        app_logger.info('Device updated: id=%s name="%s" cat="%s" by=%s', device_id, name, category, current_username())
         flash(f'Device "{name}" updated successfully.', 'success')
         return redirect(url_for('device_detail', device_id=device_id))
 
@@ -619,7 +632,7 @@ def user_add():
     if request.method == 'POST':
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
-        role = request.form.get('role', 'viewer')
+        role = request.form.get('role', 'admin')
         display_name = request.form.get('display_name', '').strip()
 
         if not username or not password:
@@ -735,6 +748,7 @@ def clear_logs():
         app_logger.info('Application log cleared by %s', current_username())
         flash('Application log cleared.', 'success')
     except Exception as e:
+        app_logger.error('Log clear failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Error clearing log: {e}', 'error')
     return redirect(url_for('app_logs'))
 
@@ -814,7 +828,7 @@ def _run_scheduled_backup():
         app_logger.info('Scheduled backup completed: %s (%d bytes)',
                         result['filename'], result['size'])
     except Exception as e:
-        app_logger.error('Scheduled backup failed: %s', e)
+        app_logger.error('Scheduled backup failed: %s\nTraceback:\n%s', e, traceback.format_exc())
     # Re-arm from latest config
     config = db._get_backup_config()
     if config.get('backup_enabled'):
@@ -828,7 +842,7 @@ def _run_scheduled_git_push():
         app_logger.info('Scheduled git push completed: %d files to %s',
                         result['files_pushed'], result['pushed_to'])
     except Exception as e:
-        app_logger.error('Scheduled git push failed: %s', e)
+        app_logger.error('Scheduled git push failed: %s\nTraceback:\n%s', e, traceback.format_exc())
     # Re-arm from latest config
     config = db._get_backup_config()
     if config.get('git_enabled'):
@@ -887,7 +901,7 @@ def _run_scheduled_prune():
         if pruned:
             app_logger.info('Scheduled prune completed: removed %d old auto-backups', pruned)
     except Exception as e:
-        app_logger.error('Scheduled prune failed: %s', e)
+        app_logger.error('Scheduled prune failed: %s\nTraceback:\n%s', e, traceback.format_exc())
     config = db._get_backup_config()
     if config.get('prune_enabled'):
         _start_prune_timer(config['prune_interval_hours'])
@@ -950,7 +964,7 @@ def backup_create():
                         current_username())
         flash(f'Backup created: {result["filename"]}', 'success')
     except Exception as e:
-        app_logger.error('Manual backup failed: %s by=%s', e, current_username())
+        app_logger.error('Manual backup failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Backup failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -980,10 +994,10 @@ def backup_upload():
                         dest_filename, result['safety_backup'], current_username())
         flash(f'Database restored from uploaded file. Safety backup: {result["safety_backup"]}', 'success')
     except ValueError as e:
-        app_logger.error('Upload restore failed: %s by=%s', e, current_username())
+        app_logger.error('Upload restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore failed: {e}', 'error')
     except Exception as e:
-        app_logger.error('Upload restore failed: %s by=%s', e, current_username())
+        app_logger.error('Upload restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -1068,7 +1082,7 @@ def backup_push_git():
                         result['files_pushed'], result['pushed_to'], current_username())
         flash(f'Backups pushed to git: {result["files_pushed"]} .db files pushed to {result["pushed_to"]}', 'success')
     except Exception as e:
-        app_logger.error('Git push failed: %s by=%s', e, current_username())
+        app_logger.error('Git push failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Git push failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -1081,7 +1095,7 @@ def backup_local_list():
         backups = db.list_backups()
         return jsonify({'ok': True, 'backups': backups})
     except Exception as e:
-        app_logger.error('Local backup list failed: %s', e)
+        app_logger.error('Local backup list failed: %s\nTraceback:\n%s', e, traceback.format_exc())
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 
@@ -1093,7 +1107,7 @@ def backup_git_list():
         entries = db.list_git_backups()
         return jsonify({'ok': True, 'backups': entries})
     except Exception as e:
-        app_logger.error('Git backup list failed: %s', e)
+        app_logger.error('Git backup list failed: %s\nTraceback:\n%s', e, traceback.format_exc())
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 
@@ -1111,7 +1125,7 @@ def backup_git_restore():
                         result['restored_from'], result['safety_backup'], current_username())
         flash(f'Database restored from git backup: {filename}. Safety backup: {result["safety_backup"]}', 'success')
     except Exception as e:
-        app_logger.error('Git restore failed: %s by=%s', e, current_username())
+        app_logger.error('Git restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore from git failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -1125,7 +1139,7 @@ def backup_delete(filename):
         app_logger.info('Backup deleted: %s by=%s', filename, current_username())
         flash(f'Backup deleted: {filename}', 'success')
     except Exception as e:
-        app_logger.error('Backup delete failed: %s error=%s', filename, e)
+        app_logger.error('Backup delete failed: file=%s error=%s\nTraceback:\n%s', filename, e, traceback.format_exc())
         flash(f'Error deleting backup: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -1158,10 +1172,10 @@ def backup_restore(filename):
     except FileNotFoundError:
         flash('Backup file not found.', 'error')
     except ValueError as e:
-        app_logger.error('Restore failed: %s by=%s', e, current_username())
+        app_logger.error('Restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore failed: {e}', 'error')
     except Exception as e:
-        app_logger.error('Restore failed: %s by=%s', e, current_username())
+        app_logger.error('Restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
@@ -1348,7 +1362,7 @@ def product_reference_import():
         flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
               + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
     except Exception as e:
-        app_logger.error('Product reference import failed: %s', e)
+        app_logger.error('Product reference import failed: %s\nTraceback:\n%s', e, traceback.format_exc())
         flash(f'Import failed: {e}', 'error')
 
     return redirect(url_for('product_reference_list'))
@@ -1458,14 +1472,31 @@ def apple_touch_icon(**kwargs):
 
 @app.errorhandler(404)
 def not_found(e):
-    app_logger.warning('404 Not Found: %s ip=%s', request.path, request.remote_addr)
+    app_logger.warning('404 Not Found: path=%s method=%s ip=%s user=%s user_agent=%s',
+                       request.path, request.method, request.remote_addr,
+                       current_username(), request.user_agent.string[:120])
     flash('Page not found.', 'error')
     return redirect(url_for('dashboard'))
 
 
 @app.errorhandler(500)
 def internal_error(e):
-    app_logger.error('500 Internal Server Error: %s — %s', request.path, e)
+    tb = traceback.format_exc()
+    app_logger.error('500 Internal Server Error: path=%s method=%s ip=%s user=%s\n'
+                     'Exception: %s\nTraceback:\n%s',
+                     request.path, request.method, request.remote_addr,
+                     current_username(), e, tb)
+    flash('An unexpected error occurred.', 'error')
+    return redirect(url_for('dashboard'))
+
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    tb = traceback.format_exc()
+    app_logger.error('Unhandled exception: path=%s method=%s ip=%s user=%s\n'
+                     'Exception type: %s — %s\nTraceback:\n%s',
+                     request.path, request.method, request.remote_addr,
+                     current_username(), type(e).__name__, e, tb)
     flash('An unexpected error occurred.', 'error')
     return redirect(url_for('dashboard'))
 

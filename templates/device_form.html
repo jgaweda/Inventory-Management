@@ -13,12 +13,19 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
-                <select name="category" id="categorySelect" onchange="toggleCodename()">
+                <select name="category" id="categorySelect" onchange="toggleCodename(); toggleOtherCategory()">
                     <option value="">Select category...</option>
+                    {% set current_cat = device.get('category', '') if device is mapping else device.category if device else '' %}
+                    {% set is_other_custom = current_cat.startswith('Other - ') %}
                     {% for cat in categories %}
-                    <option value="{{ cat.name }}" {% if (device.get('category', '') if device is mapping else device.category if device else '') == cat.name %}selected{% endif %}>{{ cat.name }}</option>
+                    <option value="{{ cat.name }}" {% if (not is_other_custom and current_cat == cat.name) or (is_other_custom and cat.name == 'Other') %}selected{% endif %}>{{ cat.name }}</option>
                     {% endfor %}
                 </select>
+                <div id="otherCategoryRow" style="display: none; margin-top: 8px;">
+                    <input type="text" name="other_detail" id="otherDetailInput"
+                           value="{{ current_cat[8:] if is_other_custom else '' }}"
+                           placeholder="Specify device type..." style="width: 100%;">
+                </div>
             </div>
             <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity Type/Version</label>
@@ -80,7 +87,13 @@
         var row = document.getElementById('codenameRow');
         row.style.display = (cat === 'Printer') ? 'block' : 'none';
     }
+    function toggleOtherCategory() {
+        var cat = document.getElementById('categorySelect').value;
+        var row = document.getElementById('otherCategoryRow');
+        row.style.display = (cat === 'Other') ? 'block' : 'none';
+    }
     toggleCodename();
+    toggleOtherCategory();
 
     var _searchTimeout = null;
     function searchCodename(query) {

@@ -256,7 +256,7 @@
         <div class="sidebar-brand">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h1>INVENTORY SYSTEM</h1>
+                    <h1 id="appTitle">INVENTORY SYSTEM</h1>
                     <p>HP Connectivity Team</p>
                 </div>
                 <button onclick="toggleTheme()" class="theme-toggle" title="Toggle light/dark theme" aria-label="Toggle theme">
@@ -375,6 +375,52 @@
             var saved = getThemeCookie();
             applyTheme(saved || 'dark');
         })();
+
+        // Easter egg: triple-click title to show About
+        (function() {
+            var title = document.getElementById('appTitle');
+            if (!title) return;
+            var clicks = 0, timer = null;
+            title.addEventListener('click', function() {
+                clicks++;
+                clearTimeout(timer);
+                timer = setTimeout(function() { clicks = 0; }, 500);
+                if (clicks >= 3) {
+                    clicks = 0;
+                    var overlay = document.getElementById('aboutOverlay');
+                    overlay.style.display = 'flex';
+                    overlay.style.opacity = '0';
+                    requestAnimationFrame(function() { overlay.style.opacity = '1'; });
+                    setTimeout(function() {
+                        overlay.style.opacity = '0';
+                        setTimeout(function() { overlay.style.display = 'none'; }, 800);
+                    }, 4000);
+                }
+            });
+        })();
     </script>
+
+    <!-- About modal (hidden) -->
+    <div id="aboutOverlay" style="display:none; position:fixed; inset:0; z-index:9999;
+        background:rgba(0,0,0,0.6); align-items:center; justify-content:center;
+        transition: opacity 0.8s ease; cursor:pointer;"
+        onclick="this.style.opacity='0'; var el=this; setTimeout(function(){el.style.display='none';},800);">
+        <div style="text-align:center; color:rgba(255,255,255,0.75); max-width:360px; padding:40px;
+            font-family:'DM Sans',system-ui,sans-serif; pointer-events:none;">
+            <div style="font-size:13px; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:24px; opacity:0.5;">
+                Inventory Management System
+            </div>
+            <div style="font-size:15px; font-style:italic; line-height:1.8; margin-bottom:24px; opacity:0.8;">
+                Do not go gentle into that good night.<br>
+                Rage, rage against the dying of the light.
+            </div>
+            <div style="font-size:11px; opacity:0.4; margin-bottom:20px;">
+                &mdash; Dylan Thomas
+            </div>
+            <div style="font-size:13px; letter-spacing:0.06em; opacity:0.6;">
+                J. Gaweda &middot; 2025
+            </div>
+        </div>
+    </div>
 </body>
 </html>
