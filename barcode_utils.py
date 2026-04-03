@@ -109,9 +109,10 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     qr_y = (H - qr_size) // 2
     label.paste(qr_img, (50, qr_y))
 
-    # --- Right side: text and barcode ---
+    # --- Right side: text and barcode, vertically centered as a block ---
     right_x = 820
     text_w = W - right_x - 50  # available width for text/barcode
+    spacing = 16  # gap between elements
 
     # Device name — dynamically size font to fit available width
     max_font_size = 96
@@ -122,20 +123,35 @@ def generate_label(device_id, barcode_value, device_name, save=True):
         bbox = draw.textbbox((0, 0), device_name, font=font_name)
         if bbox[2] - bbox[0] <= text_w:
             break
-    draw.text((right_x, 60), device_name, fill='black', font=font_name)
+    name_h = bbox[3] - bbox[1]
 
-    # Barcode value (monospace, bold)
-    draw.text((right_x, 190), barcode_value, fill='#222222', font=font_barcode_id)
+    # Measure other text heights
+    id_bbox = draw.textbbox((0, 0), barcode_value, font=font_barcode_id)
+    id_h = id_bbox[3] - id_bbox[1]
+    team_bbox = draw.textbbox((0, 0), 'HP Connectivity Team', font=font_team)
+    team_h = team_bbox[3] - team_bbox[1]
 
-    # Team name
-    draw.text((right_x, 280), 'HP Connectivity Team', fill='#666666', font=font_team)
+    barcode_h = 350
 
-    # Code 128 barcode image — fill remaining space
+    # Total block height: name + spacing + id + spacing + team + spacing + barcode
+    total_h = name_h + spacing + id_h + spacing + team_h + spacing * 2 + barcode_h
+    y = (H - total_h) // 2  # vertically center
+
+    draw.text((right_x, y), device_name, fill='black', font=font_name)
+    y += name_h + spacing
+
+    draw.text((right_x, y), barcode_value, fill='#222222', font=font_barcode_id)
+    y += id_h + spacing
+
+    draw.text((right_x, y), 'HP Connectivity Team', fill='#666666', font=font_team)
+    y += team_h + spacing * 2
+
+    # Code 128 barcode image
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=text_w, height=400)
-        label.paste(barcode_img, (right_x, 400))
+        barcode_img = generate_barcode_image(barcode_value, width=text_w, height=barcode_h)
+        label.paste(barcode_img, (right_x, y))
     except Exception:
-        draw.text((right_x, 500), barcode_value, fill='black', font=font_barcode_id)
+        draw.text((right_x, y + 50), barcode_value, fill='black', font=font_barcode_id)
 
     # 3px gray border around the entire label
     draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=3)
