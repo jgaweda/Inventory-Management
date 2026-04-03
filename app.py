@@ -853,8 +853,11 @@ def _run_scheduled_git_push():
     """Execute a scheduled git push and re-arm the timer."""
     try:
         result = db.push_backups_to_git()
-        app_logger.info('Scheduled git push completed: %d files to %s',
-                        result['files_pushed'], result['pushed_to'])
+        if result.get('skipped'):
+            app_logger.info('Scheduled git push skipped — backup zip unchanged')
+        else:
+            app_logger.info('Scheduled git push completed: %d files to %s',
+                            result['files_pushed'], result['pushed_to'])
     except Exception as e:
         app_logger.error('Scheduled git push failed: %s\nTraceback:\n%s', e, traceback.format_exc())
     # Re-arm from latest config
@@ -911,7 +914,7 @@ def _run_scheduled_prune():
     """Execute a scheduled prune and re-arm the timer."""
     try:
         config = db._get_backup_config()
-        pruned = db._prune_old_backups(config['max_backups'])
+        pruned = db._smart_prune_backups(config['max_backups'])
         if pruned:
             app_logger.info('Scheduled prune completed: removed %d old auto-backups', pruned)
     except Exception as e:

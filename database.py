@@ -668,9 +668,10 @@ def _get_backup_dir():
     return backup_dir
 
 
-def _compute_db_hash():
+def _compute_db_hash(skip_checkpoint=False):
     """Compute a SHA-256 hash of the database content for change detection."""
-    checkpoint_wal()
+    if not skip_checkpoint:
+        checkpoint_wal()
     h = hashlib.sha256()
     try:
         with open(DB_PATH, 'rb') as f:
@@ -678,6 +679,9 @@ def _compute_db_hash():
                 h.update(chunk)
         return h.hexdigest()
     except FileNotFoundError:
+        return ''
+    except OSError as e:
+        _audit_logger.error('Failed to compute database hash: %s', e)
         return ''
 
 
@@ -689,6 +693,9 @@ def backup_database(performed_by='system', manual=False):
     Skips automated backups if the database hasn't changed since the last one.
     Returns dict with backup metadata (includes 'skipped' key).
     """
+    import time as _time
+    start_time = _time.monotonic()
+
     backup_dir = _get_backup_dir()
     config = _get_backup_config()
 
@@ -717,26 +724,62 @@ def backup_database(performed_by='system', manual=False):
     backup_path = os.path.join(backup_dir, backup_filename)
 
     # Checkpoint WAL before backup to ensure all data is in the main file
-    checkpoint_wal()
+    wal_result = checkpoint_wal()
+    if not wal_result['success']:
+        _audit_logger.warning('WAL checkpoint before backup returned error: %s', wal_result.get('error'))
 
     # Use SQLite online backup API for a consistent snapshot
-    src = sqlite3.connect(DB_PATH)
-    dst = sqlite3.connect(backup_path)
+    src = None
+    dst = None
     try:
+        src = sqlite3.connect(DB_PATH)
+        dst = sqlite3.connect(backup_path)
         src.backup(dst)
+    except Exception as e:
+        # Clean up partial backup file on failure
+        _audit_logger.error('Backup API failed for %s: %s\n%s', backup_filename, e, traceback.format_exc())
+        if dst:
+            dst.close()
+            dst = None
+        if src:
+            src.close()
+            src = None
+        try:
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+                _audit_logger.info('Cleaned up partial backup file: %s', backup_filename)
+        except OSError:
+            pass
+        raise
     finally:
-        dst.close()
-        src.close()
+        if dst:
+            dst.close()
+        if src:
+            src.close()
 
     # Verify the backup is a valid SQLite database
+    backup_valid = False
     try:
         verify_conn = sqlite3.connect(backup_path)
         result = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
+        row_count = verify_conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
         verify_conn.close()
         if result != 'ok':
-            _audit_logger.warning('Backup integrity check failed: %s — %s', backup_filename, result)
+            _audit_logger.error('Backup integrity check FAILED: %s — %s', backup_filename, result)
+        else:
+            backup_valid = True
     except Exception as e:
-        _audit_logger.warning('Backup verification error: %s — %s', backup_filename, e)
+        _audit_logger.error('Backup post-write verification error: %s — %s\n%s',
+                            backup_filename, e, traceback.format_exc())
+
+    if not backup_valid:
+        # Remove invalid backup file
+        try:
+            os.remove(backup_path)
+            _audit_logger.warning('Removed invalid backup file: %s', backup_filename)
+        except OSError:
+            pass
+        raise RuntimeError(f'Backup verification failed for {backup_filename}')
 
     file_size = os.path.getsize(backup_path)
 
@@ -744,9 +787,14 @@ def backup_database(performed_by='system', manual=False):
     pruned = _smart_prune_backups(config['max_backups'])
 
     # Record last successful backup time and hash for skip-if-unchanged
+    # skip_checkpoint=True since we already checkpointed above
     config['last_backup'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    config['last_backup_hash'] = _compute_db_hash()
+    config['last_backup_hash'] = _compute_db_hash(skip_checkpoint=True)
     save_backup_config(config)
+
+    elapsed_ms = round((_time.monotonic() - start_time) * 1000)
+    _audit_logger.info('Backup completed: %s (%d bytes, %d devices, pruned=%d, %dms) by=%s',
+                       backup_filename, file_size, row_count, pruned, elapsed_ms, performed_by)
 
     return {
         'filename': backup_filename,
@@ -966,8 +1014,11 @@ def _smart_prune_backups(max_backups):
             try:
                 os.remove(os.path.join(backup_dir, f))
                 pruned += 1
-            except OSError:
-                pass
+            except OSError as e:
+                _audit_logger.warning('Failed to prune backup %s: %s', f, e)
+    if pruned:
+        _audit_logger.info('Smart prune: removed %d auto-backups, kept %d (protected %d daily + %d newest)',
+                           pruned, len(auto_backups) - pruned, len(days_seen), min(max_backups, len(auto_backups)))
     return pruned
 
 
@@ -979,41 +1030,26 @@ def push_backups_to_git():
     Returns dict with push metadata.
     """
     import tempfile
+    import time as _time
     import zipfile
 
+    start_time = _time.monotonic()
     config = _get_backup_config()
     backup_dir = _get_backup_dir()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
-    git_repo = config.get('git_repo', '').strip()
 
     # Collect all backup files (auto + manual)
-    all_files = sorted(
+    backup_files = sorted(
         [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
         reverse=True,
     )
-    backup_files = all_files
     _audit_logger.info('Git push: backup_dir=%s, found %d .db files to zip',
                        backup_dir, len(backup_files))
     if not backup_files:
         raise ValueError('No backup files to push')
 
     git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
-
-    # Build the push URL
-    git_token = config.get('git_token', '').strip()
-    if git_repo:
-        remote_url = git_repo
-    else:
-        url_result = subprocess.run(
-            ['git', 'remote', 'get-url', 'origin'],
-            cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
-        )
-        remote_url = url_result.stdout.decode().strip()
-    if git_token and remote_url.startswith('git@github.com:'):
-        path = remote_url.replace('git@github.com:', '')
-        remote_url = f'https://github.com/{path}'
-    if git_token and remote_url.startswith('https://'):
-        remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
+    remote_url = _get_git_push_url()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
@@ -1080,14 +1116,20 @@ def push_backups_to_git():
 
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode() if e.stderr else str(e)
+            _audit_logger.error('Git push subprocess failed: %s', stderr)
             raise RuntimeError(f'Git push failed: {stderr}')
         except subprocess.TimeoutExpired:
+            _audit_logger.error('Git push timed out after 120s')
             raise RuntimeError('Git push timed out')
 
     config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     save_backup_config(config)
 
+    elapsed_ms = round((_time.monotonic() - start_time) * 1000)
+    git_repo = config.get('git_repo', '').strip()
     push_target = git_repo or 'origin'
+    _audit_logger.info('Git push completed: %d files (%dKB zip) to %s (%s) in %dms',
+                       len(backup_files), zip_size // 1024, push_target, git_branch, elapsed_ms)
     return {
         'files_pushed': len(backup_files),
         'zip_size': zip_size,
@@ -1140,8 +1182,12 @@ def restore_database(filename):
     """
     Restore the database from a backup file using SQLite online backup API.
     Checkpoints WAL first, creates a safety backup, validates, then restores.
+    Rolls back to safety backup if restore fails.
     Returns dict with restore metadata.
     """
+    import time as _time
+    start_time = _time.monotonic()
+
     backup_dir = _get_backup_dir()
     if not _is_backup_file(filename) or '..' in filename:
         raise ValueError('Invalid backup filename')
@@ -1155,8 +1201,10 @@ def restore_database(filename):
         integrity = test_conn.execute('PRAGMA integrity_check').fetchone()[0]
         if integrity != 'ok':
             raise ValueError(f'Backup file failed integrity check: {integrity}')
-        test_conn.execute('SELECT COUNT(*) FROM devices')
-        test_conn.execute('SELECT COUNT(*) FROM users')
+        device_count = test_conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
+        user_count = test_conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+        _audit_logger.info('Restore source validated: %s (integrity=ok, %d devices, %d users)',
+                           filename, device_count, user_count)
     except sqlite3.DatabaseError as e:
         raise ValueError(f'Backup file is not a valid database: {e}')
     finally:
@@ -1169,13 +1217,42 @@ def restore_database(filename):
     safety_backup = backup_database(performed_by='pre-restore-safety', manual=True)
 
     # Restore: copy backup over the live database using the backup API
-    src = sqlite3.connect(backup_path)
-    dst = sqlite3.connect(DB_PATH)
     try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
+        src = sqlite3.connect(backup_path)
+        dst = sqlite3.connect(DB_PATH)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+
+        # Verify restored database integrity
+        verify_conn = sqlite3.connect(DB_PATH)
+        try:
+            post_integrity = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
+            if post_integrity != 'ok':
+                raise RuntimeError(f'Post-restore integrity check failed: {post_integrity}')
+        finally:
+            verify_conn.close()
+
+    except Exception as e:
+        # Rollback: restore from safety backup
+        _audit_logger.error('Restore from %s failed, rolling back to safety backup %s: %s\n%s',
+                            filename, safety_backup['filename'], e, traceback.format_exc())
+        try:
+            safety_path = os.path.join(backup_dir, safety_backup['filename'])
+            rollback_src = sqlite3.connect(safety_path)
+            rollback_dst = sqlite3.connect(DB_PATH)
+            try:
+                rollback_src.backup(rollback_dst)
+            finally:
+                rollback_dst.close()
+                rollback_src.close()
+            _audit_logger.info('Rollback to safety backup %s succeeded', safety_backup['filename'])
+        except Exception as rollback_err:
+            _audit_logger.critical('ROLLBACK FAILED after restore failure: %s — database may be corrupt',
+                                   rollback_err)
+        raise
 
     # Re-run init_db to apply any migrations the restored DB may be missing
     init_db()
@@ -1184,6 +1261,10 @@ def restore_database(filename):
     config = _get_backup_config()
     config['last_backup_hash'] = _compute_db_hash()
     save_backup_config(config)
+
+    elapsed_ms = round((_time.monotonic() - start_time) * 1000)
+    _audit_logger.info('Database restored from %s (safety=%s, %dms)',
+                       filename, safety_backup['filename'], elapsed_ms)
 
     return {
         'restored_from': filename,
@@ -1315,13 +1396,17 @@ def restore_from_git(filename):
 
         extracted_path = os.path.join(tmpdir, filename)
 
-        # Validate it's a real SQLite database
+        # Validate it's a real SQLite database with full integrity check
         test_conn = sqlite3.connect(extracted_path)
         try:
-            test_conn.execute('SELECT COUNT(*) FROM devices')
-            test_conn.execute('SELECT COUNT(*) FROM users')
+            integrity = test_conn.execute('PRAGMA integrity_check').fetchone()[0]
+            if integrity != 'ok':
+                raise ValueError(f'Git backup file failed integrity check: {integrity}')
+            device_count = test_conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
+            user_count = test_conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+            _audit_logger.info('Git restore source validated: %s (integrity=ok, %d devices, %d users)',
+                               filename, device_count, user_count)
         except sqlite3.DatabaseError as e:
-            test_conn.close()
             raise ValueError(f'File is not a valid database: {e}')
         finally:
             test_conn.close()
@@ -1332,14 +1417,42 @@ def restore_from_git(filename):
         # Safety backup before restore
         safety = backup_database(performed_by='pre-git-restore-safety', manual=True)
 
-        # Restore using backup API
-        src = sqlite3.connect(extracted_path)
-        dst = sqlite3.connect(DB_PATH)
+        # Restore using backup API with rollback on failure
         try:
-            src.backup(dst)
-        finally:
-            dst.close()
-            src.close()
+            src = sqlite3.connect(extracted_path)
+            dst = sqlite3.connect(DB_PATH)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+
+            # Verify restored database integrity
+            verify_conn = sqlite3.connect(DB_PATH)
+            try:
+                post_integrity = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
+                if post_integrity != 'ok':
+                    raise RuntimeError(f'Post-restore integrity check failed: {post_integrity}')
+            finally:
+                verify_conn.close()
+
+        except Exception as e:
+            # Rollback to safety backup
+            _audit_logger.error('Git restore from %s failed, rolling back: %s\n%s',
+                                filename, e, traceback.format_exc())
+            try:
+                safety_path = os.path.join(_get_backup_dir(), safety['filename'])
+                rb_src = sqlite3.connect(safety_path)
+                rb_dst = sqlite3.connect(DB_PATH)
+                try:
+                    rb_src.backup(rb_dst)
+                finally:
+                    rb_dst.close()
+                    rb_src.close()
+                _audit_logger.info('Rollback to safety backup %s succeeded', safety['filename'])
+            except Exception as rb_err:
+                _audit_logger.critical('ROLLBACK FAILED after git restore failure: %s', rb_err)
+            raise
 
         init_db()
 
@@ -1347,6 +1460,8 @@ def restore_from_git(filename):
         cfg = _get_backup_config()
         cfg['last_backup_hash'] = _compute_db_hash()
         save_backup_config(cfg)
+
+        _audit_logger.info('Database restored from git:%s (safety=%s)', filename, safety['filename'])
 
         return {
             'restored_from': f'git:{filename}',
