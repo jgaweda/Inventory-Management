@@ -290,8 +290,6 @@
             Product Reference
         </a>
 
-        <div class="nav-separator"></div>
-
         {% if current_user and current_user.role == 'admin' %}
         <div class="nav-separator"></div>
         <a href="{{ url_for('app_logs') }}" class="nav-link {% if request.endpoint in ['app_logs'] %}active{% endif %}">
