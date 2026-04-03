@@ -96,61 +96,74 @@ def generate_barcode_image(data, width=350, height=80):
 def generate_label(device_id, barcode_value, device_name, save=True):
     """
     Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI) containing:
-    - Top: Device name (left-aligned)
-    - Middle: Full-width Code 128 barcode
-    - Bottom: Barcode ID value (large, prominent, mono font)
+    - Left: QR code (fills height)
+    - Right top: Device name (centered above barcode)
+    - Right middle: Full-width Code 128 barcode
+    - Right bottom: Barcode ID value (centered, large mono font)
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    MARGIN = 30
+    PAD = 15  # minimal padding to fill the sticker
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    content_w = W - 2 * MARGIN
+    # --- Left side: QR code (square, fills height) ---
+    qr_size = H - 2 * PAD  # 420px
+    qr_img = generate_qr_code(barcode_value, size=qr_size)
+    qr_x = PAD
+    qr_y = PAD
+    label.paste(qr_img, (qr_x, qr_y))
 
-    # Device name — dynamically size font to fit width
-    max_name_size = 48
-    min_name_size = 24
-    font_name = _find_font(BOLD_FONTS, max_name_size)
-    for size in range(max_name_size, min_name_size - 1, -2):
-        font_name = _find_font(BOLD_FONTS, size)
-        bbox = draw.textbbox((0, 0), device_name, font=font_name)
-        if bbox[2] - bbox[0] <= content_w:
-            break
-    name_h = bbox[3] - bbox[1]
+    # --- Right side: name + barcode + ID text ---
+    right_x = qr_x + qr_size + PAD
+    right_w = W - right_x - PAD
 
-    # Barcode ID text — large and prominent
-    font_id = _find_font(MONO_BOLD_FONTS, 48)
+    # Barcode ID text font — large and prominent
+    font_id = _find_font(MONO_BOLD_FONTS, 44)
     id_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
+    id_text_w = id_bbox[2] - id_bbox[0]
     id_h = id_bbox[3] - id_bbox[1]
 
-    # Layout: name at top, ID at bottom, barcode fills the middle
-    name_y = MARGIN
-    id_y = H - MARGIN - id_h
-    barcode_y = name_y + name_h + 12
-    barcode_h = id_y - barcode_y - 12
+    # Device name — dynamically size to fit right-side width, centered
+    for size in range(44, 18, -2):
+        font_name = _find_font(BOLD_FONTS, size)
+        bbox = draw.textbbox((0, 0), device_name, font=font_name)
+        if bbox[2] - bbox[0] <= right_w:
+            break
+    name_text_w = bbox[2] - bbox[0]
+    name_h = bbox[3] - bbox[1]
 
-    if barcode_h < 60:
-        barcode_h = 60
+    # Vertical layout within right side
+    gap = 8
+    total_text_h = name_h + gap + id_h  # name + gap + id text
+    barcode_h = H - 2 * PAD - total_text_h - 2 * gap
+    if barcode_h < 100:
+        barcode_h = 100
 
-    # Draw device name (left-aligned, compensate for font bearing)
-    name_draw_bbox = draw.textbbox((MARGIN, name_y), device_name, font=font_name)
-    name_offset_x = name_draw_bbox[0] - MARGIN
-    draw.text((MARGIN - name_offset_x, name_y), device_name, fill='black', font=font_name)
+    # Vertically center the whole right-side block
+    block_h = name_h + gap + barcode_h + gap + id_h
+    top_y = (H - block_h) // 2
 
-    # Draw barcode — full content width, crisp bars
+    name_y = top_y
+    barcode_y = name_y + name_h + gap
+    id_y = barcode_y + barcode_h + gap
+
+    # Draw device name — centered over barcode area
+    name_x = right_x + (right_w - name_text_w) // 2
+    name_bearing = draw.textbbox((name_x, name_y), device_name, font=font_name)[0] - name_x
+    draw.text((name_x - name_bearing, name_y), device_name, fill='black', font=font_name)
+
+    # Draw Code 128 barcode — full right-side width, crisp
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=content_w, height=barcode_h)
-        label.paste(barcode_img, (MARGIN, barcode_y))
+        barcode_img = generate_barcode_image(barcode_value, width=right_w, height=barcode_h)
+        label.paste(barcode_img, (right_x, barcode_y))
     except Exception:
-        draw.text((MARGIN, barcode_y + 20), barcode_value, fill='black', font=font_id)
+        draw.text((right_x, barcode_y + 20), barcode_value, fill='black', font=font_id)
 
-    # Draw barcode ID text — centered horizontally
-    id_draw_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
-    id_text_w = id_draw_bbox[2] - id_draw_bbox[0]
-    id_x = (W - id_text_w) // 2
+    # Draw barcode ID text — centered under barcode
+    id_x = right_x + (right_w - id_text_w) // 2
     draw.text((id_x, id_y), barcode_value, fill='black', font=font_id)
 
     if save:
