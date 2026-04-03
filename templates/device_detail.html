@@ -277,7 +277,16 @@
 
 <script>
 function printLabel() {
-    window.open('{{ url_for("serve_label_pdf", device_id=device.device_id) }}', '_blank');
+    var iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = '{{ url_for("serve_label_pdf", device_id=device.device_id) }}';
+    document.body.appendChild(iframe);
+    iframe.onload = function() {
+        setTimeout(function() {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }, 500);
+    };
 }
 
 (function() {
