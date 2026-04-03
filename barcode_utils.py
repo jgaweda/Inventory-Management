@@ -109,7 +109,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     qr_y = (H - qr_size) // 2
     label.paste(qr_img, (50, qr_y))
 
-    # --- Right side: text and barcode, vertically centered as a block ---
+    # --- Right side: text and barcode, top-aligned with QR code ---
     right_x = 820
     text_w = W - right_x - 50  # available width for text/barcode
     spacing = 16  # gap between elements
@@ -131,11 +131,8 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     team_bbox = draw.textbbox((0, 0), 'HP Connectivity Team', font=font_team)
     team_h = team_bbox[3] - team_bbox[1]
 
-    barcode_h = 350
-
-    # Total block height: name + spacing + id + spacing + team + spacing + barcode
-    total_h = name_h + spacing + id_h + spacing + team_h + spacing * 2 + barcode_h
-    y = (H - total_h) // 2  # vertically center
+    # Right side starts at same y as QR code top
+    y = qr_y
 
     draw.text((right_x, y), device_name, fill='black', font=font_name)
     y += name_h + spacing
@@ -146,7 +143,10 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw.text((right_x, y), 'HP Connectivity Team', fill='#666666', font=font_team)
     y += team_h + spacing * 2
 
-    # Code 128 barcode image
+    # Code 128 barcode — fill remaining space down to match QR bottom
+    barcode_h = (qr_y + qr_size) - y
+    if barcode_h < 150:
+        barcode_h = 150
     try:
         barcode_img = generate_barcode_image(barcode_value, width=text_w, height=barcode_h)
         label.paste(barcode_img, (right_x, y))
