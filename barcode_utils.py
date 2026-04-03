@@ -62,54 +62,55 @@ def generate_barcode_image(data, width=350, height=80):
 
 def generate_label(device_id, barcode_value, device_name, save=True):
     """
-    Create a 1200x600 pixel device label containing:
-    - Left: QR code (400x400, centered vertically)
+    Create a 1800x1200 pixel device label (4x6 inches at 300 DPI) containing:
+    - Left: QR code (500x500, centered vertically)
     - Right: Device name, barcode value, team name, Code 128 barcode
     - 2px gray border
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
     """
-    label = Image.new('RGB', (1200, 600), 'white')
+    W, H = 1800, 1200
+    label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
     try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 24)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 54)
+        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 36)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
     except (OSError, IOError):
         font_large = ImageFont.load_default()
         font_medium = ImageFont.load_default()
         font_small = ImageFont.load_default()
 
     # --- Left side: QR code ---
-    qr_size = 400
+    qr_size = 500
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    qr_y = (600 - qr_size) // 2
-    label.paste(qr_img, (40, qr_y))
+    qr_y = (H - qr_size) // 2
+    label.paste(qr_img, (60, qr_y))
 
     # --- Right side: text and barcode ---
-    right_x = 480
+    right_x = 640
 
-    # Device name (bold, truncated at 30 chars)
-    display_name = device_name[:30] + '...' if len(device_name) > 30 else device_name
-    draw.text((right_x, 60), display_name, fill='black', font=font_large)
+    # Device name (bold, truncated at 35 chars)
+    display_name = device_name[:35] + '...' if len(device_name) > 35 else device_name
+    draw.text((right_x, 120), display_name, fill='black', font=font_large)
 
     # Barcode value (monospace)
-    draw.text((right_x, 120), barcode_value, fill='#333333', font=font_medium)
+    draw.text((right_x, 210), barcode_value, fill='#333333', font=font_medium)
 
     # Team name
-    draw.text((right_x, 165), 'HP Connectivity Team', fill='#888888', font=font_small)
+    draw.text((right_x, 275), 'HP Connectivity Team', fill='#888888', font=font_small)
 
     # Code 128 barcode image
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=660, height=160)
-        label.paste(barcode_img, (right_x, 230))
+        barcode_img = generate_barcode_image(barcode_value, width=1000, height=280)
+        label.paste(barcode_img, (right_x, 380))
     except Exception:
-        draw.text((right_x, 280), barcode_value, fill='black', font=font_medium)
+        draw.text((right_x, 450), barcode_value, fill='black', font=font_medium)
 
     # 2px gray border around the entire label
-    draw.rectangle([0, 0, 1199, 599], outline='#cccccc', width=2)
+    draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=2)
 
     if save:
         _ensure_labels_dir()
@@ -123,7 +124,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 def generate_label_sheet(devices, cols=2, rows=4):
     """
     Generate a US Letter page (2550x3300 px at 300 DPI) with a grid of labels.
-    Each label is 1200x600 px. Grid has 75px margins.
+    Each label is 1800x1200 px (4x6 at 300 DPI), scaled to fit grid cells.
 
     Args:
         devices: list of dicts with device_id, barcode_value, name keys
@@ -134,7 +135,6 @@ def generate_label_sheet(devices, cols=2, rows=4):
     """
     page_w, page_h = 2550, 3300
     margin = 75
-    label_w, label_h = 1200, 600
 
     # Calculate cell size and spacing
     usable_w = page_w - 2 * margin
@@ -156,13 +156,19 @@ def generate_label_sheet(devices, cols=2, rows=4):
             save=False,
         )
 
-        # Center label within cell
+        # Scale label to fit within cell while maintaining aspect ratio
+        scale = min(cell_w / label_img.width, cell_h / label_img.height)
+        scaled_w = int(label_img.width * scale)
+        scaled_h = int(label_img.height * scale)
+        scaled_img = label_img.resize((scaled_w, scaled_h), Image.LANCZOS)
+
+        # Center scaled label within cell
         cell_x = margin + col * cell_w
         cell_y = margin + row * cell_h
-        offset_x = cell_x + (cell_w - label_w) // 2
-        offset_y = cell_y + (cell_h - label_h) // 2
+        offset_x = cell_x + (cell_w - scaled_w) // 2
+        offset_y = cell_y + (cell_h - scaled_h) // 2
 
-        sheet.paste(label_img, (offset_x, offset_y))
+        sheet.paste(scaled_img, (offset_x, offset_y))
 
     return sheet
 
