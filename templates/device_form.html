@@ -43,9 +43,10 @@
                     <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Variant</label>
                     <select name="variant" id="variantSelect">
                         <option value="">None</option>
-                        <option value="Base" {% if (device.get('variant', '') if device is mapping else '') == 'Base' %}selected{% endif %}>Base</option>
-                        <option value="Plus" {% if (device.get('variant', '') if device is mapping else '') == 'Plus' %}selected{% endif %}>Plus</option>
-                        <option value="Lite" {% if (device.get('variant', '') if device is mapping else '') == 'Lite' %}selected{% endif %}>Lite</option>
+                        {% set dev_variant = device.get('variant', '') if device is mapping else (device.variant if device and device.variant is defined else '') %}
+                        <option value="Base" {% if dev_variant == 'Base' %}selected{% endif %}>Base</option>
+                        <option value="Plus" {% if dev_variant == 'Plus' %}selected{% endif %}>Plus</option>
+                        <option value="Lite" {% if dev_variant == 'Lite' %}selected{% endif %}>Lite</option>
                     </select>
                 </div>
             </div>

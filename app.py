@@ -245,6 +245,7 @@ def device_add():
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
             'codename': codename,
+            'variant': request.form.get('variant', '').strip(),
         }
         device_id = db.add_device(data, performed_by=current_username())
 
@@ -333,6 +334,7 @@ def device_edit(device_id):
             'assigned_to': request.form.get('assigned_to', ''),
             'notes': request.form.get('notes', ''),
             'codename': codename,
+            'variant': request.form.get('variant', '').strip(),
         }
         db.update_device(device_id, data, performed_by=current_username())
 
@@ -342,12 +344,6 @@ def device_edit(device_id):
         flash(f'Device "{name}" updated successfully.', 'success')
         return redirect(url_for('device_detail', device_id=device_id))
 
-    # Look up variant from product reference for the edit form
-    if device.get('category') == 'Printer' and device.get('codename'):
-        refs = db.get_product_reference_by_codename(device['codename'])
-        if refs:
-            device = dict(device)
-            device['variant'] = refs[0].get('variant', '')
     return render_template('device_form.html', device=device, is_edit=True, device_id=device_id)
 
 # ---------------------------------------------------------------------------

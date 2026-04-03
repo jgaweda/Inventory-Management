@@ -45,7 +45,7 @@ DEFAULT_CATEGORIES = [
 UPDATABLE_FIELDS = [
     'name', 'category', 'manufacturer', 'model_number', 'serial_number',
     'connectivity', 'vendor_supplied', 'status', 'location',
-    'assigned_to', 'notes', 'codename',
+    'assigned_to', 'notes', 'codename', 'variant',
 ]
 
 
@@ -188,6 +188,8 @@ def init_db():
         device_cols = [row[1] for row in conn.execute('PRAGMA table_info(devices)').fetchall()]
         if 'codename' not in device_cols:
             conn.execute("ALTER TABLE devices ADD COLUMN codename TEXT DEFAULT ''")
+        if 'variant' not in device_cols:
+            conn.execute("ALTER TABLE devices ADD COLUMN variant TEXT DEFAULT ''")
 
         # Seed default categories
         for name, desc, sort_ord in DEFAULT_CATEGORIES:
@@ -231,8 +233,8 @@ def _insert_device(conn, data, performed_by='system'):
     conn.execute('''
         INSERT INTO devices (device_id, barcode_value, name, category, manufacturer,
             model_number, serial_number, connectivity, vendor_supplied, status,
-            location, assigned_to, notes, codename)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            location, assigned_to, notes, codename, variant)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         device_id,
         barcode_value,
@@ -248,6 +250,7 @@ def _insert_device(conn, data, performed_by='system'):
         data.get('assigned_to', ''),
         data.get('notes', ''),
         data.get('codename', ''),
+        data.get('variant', ''),
     ))
 
     log_action(conn, device_id, 'added', performed_by, f'Device "{data.get("name", "")}" added')
