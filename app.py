@@ -224,8 +224,14 @@ def device_add():
             if not codename:
                 flash('Codename is required for printers.', 'error')
                 return render_template('device_form.html', device=request.form, is_edit=False)
+            # Look up variant from product reference
+            variant = ''
+            refs = db.get_product_reference_by_codename(codename)
+            if refs:
+                variant = refs[0].get('variant', '')
+            codename_display = f'{codename} {variant}'.strip() if variant else codename
             mfg_model = f'{manufacturer} {model_number}'.strip()
-            name = f'{codename} ({mfg_model})' if mfg_model else codename
+            name = f'{codename_display} ({mfg_model})' if mfg_model else codename_display
         else:
             if not manufacturer:
                 flash('Manufacturer is required.', 'error')
@@ -308,8 +314,14 @@ def device_edit(device_id):
             if not codename:
                 flash('Codename is required for printers.', 'error')
                 return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+            # Look up variant from product reference
+            variant = ''
+            refs = db.get_product_reference_by_codename(codename)
+            if refs:
+                variant = refs[0].get('variant', '')
+            codename_display = f'{codename} {variant}'.strip() if variant else codename
             mfg_model = f'{manufacturer} {model_number}'.strip()
-            name = f'{codename} ({mfg_model})' if mfg_model else codename
+            name = f'{codename_display} ({mfg_model})' if mfg_model else codename_display
         else:
             if not manufacturer:
                 flash('Manufacturer is required.', 'error')
