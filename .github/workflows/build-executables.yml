@@ -33,7 +33,7 @@ jobs:
           path: dist/InventorySystem/
 
   build-macos:
-    runs-on: macos-13        # Intel Mac for broader compatibility
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
