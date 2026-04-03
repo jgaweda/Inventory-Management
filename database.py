@@ -18,12 +18,13 @@ import subprocess
 from contextlib import contextmanager
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from runtime_dirs import DATA_DIR
 
-# Path to the SQLite database file (same directory as this script)
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inventory.db')
+# Path to the SQLite database file (writable data directory)
+DB_PATH = os.path.join(DATA_DIR, 'inventory.db')
 
 # Shared application logger (same file as app.py uses)
-_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+_LOG_DIR = os.path.join(DATA_DIR, 'logs')
 os.makedirs(_LOG_DIR, exist_ok=True)
 _audit_logger = logging.getLogger('inventory')
 # Only add handler if the logger doesn't already have one (app.py may have set it up)
@@ -624,7 +625,7 @@ def delete_user(user_id):
 
 import gzip as _gzip
 
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR = DATA_DIR
 BACKUP_CONFIG_FILE = os.path.join(REPO_DIR, 'backup_config.json')
 
 # Default backup directory (used when no config exists)

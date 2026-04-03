@@ -22,18 +22,21 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, send_file, jsonify, Response, session, g,
 )
+from runtime_dirs import BUNDLE_DIR, DATA_DIR
 
 import database as db
 import barcode_utils
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
+app = Flask(__name__,
+            static_folder=os.path.join(BUNDLE_DIR, 'static'),
+            template_folder=os.path.join(BUNDLE_DIR, 'templates'))
 app.secret_key = os.environ.get('SECRET_KEY', 'hp-connectivity-inventory-system-change-me')
 
 # ---------------------------------------------------------------------------
 # Application logging (rotating file, single file that overwrites at limit)
 # ---------------------------------------------------------------------------
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+LOG_DIR = os.path.join(DATA_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 LOG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log_config.json')

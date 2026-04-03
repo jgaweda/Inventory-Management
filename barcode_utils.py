@@ -13,9 +13,10 @@ import qrcode
 from barcode import Code128
 from barcode.writer import ImageWriter
 from PIL import Image, ImageDraw, ImageFont
+from runtime_dirs import DATA_DIR
 
-# Directory where label PNGs are saved
-LABELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'labels')
+# Directory where label PNGs are saved (writable, outside bundled static)
+LABELS_DIR = os.path.join(DATA_DIR, 'static', 'labels')
 
 
 def _ensure_labels_dir():
