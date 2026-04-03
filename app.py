@@ -1258,6 +1258,25 @@ def product_reference_import():
     return redirect(url_for('product_reference_list'))
 
 
+@app.route('/reference/export')
+@login_required
+def product_reference_export():
+    """Export all product references as a .csv download."""
+    import csv, io
+    refs = db.get_all_product_references()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
+                     'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase'])
+    for r in refs:
+        writer.writerow([r['codename'], r['model_name'], r['print_technology'],
+                         r['wifi_gen'], r['year'], r['chip_manufacturer'],
+                         r['chip_codename'], r['fw_codebase']])
+    csv_bytes = output.getvalue().encode('utf-8-sig')
+    return Response(csv_bytes, mimetype='text/csv',
+                    headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
+
+
 @app.route('/api/reference/search')
 def api_reference_search():
     """JSON API for printer dropdown in the device form."""
