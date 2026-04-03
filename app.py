@@ -423,44 +423,41 @@ def serve_label_pdf(device_id):
     barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
 
-    # Keep the landscape PNG as-is (1050x450) and use /Rotate on the page
+    # Landscape PNG (1050x450 = 3.5x1.5")
     img = Image.open(path)
     img_buffer = io.BytesIO()
     img.save(img_buffer, 'JPEG', quality=95)
     img_data = img_buffer.getvalue()
     img_w, img_h = img.size  # 1050 x 450
 
-    # MediaBox in portrait (1.5" x 3.5") but content drawn landscape with /Rotate
-    page_w = 252   # 3.5 * 72 (landscape width = portrait height)
-    page_h = 108   # 1.5 * 72 (landscape height = portrait width)
+    # Portrait page matching label stock: 1.5" wide x 3.5" tall
+    page_w = 108   # 1.5 * 72
+    page_h = 252   # 3.5 * 72
 
     xref_offsets = []
     pdf = io.BytesIO()
 
     pdf.write(b'%PDF-1.4\n')
 
-    # Object 1: Catalog
     xref_offsets.append(pdf.tell())
     pdf.write(b'1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
 
-    # Object 2: Pages
     xref_offsets.append(pdf.tell())
     pdf.write(b'2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
 
-    # Object 3: Page — landscape MediaBox with /Rotate 90 to display as portrait
-    # The viewer/printer rotates the rendered page 270° for display,
-    # which maps our landscape content onto the portrait label stock.
     xref_offsets.append(pdf.tell())
-    pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Rotate 90 /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
+    pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
 
-    # Object 4: Image XObject
     xref_offsets.append(pdf.tell())
     pdf.write(f'4 0 obj\n<< /Type /XObject /Subtype /Image /Width {img_w} /Height {img_h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(img_data)} >>\nstream\n'.encode())
     pdf.write(img_data)
     pdf.write(b'\nendstream\nendobj\n')
 
-    # Object 5: Content stream — draw image filling the landscape MediaBox
-    content = f'q {page_w} 0 0 {page_h} 0 0 cm /Img Do Q'.encode()
+    # Rotate landscape image 90° CCW via transformation matrix to fit portrait page.
+    # Matrix: [0 -page_w page_h 0 0 page_w] rotates and scales the unit square
+    # so the landscape image fills the portrait page.
+    # The image left edge maps to the top of the page.
+    content = f'q 0 -{page_w} {page_h} 0 0 {page_w} cm /Img Do Q'.encode()
     xref_offsets.append(pdf.tell())
     pdf.write(f'5 0 obj\n<< /Length {len(content)} >>\nstream\n'.encode())
     pdf.write(content)

@@ -95,7 +95,7 @@ def generate_barcode_image(data, width=350, height=80):
 
 def generate_label(device_id, barcode_value, device_name, save=True):
     """
-    Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI) containing:
+    Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI, landscape).
     - Left: QR code (fills height)
     - Right top: Device name (centered above barcode)
     - Right middle: Full-width Code 128 barcode
@@ -105,7 +105,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    PAD = 15  # minimal padding to fill the sticker
+    PAD = 15
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
@@ -120,13 +120,13 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     right_x = qr_x + qr_size + PAD
     right_w = W - right_x - PAD
 
-    # Barcode ID text font — large and prominent
+    # Barcode ID text font
     font_id = _find_font(MONO_BOLD_FONTS, 44)
     id_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
     id_text_w = id_bbox[2] - id_bbox[0]
     id_h = id_bbox[3] - id_bbox[1]
 
-    # Device name — dynamically size to fit right-side width, centered
+    # Device name — dynamically size to fit right-side width
     for size in range(44, 18, -2):
         font_name = _find_font(BOLD_FONTS, size)
         bbox = draw.textbbox((0, 0), device_name, font=font_name)
@@ -135,14 +135,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     name_text_w = bbox[2] - bbox[0]
     name_h = bbox[3] - bbox[1]
 
-    # Vertical layout within right side
+    # Vertical layout
     gap = 8
-    total_text_h = name_h + gap + id_h  # name + gap + id text
-    barcode_h = H - 2 * PAD - total_text_h - 2 * gap
+    barcode_h = H - 2 * PAD - name_h - gap - gap - id_h
     if barcode_h < 100:
         barcode_h = 100
 
-    # Vertically center the whole right-side block
     block_h = name_h + gap + barcode_h + gap + id_h
     top_y = (H - block_h) // 2
 
@@ -155,7 +153,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     name_bearing = draw.textbbox((name_x, name_y), device_name, font=font_name)[0] - name_x
     draw.text((name_x - name_bearing, name_y), device_name, fill='black', font=font_name)
 
-    # Draw Code 128 barcode — full right-side width, crisp
+    # Draw Code 128 barcode
     try:
         barcode_img = generate_barcode_image(barcode_value, width=right_w, height=barcode_h)
         label.paste(barcode_img, (right_x, barcode_y))
