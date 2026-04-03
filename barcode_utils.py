@@ -75,42 +75,43 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw = ImageDraw.Draw(label)
 
     try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 54)
-        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 36)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
+        font_name = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 96)
+        font_barcode_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 64)
+        font_team = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 52)
     except (OSError, IOError):
-        font_large = ImageFont.load_default()
-        font_medium = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+        font_name = ImageFont.load_default()
+        font_barcode_id = ImageFont.load_default()
+        font_team = ImageFont.load_default()
 
     # --- Left side: QR code ---
-    qr_size = 500
+    qr_size = 700
     qr_img = generate_qr_code(barcode_value, size=qr_size)
     qr_y = (H - qr_size) // 2
-    label.paste(qr_img, (60, qr_y))
+    label.paste(qr_img, (50, qr_y))
 
     # --- Right side: text and barcode ---
-    right_x = 640
+    right_x = 820
+    text_w = W - right_x - 50  # available width for text/barcode
 
-    # Device name (bold, truncated at 35 chars)
-    display_name = device_name[:35] + '...' if len(device_name) > 35 else device_name
-    draw.text((right_x, 120), display_name, fill='black', font=font_large)
+    # Device name (bold, up to 2 lines)
+    display_name = device_name[:40] if len(device_name) <= 40 else device_name[:37] + '...'
+    draw.text((right_x, 60), display_name, fill='black', font=font_name)
 
-    # Barcode value (monospace)
-    draw.text((right_x, 210), barcode_value, fill='#333333', font=font_medium)
+    # Barcode value (monospace, bold)
+    draw.text((right_x, 190), barcode_value, fill='#222222', font=font_barcode_id)
 
     # Team name
-    draw.text((right_x, 275), 'HP Connectivity Team', fill='#888888', font=font_small)
+    draw.text((right_x, 280), 'HP Connectivity Team', fill='#666666', font=font_team)
 
-    # Code 128 barcode image
+    # Code 128 barcode image — fill remaining space
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=1000, height=280)
-        label.paste(barcode_img, (right_x, 380))
+        barcode_img = generate_barcode_image(barcode_value, width=text_w, height=400)
+        label.paste(barcode_img, (right_x, 400))
     except Exception:
-        draw.text((right_x, 450), barcode_value, fill='black', font=font_medium)
+        draw.text((right_x, 500), barcode_value, fill='black', font=font_barcode_id)
 
-    # 2px gray border around the entire label
-    draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=2)
+    # 3px gray border around the entire label
+    draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=3)
 
     if save:
         _ensure_labels_dir()
