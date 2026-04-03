@@ -22,7 +22,7 @@
             </div>
             <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity Type/Version</label>
-                <input type="text" name="connectivity" autocomplete="off" data-ac-field="connectivity"
+                <input type="text" name="connectivity" id="connectivityInput" autocomplete="off" data-ac-field="connectivity"
                        value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
@@ -110,7 +110,7 @@
         if (ref.wifi_gen) {
             var connField = document.querySelector('input[name="connectivity"]');
             if (connField && !connField.value) {
-                var genMap = {'4': 'Wi-Fi 4 (802.11n)', '5': 'Wi-Fi 5 (802.11ac)', '6': 'Wi-Fi 6 (802.11ax)', '6E': 'Wi-Fi 6E'};
+                var genMap = {'4': 'Wi-Fi 4 (802.11n)', '5': 'Wi-Fi 5 (802.11ac)', '6': 'Wi-Fi 6 (802.11ax)', '6E': 'Wi-Fi 6E (802.11ax)', '7': 'Wi-Fi 7 (802.11be)'};
                 connField.value = genMap[ref.wifi_gen] || ('Wi-Fi ' + ref.wifi_gen);
             }
         }
@@ -151,9 +151,9 @@
                 <input type="text" name="manufacturer" autocomplete="off" data-ac-field="manufacturer"
                        value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" required placeholder="e.g. Intel">
             </div>
-            <div style="position: relative;">
+            <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Number</label>
-                <input type="text" name="model_number" autocomplete="off" data-ac-field="model_number"
+                <input type="text" name="model_number"
                        value="{{ device.get('model_number', '') if device is mapping else device.model_number if device else '' }}" placeholder="e.g. AX211NGW">
             </div>
             <div>
@@ -216,11 +216,70 @@
 (function() {
     var cache = {};
 
+    // Standard connectivity options with full display names
+    var CONNECTIVITY_STANDARDS = [
+        'Wi-Fi 4 (802.11n)',
+        'Wi-Fi 5 (802.11ac)',
+        'Wi-Fi 6 (802.11ax)',
+        'Wi-Fi 6E (802.11ax)',
+        'Wi-Fi 7 (802.11be)',
+        'Bluetooth 4.0',
+        'Bluetooth 4.2',
+        'Bluetooth 5.0',
+        'Bluetooth 5.1',
+        'Bluetooth 5.2',
+        'Bluetooth 5.3',
+        'Bluetooth 5.4',
+        'BLE (Bluetooth Low Energy)',
+        'USB',
+        'Ethernet',
+        'Zigbee',
+        'Thread',
+        'Matter',
+        'NFC',
+    ];
+
+    // Normalize short-hand connectivity values to full display form
+    var CONNECTIVITY_MAP = {
+        'wi-fi 4': 'Wi-Fi 4 (802.11n)',
+        'wifi 4': 'Wi-Fi 4 (802.11n)',
+        'wi-fi 5': 'Wi-Fi 5 (802.11ac)',
+        'wifi 5': 'Wi-Fi 5 (802.11ac)',
+        'wi-fi 6': 'Wi-Fi 6 (802.11ax)',
+        'wifi 6': 'Wi-Fi 6 (802.11ax)',
+        'wi-fi 6e': 'Wi-Fi 6E (802.11ax)',
+        'wifi 6e': 'Wi-Fi 6E (802.11ax)',
+        'wi-fi 7': 'Wi-Fi 7 (802.11be)',
+        'wifi 7': 'Wi-Fi 7 (802.11be)',
+        'bt 4.0': 'Bluetooth 4.0',
+        'bt 4.2': 'Bluetooth 4.2',
+        'bt 5.0': 'Bluetooth 5.0',
+        'bt 5.1': 'Bluetooth 5.1',
+        'bt 5.2': 'Bluetooth 5.2',
+        'bt 5.3': 'Bluetooth 5.3',
+        'bt 5.4': 'Bluetooth 5.4',
+        'ble': 'BLE (Bluetooth Low Energy)',
+    };
+
+    function normalizeConnectivity(val) {
+        return CONNECTIVITY_MAP[val.toLowerCase().trim()] || null;
+    }
+
     function fetchValues(field, cb) {
         if (cache[field]) { cb(cache[field]); return; }
         fetch('{{ url_for("api_distinct_values", field="__FIELD__") }}'.replace('__FIELD__', field))
             .then(function(r) { return r.json(); })
-            .then(function(vals) { cache[field] = vals; cb(vals); });
+            .then(function(vals) {
+                if (field === 'connectivity') {
+                    // Merge standard options with DB values, deduped
+                    var set = {};
+                    CONNECTIVITY_STANDARDS.forEach(function(v) { set[v] = true; });
+                    vals.forEach(function(v) { set[v] = true; });
+                    vals = Object.keys(set).sort();
+                }
+                cache[field] = vals;
+                cb(vals);
+            });
     }
 
     function createDropdown(input) {
@@ -246,7 +305,6 @@
                 e.preventDefault();
                 input.value = val;
                 dd.style.display = 'none';
-                input.dispatchEvent(new Event('input', {bubbles: true}));
             });
             dd.appendChild(item);
         });
@@ -274,7 +332,14 @@
         });
 
         input.addEventListener('blur', function() {
-            setTimeout(function() { dd.style.display = 'none'; }, 150);
+            setTimeout(function() {
+                dd.style.display = 'none';
+                // Auto-expand short connectivity values on blur
+                if (field === 'connectivity' && input.value) {
+                    var expanded = normalizeConnectivity(input.value);
+                    if (expanded) input.value = expanded;
+                }
+            }, 150);
         });
     });
 })();

@@ -446,7 +446,7 @@ def get_audit_log(device_id=None, limit=100):
 
 def get_distinct_values(column):
     """Return sorted list of distinct non-empty values for a device column."""
-    allowed = {'connectivity', 'manufacturer', 'model_number', 'location', 'assigned_to'}
+    allowed = {'connectivity', 'manufacturer', 'location', 'assigned_to'}
     if column not in allowed:
         return []
     with db_transaction() as conn:
