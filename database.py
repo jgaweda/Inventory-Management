@@ -18,22 +18,13 @@ import subprocess
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from logging.handlers import RotatingFileHandler
 from runtime_dirs import DATA_DIR
 
 # Path to the SQLite database file (writable data directory)
 DB_PATH = os.path.join(DATA_DIR, 'inventory.db')
 
-# Shared application logger (same file as app.py uses)
-_LOG_DIR = os.path.join(DATA_DIR, 'logs')
-os.makedirs(_LOG_DIR, exist_ok=True)
+# Shared application logger — handler is configured by app.py
 _audit_logger = logging.getLogger('inventory')
-# Only add handler if the logger doesn't already have one (app.py may have set it up)
-if not _audit_logger.handlers:
-    _audit_logger.setLevel(logging.DEBUG)
-    _h = RotatingFileHandler(os.path.join(_LOG_DIR, 'app.log'), maxBytes=2*1024*1024, backupCount=5)
-    _h.setFormatter(logging.Formatter('%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-    _audit_logger.addHandler(_h)
 
 # Default categories seeded on first run (sort_order determines dropdown order)
 DEFAULT_CATEGORIES = [
