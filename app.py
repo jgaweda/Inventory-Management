@@ -415,7 +415,7 @@ def serve_label(device_id):
 
 @app.route('/labels/<device_id>.pdf')
 def serve_label_pdf(device_id):
-    """Serve a label as a PDF with 3.5x1.5 inch landscape page."""
+    """Serve a label as a PDF matching 1.5x3.5 inch portrait label stock."""
     device = db.get_device(device_id)
     if not device:
         return 'Device not found', 404
@@ -423,16 +423,16 @@ def serve_label_pdf(device_id):
     barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
 
-    # Read the PNG and build a PDF with explicit 3.5"x1.5" landscape MediaBox
-    img = Image.open(path)
+    # Read the landscape PNG (1050x450) and rotate 90° CW for portrait paper
+    img = Image.open(path).rotate(-90, expand=True)  # now 450x1050
     img_buffer = io.BytesIO()
     img.save(img_buffer, 'JPEG', quality=95)
     img_data = img_buffer.getvalue()
-    img_w, img_h = img.size  # 1050 x 450 px
+    img_w, img_h = img.size  # 450 x 1050
 
-    # Page size in points: 3.5" x 1.5" landscape (1 inch = 72 points)
-    page_w = 252   # 3.5 * 72
-    page_h = 108   # 1.5 * 72
+    # Page size in points: 1.5" x 3.5" portrait (matches label stock)
+    page_w = 108   # 1.5 * 72
+    page_h = 252   # 3.5 * 72
 
     # Build minimal PDF manually with landscape page
     xref_offsets = []
