@@ -63,15 +63,15 @@
     function searchCodename(query) {
         clearTimeout(_searchTimeout);
         var box = document.getElementById('codenameSuggestions');
-        if (query.length < 1) { box.style.display = 'none'; return; }
         _searchTimeout = setTimeout(function() {
-            fetch('{{ url_for("api_reference_search") }}?q=' + encodeURIComponent(query))
+            fetch('{{ url_for("api_reference_search") }}?q=' + encodeURIComponent(query || ''))
                 .then(function(r) { return r.json(); })
                 .then(function(results) {
                     if (results.length === 0) { box.style.display = 'none'; return; }
                     var html = '';
                     results.forEach(function(r) {
-                        var sub = [r.year, r.model_family, r.market_segment].filter(Boolean).join(' · ');
+                        var wifiGen = (r.data || {})['Wi-Fi Gen'];
+                        var sub = [r.model_family, wifiGen ? 'Wi-Fi ' + wifiGen : '', r.year].filter(Boolean).join(' · ');
                         html += '<div class="codename-suggestion" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); transition:background 0.1s;" ' +
                             'onmouseover="this.style.background=\'var(--bg-card-hover)\'" ' +
                             'onmouseout="this.style.background=\'transparent\'" ' +

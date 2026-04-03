@@ -1214,9 +1214,11 @@ def product_reference_delete(ref_id):
 def api_reference_search():
     """JSON API for codename autocomplete in the device form."""
     q = request.args.get('q', '').strip()
-    if len(q) < 1:
-        return jsonify([])
-    results = db.search_product_codenames(q)
+    if q:
+        results = db.search_product_codenames(q)
+    else:
+        # Return all products when no query (for dropdown browse)
+        results = db.get_all_product_references()
     # Enrich with full data for auto-fill
     enriched = []
     for r in results:

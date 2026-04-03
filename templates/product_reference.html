@@ -5,13 +5,13 @@
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <div>
         <h2 style="font-size: 24px; font-weight: 700;">Product Reference</h2>
-        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ refs|length }} product{{ 's' if refs|length != 1 else '' }} in catalog</p>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ refs|length }} product{{ 's' if refs|length != 1 else '' }} in catalog — used for printer dropdown when adding devices</p>
     </div>
     {% if current_user and current_user.role == 'admin' %}
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
         <a href="{{ url_for('product_reference_add') }}" class="btn btn-primary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-            Add Entry
+            Add Product
         </a>
         <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('importModal').style.display='flex'">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
@@ -39,62 +39,40 @@
         <table>
             <thead>
                 <tr>
-                    <th>Year</th>
                     <th>Codename</th>
-                    <th>Model Family</th>
+                    <th>Model Name</th>
+                    <th>Wi-Fi Gen</th>
+                    <th>Year</th>
                     <th>Segment</th>
-                    <th>Type</th>
-                    <th>Wi-Fi</th>
-                    <th>WPA3</th>
-                    <th>ASIC</th>
-                    <th>FW</th>
-                    <th>EOSL</th>
                     {% if current_user and current_user.role == 'admin' %}
-                    <th>Actions</th>
+                    <th style="width: 100px;">Actions</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for ref in refs %}
-                {% set data = ref.data|tojson|default('{}')|safe %}
-                {% set d = ref._parsed_data if ref._parsed_data is defined else {} %}
                 <tr style="cursor: pointer;" onclick="toggleDetail(this, {{ ref.ref_id }})"
                     onmouseover="this.querySelector('td').style.color='var(--accent-blue)'"
                     onmouseout="this.querySelector('td').style.color=''">
-                    <td class="font-mono" style="font-size: 13px; white-space: nowrap;">{{ ref.year or '—' }}</td>
                     <td style="font-weight: 600;">{{ ref.codename }}</td>
-                    <td style="font-size: 13px; color: var(--text-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ ref.model_family or '—' }}</td>
+                    <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.model_family or '—' }}</td>
+                    <td class="font-mono" style="font-size: 13px; text-align: center;">
+                        {% if ref._wifi_gen %}
+                        <span style="background: rgba(59,130,246,0.12); color: var(--accent-blue); padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">{{ ref._wifi_gen }}</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="font-mono" style="font-size: 13px; color: var(--text-muted);">{{ ref.year or '—' }}</td>
                     <td style="font-size: 12px;">
                         {% if ref.market_segment %}
-                        <span style="background: rgba(59,130,246,0.12); color: var(--accent-blue); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">{{ ref.market_segment }}</span>
+                        <span style="color: var(--text-secondary); font-size: 12px;">{{ ref.market_segment }}</span>
                         {% else %}—{% endif %}
                     </td>
-                    <td style="font-size: 12px;">
-                        {% if ref._print_tech == 'Laser' %}
-                        <span style="background: rgba(239,68,68,0.12); color: var(--accent-red); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Laser</span>
-                        {% elif ref._print_tech == 'Ink' or ref._print_tech == 'Inkjet' %}
-                        <span style="background: rgba(6,182,212,0.12); color: var(--accent-cyan); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">{{ ref._print_tech }}</span>
-                        {% elif ref._print_tech %}
-                        <span style="background: rgba(148,163,184,0.12); color: var(--text-secondary); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">{{ ref._print_tech }}</span>
-                        {% else %}—{% endif %}
-                    </td>
-                    <td class="font-mono" style="font-size: 12px; text-align: center;">{{ ref._wifi_gen or '—' }}</td>
-                    <td style="text-align: center;">
-                        {% if ref._wpa3 == 'Y' %}
-                        <span style="color: var(--accent-green); font-weight: 600; font-size: 12px;">Yes</span>
-                        {% elif ref._wpa3 == 'N' %}
-                        <span style="color: var(--text-muted); font-size: 12px;">No</span>
-                        {% else %}<span style="color: var(--text-muted); font-size: 12px;">—</span>{% endif %}
-                    </td>
-                    <td style="font-size: 12px; color: var(--text-secondary);">{{ ref._asic or '—' }}</td>
-                    <td style="font-size: 12px; color: var(--text-secondary);">{{ ref._fw or '—' }}</td>
-                    <td style="font-size: 12px; color: var(--text-muted);">{{ ref._eosl or '—' }}</td>
                     {% if current_user and current_user.role == 'admin' %}
                     <td onclick="event.stopPropagation()">
                         <div style="display: flex; gap: 4px;">
                             <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="btn btn-secondary btn-sm" style="padding: 4px 10px; font-size: 11px;">Edit</a>
                             <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
-                                  onsubmit="return confirm('Delete {{ ref.codename }}?')">
+                                  onsubmit="return confirm('Delete {{ ref.codename }}?\n\nThis cannot be undone.')">
                                 <button type="submit" class="btn btn-danger btn-sm" style="padding: 4px 10px; font-size: 11px;">Del</button>
                             </form>
                         </div>
@@ -102,9 +80,9 @@
                     {% endif %}
                 </tr>
                 <tr id="detail-{{ ref.ref_id }}" style="display: none;">
-                    <td colspan="11" style="padding: 0; background: var(--bg-primary);">
+                    <td colspan="6" style="padding: 0; background: var(--bg-primary);">
                         <div style="padding: 16px 20px; font-size: 12px;">
-                            <div id="detail-content-{{ ref.ref_id }}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 24px;">
+                            <div id="detail-content-{{ ref.ref_id }}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 24px;">
                             </div>
                         </div>
                     </td>
@@ -115,9 +93,9 @@
     </div>
     {% if not refs %}
     <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 40px;">
-        No product references yet.
+        No products yet.
         {% if current_user and current_user.role == 'admin' %}
-        Import a CSV or add entries manually.
+        Add a product or import from CSV to populate the catalog.
         {% endif %}
     </p>
     {% endif %}
@@ -132,12 +110,11 @@
             <button onclick="document.getElementById('importModal').style.display='none'" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
         </div>
         <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-            Upload a CSV file with at minimum a <strong>Codename</strong> column. All other columns are stored as searchable specifications. The CSV can have any number of columns — they'll all be preserved.
+            Upload a CSV with at minimum a <strong>Codename</strong> column. All other columns are stored as specs. Click any row in the table to see full details.
         </p>
         <form method="POST" action="{{ url_for('product_reference_import') }}" enctype="multipart/form-data">
             <div style="margin-bottom: 16px;">
-                <input type="file" name="csv_file" accept=".csv,.tsv,.txt" required
-                       style="font-size: 13px;">
+                <input type="file" name="csv_file" accept=".csv,.tsv,.txt" required style="font-size: 13px;">
             </div>
             <div style="margin-bottom: 16px;">
                 <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); cursor: pointer;">
@@ -160,7 +137,6 @@ document.getElementById('importModal').addEventListener('click', function(e) {
 {% endif %}
 
 <script>
-// Store parsed data for each ref inline
 var refData = {};
 {% for ref in refs %}
 try { refData[{{ ref.ref_id }}] = JSON.parse({{ ref.data|tojson }}); } catch(e) { refData[{{ ref.ref_id }}] = {}; }
@@ -171,7 +147,6 @@ function toggleDetail(row, refId) {
     var content = document.getElementById('detail-content-' + refId);
 
     if (detail.style.display === 'none') {
-        // Build detail content
         var data = refData[refId] || {};
         var html = '';
         var keys = Object.keys(data).sort();
