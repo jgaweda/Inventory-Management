@@ -309,7 +309,7 @@ def get_device_by_barcode(barcode_value):
         return dict(row) if row else None
 
 
-def search_devices(query='', category='', status='', connectivity='', location=''):
+def search_devices(query='', category='', status='', connectivity='', location='', codename=''):
     """
     Search devices with optional filters. All filters combined with AND.
     The query param searches across multiple text fields with LIKE.
@@ -340,16 +340,21 @@ def search_devices(query='', category='', status='', connectivity='', location='
             conditions.append("location LIKE ?")
             params.append(f"%{location}%")
 
+        if codename:
+            conditions.append("codename = ?")
+            params.append(codename)
+
         if query:
             conditions.append("""
                 (name LIKE ? OR category LIKE ? OR manufacturer LIKE ?
                  OR model_number LIKE ? OR serial_number LIKE ?
                  OR connectivity LIKE ? OR barcode_value LIKE ?
                  OR status LIKE ? OR location LIKE ?
-                 OR assigned_to LIKE ? OR notes LIKE ?)
+                 OR assigned_to LIKE ? OR notes LIKE ?
+                 OR codename LIKE ?)
             """)
             like_q = f"%{query}%"
-            params.extend([like_q] * 11)
+            params.extend([like_q] * 12)
 
         where = " AND ".join(conditions) if conditions else "1=1"
         sql = f"SELECT * FROM devices WHERE {where} ORDER BY updated_at DESC"

@@ -188,12 +188,14 @@ def dashboard():
 @app.route('/devices')
 def device_list():
     q = request.args.get('q', '')
+    codename = request.args.get('codename', '')
     devices = db.search_devices(
         query=q,
         category=request.args.get('category', ''),
         status=request.args.get('status', ''),
         connectivity=request.args.get('connectivity', ''),
         location=request.args.get('location', ''),
+        codename=codename,
     )
     if q:
         app_logger.info('Device search: query="%s" results=%d ip=%s', q, len(devices), request.remote_addr)
@@ -202,7 +204,8 @@ def device_list():
                            selected_category=request.args.get('category', ''),
                            selected_status=request.args.get('status', ''),
                            selected_connectivity=request.args.get('connectivity', ''),
-                           selected_location=request.args.get('location', ''))
+                           selected_location=request.args.get('location', ''),
+                           selected_codename=codename)
 
 # ---------------------------------------------------------------------------
 # Add device (admin only)

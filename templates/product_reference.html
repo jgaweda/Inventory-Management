@@ -27,11 +27,16 @@
     {% endif %}
 </div>
 
-<!-- Search -->
-<div style="margin-bottom: 20px;">
-    <form method="GET" style="display: flex; gap: 8px; max-width: 400px;">
-        <input type="text" name="q" value="{{ search }}" placeholder="Search codename, model, chipset..."
-               style="flex: 1; font-size: 13px; padding: 8px 12px;">
+<!-- Search with autocomplete -->
+<div style="margin-bottom: 20px; position: relative; max-width: 400px;">
+    <form method="GET" id="searchForm" style="display: flex; gap: 8px;">
+        <div style="flex: 1; position: relative;">
+            <input type="text" name="q" id="refSearch" value="{{ search }}" placeholder="Search codename, model, chipset..."
+                   autocomplete="off" style="font-size: 13px; padding: 8px 12px; width: 100%;">
+            <div id="acDropdown" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100;
+                 background:var(--bg-card); border:1px solid var(--border-color); border-top:none; border-radius:0 0 8px 8px;
+                 max-height:240px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+        </div>
         <button type="submit" class="btn btn-secondary btn-sm">Search</button>
         {% if search %}
         <a href="{{ url_for('product_reference_list') }}" class="btn btn-secondary btn-sm">Clear</a>
@@ -60,8 +65,10 @@
             </thead>
             <tbody>
                 {% for ref in refs %}
-                <tr>
-                    <td style="font-weight: 600;">{{ ref.codename }}</td>
+                <tr style="cursor: pointer;" onclick="window.location='{{ url_for('device_list', codename=ref.codename) }}';" title="View inventory for {{ ref.codename }}">
+                    <td style="font-weight: 600;">
+                        <span style="color: var(--accent-cyan);">{{ ref.codename }}</span>
+                    </td>
                     <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size: 13px; text-align: center;">
                         {% if ref.print_technology %}
@@ -79,7 +86,7 @@
                     <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
                     {% if current_user and current_user.role == 'admin' %}
                     <td>
-                        <div style="display: flex; gap: 4px;">
+                        <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
                             <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="btn btn-secondary btn-sm" style="padding: 4px 10px; font-size: 11px;">Edit</a>
                             <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
                                   onsubmit="return confirm('Delete {{ ref.codename }}?\n\nThis cannot be undone.')">
@@ -128,4 +135,51 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+(function() {
+    var input = document.getElementById('refSearch');
+    var dropdown = document.getElementById('acDropdown');
+    var debounceTimer = null;
+
+    input.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        var q = input.value.trim();
+        if (q.length < 1) { dropdown.style.display = 'none'; return; }
+        debounceTimer = setTimeout(function() {
+            fetch('{{ url_for("api_reference_search") }}?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(results) {
+                    if (!results.length) { dropdown.style.display = 'none'; return; }
+                    dropdown.innerHTML = '';
+                    results.slice(0, 10).forEach(function(ref) {
+                        var item = document.createElement('div');
+                        item.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border-color);';
+                        item.innerHTML = '<strong>' + ref.codename + '</strong>' +
+                            (ref.model_name ? ' <span style="color:var(--text-muted);">— ' + ref.model_name + '</span>' : '') +
+                            (ref.wifi_gen ? ' <span style="font-size:11px; color:var(--accent-blue);">[Wi-Fi ' + ref.wifi_gen + ']</span>' : '');
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            input.value = ref.codename;
+                            dropdown.style.display = 'none';
+                            document.getElementById('searchForm').submit();
+                        });
+                        item.addEventListener('mouseenter', function() { item.style.background = 'var(--bg-hover)'; });
+                        item.addEventListener('mouseleave', function() { item.style.background = 'none'; });
+                        dropdown.appendChild(item);
+                    });
+                    dropdown.style.display = 'block';
+                });
+        }, 200);
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(function() { dropdown.style.display = 'none'; }, 150);
+    });
+
+    input.addEventListener('focus', function() {
+        if (input.value.trim().length >= 1 && dropdown.children.length) dropdown.style.display = 'block';
+    });
+})();
+</script>
 {% endblock %}
