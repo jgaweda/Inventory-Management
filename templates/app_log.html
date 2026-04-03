@@ -85,7 +85,6 @@
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
             <option value="CRITICAL">CRITICAL</option>
-            <option value="ERROR+">ERROR & above</option>
         </select>
         <select id="timeFilter" onchange="filterLogs()" style="width: auto; font-size: 13px; padding: 8px 12px;">
             <option value="">All Time</option>
@@ -141,8 +140,6 @@ var categoryPatterns = {
     'labels': ['label generated', 'label sheet', 'print label']
 };
 
-var ERROR_LEVELS = ['ERROR', 'CRITICAL'];
-
 var activeCategory = '';
 
 function setCategoryFilter(btn) {
@@ -171,8 +168,8 @@ function filterLogs() {
         var matchText = !text || msgText.indexOf(text) >= 0 ||
                         el.querySelector('.log-ts').textContent.toLowerCase().indexOf(text) >= 0;
 
-        // Level filter ("ERROR+" matches ERROR and CRITICAL)
-        var matchLevel = !level || (level === 'ERROR+' ? ERROR_LEVELS.indexOf(entryLevel) >= 0 : entryLevel === level);
+        // Level filter
+        var matchLevel = !level || entryLevel === level;
 
         // Time filter
         var matchTime = true;

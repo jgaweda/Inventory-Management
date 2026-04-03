@@ -15,8 +15,9 @@ import shutil
 import hashlib
 import secrets
 import subprocess
+import traceback
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from runtime_dirs import DATA_DIR
 
@@ -675,15 +676,46 @@ def _get_backup_dir():
     return backup_dir
 
 
+def _compute_db_hash():
+    """Compute a SHA-256 hash of the database content for change detection."""
+    checkpoint_wal()
+    h = hashlib.sha256()
+    try:
+        with open(DB_PATH, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except FileNotFoundError:
+        return ''
+
+
 def backup_database(performed_by='system', manual=False):
     """
     Create a safe backup of the database using SQLite's online backup API.
     Automated backups are prefixed 'auto_backup_' and pruned to max_backups.
     Manual backups are prefixed 'manual_backup_' and never auto-pruned.
-    Returns dict with backup metadata.
+    Skips automated backups if the database hasn't changed since the last one.
+    Returns dict with backup metadata (includes 'skipped' key).
     """
     backup_dir = _get_backup_dir()
     config = _get_backup_config()
+
+    # Skip-if-unchanged for automated backups (manual backups always proceed)
+    if not manual:
+        current_hash = _compute_db_hash()
+        last_hash = config.get('last_backup_hash', '')
+        if current_hash and current_hash == last_hash:
+            _audit_logger.info('Scheduled backup skipped — database unchanged since last backup')
+            config['last_backup'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            save_backup_config(config)
+            return {
+                'filename': None,
+                'path': None,
+                'size': 0,
+                'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+                'pruned': 0,
+                'skipped': True,
+            }
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if manual:
@@ -716,11 +748,12 @@ def backup_database(performed_by='system', manual=False):
 
     file_size = os.path.getsize(backup_path)
 
-    # Only prune automated backups beyond max_backups
-    pruned = _prune_old_backups(config['max_backups'])
+    # Smart prune: keep at least 1 backup per day for 7 days, then apply max_backups
+    pruned = _smart_prune_backups(config['max_backups'])
 
-    # Record last successful backup time
+    # Record last successful backup time and hash for skip-if-unchanged
     config['last_backup'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    config['last_backup_hash'] = _compute_db_hash()
     save_backup_config(config)
 
     return {
@@ -729,6 +762,7 @@ def backup_database(performed_by='system', manual=False):
         'size': file_size,
         'timestamp': timestamp,
         'pruned': pruned,
+        'skipped': False,
     }
 
 
@@ -803,6 +837,50 @@ def checkpoint_wal():
         return {'success': False, 'error': str(e)}
 
 
+def verify_latest_backup():
+    """
+    Verify the most recent backup file is still a valid, intact SQLite database.
+    Returns dict with verification results.
+    """
+    backup_dir = _get_backup_dir()
+    all_backups = sorted(
+        [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
+        reverse=True,
+    )
+    if not all_backups:
+        return {'ok': False, 'result': 'No backup files found', 'filename': None}
+
+    latest = all_backups[0]
+    latest_path = os.path.join(backup_dir, latest)
+    try:
+        conn = sqlite3.connect(latest_path)
+        result = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        conn.execute('SELECT COUNT(*) FROM devices')
+        conn.close()
+        ok = result == 'ok'
+        if not ok:
+            _audit_logger.warning('Backup verification failed: %s — %s', latest, result)
+        return {'ok': ok, 'result': result, 'filename': latest}
+    except Exception as e:
+        _audit_logger.error('Backup verification error: %s — %s', latest, e)
+        return {'ok': False, 'result': str(e), 'filename': latest}
+
+
+def startup_integrity_check():
+    """
+    Run on application startup to verify database health.
+    Returns dict with check results, logs warnings if issues found.
+    """
+    result = check_database_integrity()
+    if result['ok']:
+        _audit_logger.info('Startup integrity check: database OK')
+    else:
+        _audit_logger.error('STARTUP INTEGRITY CHECK FAILED: %s — '
+                            'database may be corrupt, consider restoring from backup',
+                            result['result'])
+    return result
+
+
 def get_database_status():
     """Get comprehensive database status for monitoring."""
     status = {
@@ -839,7 +917,7 @@ def get_database_status():
 
 
 def _prune_old_backups(max_backups):
-    """Remove oldest automated backups beyond the max count. Manual backups are never pruned."""
+    """Simple prune: remove oldest automated backups beyond max count."""
     backup_dir = _get_backup_dir()
     auto_backups = sorted(
         [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and f.endswith('.db')],
@@ -855,10 +933,57 @@ def _prune_old_backups(max_backups):
     return pruned
 
 
+def _smart_prune_backups(max_backups):
+    """
+    Smart retention: keep at least 1 backup per day for the last 7 days,
+    then apply max_backups to the remainder. Manual backups are never pruned.
+    """
+    backup_dir = _get_backup_dir()
+    auto_backups = sorted(
+        [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and f.endswith('.db')],
+        reverse=True,  # newest first
+    )
+    if len(auto_backups) <= max_backups:
+        return 0
+
+    now = datetime.now()
+    cutoff = now - timedelta(days=7)
+    protected = set()  # filenames to keep (one per day for 7 days)
+    days_seen = set()
+
+    for f in auto_backups:
+        try:
+            ts_part = f.replace('auto_backup_', '').replace('.db', '').split('_uploaded')[0]
+            dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
+        except ValueError:
+            continue
+        if dt >= cutoff:
+            day_key = dt.strftime('%Y%m%d')
+            if day_key not in days_seen:
+                days_seen.add(day_key)
+                protected.add(f)
+
+    # Always protect the newest max_backups as well
+    for f in auto_backups[:max_backups]:
+        protected.add(f)
+
+    # Prune anything not protected
+    pruned = 0
+    for f in auto_backups:
+        if f not in protected:
+            try:
+                os.remove(os.path.join(backup_dir, f))
+                pruned += 1
+            except OSError:
+                pass
+    return pruned
+
+
 def push_backups_to_git():
     """
     Zip all local .db backup files into a single archive and push to a
-    dedicated git branch. The zip overwrites the previous one each push.
+    dedicated git branch. Uses incremental commits (not force-push) so
+    git history preserves multiple recovery points.
     Returns dict with push metadata.
     """
     import tempfile
@@ -866,7 +991,6 @@ def push_backups_to_git():
 
     config = _get_backup_config()
     backup_dir = _get_backup_dir()
-    max_backups = config.get('max_backups', 5)
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
     git_repo = config.get('git_repo', '').strip()
 
@@ -881,13 +1005,47 @@ def push_backups_to_git():
     if not backup_files:
         raise ValueError('No backup files to push')
 
-    # Use a temporary directory for a clean worktree
-    # Environment for git subprocesses: prevent credential prompts on all platforms
     git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+
+    # Build the push URL
+    git_token = config.get('git_token', '').strip()
+    if git_repo:
+        remote_url = git_repo
+    else:
+        url_result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
+        )
+        remote_url = url_result.stdout.decode().strip()
+    if git_token and remote_url.startswith('git@github.com:'):
+        path = remote_url.replace('git@github.com:', '')
+        remote_url = f'https://github.com/{path}'
+    if git_token and remote_url.startswith('https://'):
+        remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
-            # Create zip archive of the .db files
+            # Try to clone existing branch to preserve history
+            clone_result = subprocess.run(
+                ['git', 'clone', '--depth', '10', '--branch', git_branch,
+                 '--single-branch', remote_url, tmpdir],
+                capture_output=True, timeout=60, env=git_env,
+            )
+            if clone_result.returncode != 0:
+                # Branch doesn't exist yet — init fresh
+                subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True,
+                               check=True, timeout=15, env=git_env)
+                subprocess.run(['git', 'checkout', '--orphan', git_branch],
+                               cwd=tmpdir, capture_output=True, check=True,
+                               timeout=15, env=git_env)
+
+            # Set commit identity
+            subprocess.run(['git', 'config', 'user.email', 'inventory@local'],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
+            subprocess.run(['git', 'config', 'user.name', 'Inventory System'],
+                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
+
+            # Create/update zip archive
             zip_name = 'inventory_backups.zip'
             zip_path = os.path.join(tmpdir, zip_name)
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -895,48 +1053,36 @@ def push_backups_to_git():
                     zf.write(os.path.join(backup_dir, bf), bf)
             zip_size = os.path.getsize(zip_path)
 
-            # Initialize a fresh git repo in tmp to build the commit
-            subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True, check=True, timeout=15, env=git_env)
-            subprocess.run(['git', 'checkout', '--orphan', git_branch],
-                           cwd=tmpdir, capture_output=True, check=True, timeout=15, env=git_env)
-
-            # Set a commit identity for the temp repo (required on fresh systems)
-            subprocess.run(['git', 'config', 'user.email', 'inventory@local'],
-                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
-            subprocess.run(['git', 'config', 'user.name', 'Inventory System'],
-                           cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
-
             subprocess.run(['git', 'add', zip_name],
                            cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env)
+
+            # Check if there are actual changes to commit
+            diff_result = subprocess.run(
+                ['git', 'diff', '--cached', '--quiet'],
+                cwd=tmpdir, capture_output=True, timeout=15, env=git_env,
+            )
+            if diff_result.returncode == 0:
+                _audit_logger.info('Git push skipped — backup zip unchanged')
+                config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                save_backup_config(config)
+                push_target = git_repo or 'origin'
+                return {
+                    'files_pushed': len(backup_files),
+                    'zip_size': zip_size,
+                    'pushed_to': f'{push_target} ({git_branch})',
+                    'skipped': True,
+                }
+
+            commit_msg = (f'Backup {datetime.now().strftime("%Y-%m-%d %H:%M")} '
+                          f'({len(backup_files)} files, {zip_size // 1024}KB)')
             subprocess.run(
-                ['git', 'commit', '-m',
-                 f'Database backup {datetime.now().strftime("%Y-%m-%d %H:%M")} ({len(backup_files)} files)'],
+                ['git', 'commit', '-m', commit_msg],
                 cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env,
             )
 
-            # Build the push URL
-            git_token = config.get('git_token', '').strip()
-            if git_repo:
-                remote_url = git_repo
-            else:
-                url_result = subprocess.run(
-                    ['git', 'remote', 'get-url', 'origin'],
-                    cwd=REPO_DIR, capture_output=True, check=True, timeout=15,
-                )
-                remote_url = url_result.stdout.decode().strip()
-
-            # Convert SSH URL to HTTPS if a token is provided
-            if git_token and remote_url.startswith('git@github.com:'):
-                path = remote_url.replace('git@github.com:', '')
-                remote_url = f'https://github.com/{path}'
-
-            # Inject token into HTTPS URL for authentication
-            if git_token and remote_url.startswith('https://'):
-                remote_url = remote_url.replace('https://', f'https://{git_token}@', 1)
-
-            # Push from the temp repo to the remote
+            # Regular push (not --force) to preserve commit history
             subprocess.run(
-                ['git', 'push', '--force', remote_url, f'{git_branch}:{git_branch}'],
+                ['git', 'push', remote_url, f'{git_branch}:{git_branch}'],
                 cwd=tmpdir, capture_output=True, check=True, timeout=120, env=git_env,
             )
 
@@ -946,7 +1092,6 @@ def push_backups_to_git():
         except subprocess.TimeoutExpired:
             raise RuntimeError('Git push timed out')
 
-    # Update last push timestamp and record which files were pushed
     config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     save_backup_config(config)
 
@@ -955,6 +1100,7 @@ def push_backups_to_git():
         'files_pushed': len(backup_files),
         'zip_size': zip_size,
         'pushed_to': f'{push_target} ({git_branch})',
+        'skipped': False,
     }
 
 
@@ -1001,7 +1147,7 @@ def list_backups():
 def restore_database(filename):
     """
     Restore the database from a backup file using SQLite online backup API.
-    Creates a safety backup of the current DB first.
+    Checkpoints WAL first, creates a safety backup, validates, then restores.
     Returns dict with restore metadata.
     """
     backup_dir = _get_backup_dir()
@@ -1024,8 +1170,11 @@ def restore_database(filename):
     finally:
         test_conn.close()
 
+    # Checkpoint WAL before restore to flush any pending writes
+    checkpoint_wal()
+
     # Create a safety backup of the current DB before overwriting
-    safety_backup = backup_database(performed_by='pre-restore-safety')
+    safety_backup = backup_database(performed_by='pre-restore-safety', manual=True)
 
     # Restore: copy backup over the live database using the backup API
     src = sqlite3.connect(backup_path)
@@ -1038,6 +1187,11 @@ def restore_database(filename):
 
     # Re-run init_db to apply any migrations the restored DB may be missing
     init_db()
+
+    # Update hash so next scheduled backup detects the restored content
+    config = _get_backup_config()
+    config['last_backup_hash'] = _compute_db_hash()
+    save_backup_config(config)
 
     return {
         'restored_from': filename,
@@ -1180,8 +1334,11 @@ def restore_from_git(filename):
         finally:
             test_conn.close()
 
+        # Checkpoint WAL before restore to flush pending writes
+        checkpoint_wal()
+
         # Safety backup before restore
-        safety = backup_database(performed_by='pre-git-restore-safety')
+        safety = backup_database(performed_by='pre-git-restore-safety', manual=True)
 
         # Restore using backup API
         src = sqlite3.connect(extracted_path)
@@ -1193,6 +1350,11 @@ def restore_from_git(filename):
             src.close()
 
         init_db()
+
+        # Update hash so next scheduled backup detects the restored content
+        cfg = _get_backup_config()
+        cfg['last_backup_hash'] = _compute_db_hash()
+        save_backup_config(cfg)
 
         return {
             'restored_from': f'git:{filename}',

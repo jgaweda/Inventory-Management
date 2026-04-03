@@ -82,6 +82,10 @@ with app.app_context():
     db.init_db()
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
     os.makedirs(db._get_backup_dir(), exist_ok=True)
+    # Startup integrity check — log warning if database is corrupt
+    _integrity = db.startup_integrity_check()
+    if not _integrity['ok']:
+        app_logger.error('DATABASE INTEGRITY ISSUE ON STARTUP: %s', _integrity['result'])
     app_logger.info('Application started — database initialized')
 
 # ---------------------------------------------------------------------------
@@ -822,6 +826,7 @@ import threading
 _backup_timer = None      # Timer for recurring local backups
 _git_push_timer = None    # Timer for recurring git pushes
 _prune_timer = None       # Timer for recurring backup pruning
+_verify_timer = None      # Timer for periodic backup verification
 _next_backup_time = None  # datetime of next scheduled backup
 _next_git_push_time = None  # datetime of next scheduled git push
 _next_prune_time = None   # datetime of next scheduled prune
@@ -831,8 +836,11 @@ def _run_scheduled_backup():
     """Execute a scheduled backup and re-arm the timer."""
     try:
         result = db.backup_database(performed_by='scheduled')
-        app_logger.info('Scheduled backup completed: %s (%d bytes)',
-                        result['filename'], result['size'])
+        if result.get('skipped'):
+            app_logger.info('Scheduled backup skipped — database unchanged')
+        else:
+            app_logger.info('Scheduled backup completed: %s (%d bytes, pruned=%d)',
+                            result['filename'], result['size'], result['pruned'])
     except Exception as e:
         app_logger.error('Scheduled backup failed: %s\nTraceback:\n%s', e, traceback.format_exc())
     # Re-arm from latest config
@@ -935,6 +943,24 @@ def _stop_prune_timer():
     _next_prune_time = None
 
 
+def _run_backup_verification():
+    """Periodically verify the most recent backup is still intact."""
+    global _verify_timer
+    try:
+        result = db.verify_latest_backup()
+        if result['ok']:
+            app_logger.info('Backup verification passed: %s', result['filename'])
+        else:
+            app_logger.error('BACKUP VERIFICATION FAILED: %s — %s',
+                             result['filename'], result['result'])
+    except Exception as e:
+        app_logger.error('Backup verification error: %s\nTraceback:\n%s', e, traceback.format_exc())
+    # Re-arm: verify every 24 hours
+    _verify_timer = threading.Timer(86400, _run_backup_verification)
+    _verify_timer.daemon = True
+    _verify_timer.start()
+
+
 # Restore timers on startup
 _startup_config = db._get_backup_config()
 if _startup_config.get('backup_enabled'):
@@ -943,6 +969,11 @@ if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
     _start_git_push_timer(_startup_config['git_push_interval_hours'])
 if _startup_config.get('prune_enabled'):
     _start_prune_timer(_startup_config['prune_interval_hours'])
+
+# Start backup verification timer (runs every 24 hours)
+_verify_timer = threading.Timer(86400, _run_backup_verification)
+_verify_timer.daemon = True
+_verify_timer.start()
 
 
 @app.route('/backups')
