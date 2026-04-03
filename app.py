@@ -63,7 +63,7 @@ _log_max_bytes = int(_log_config.get('max_size_mb', 2) * 1024 * 1024)
 
 app_logger = logging.getLogger('inventory')
 app_logger.setLevel(logging.DEBUG)
-_log_handler = RotatingFileHandler(LOG_FILE, maxBytes=_log_max_bytes, backupCount=0)
+_log_handler = RotatingFileHandler(LOG_FILE, maxBytes=_log_max_bytes, backupCount=1)
 _log_handler.setFormatter(logging.Formatter(
     '%(asctime)s | %(levelname)-7s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
 ))
@@ -704,11 +704,13 @@ def user_delete(user_id):
 def app_logs():
     """View application log entries. Most recent first."""
     lines = []
-    try:
-        with open(LOG_FILE, 'r') as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        pass
+    # Read rotated backup first (older), then current log (newer)
+    for log_path in [LOG_FILE + '.1', LOG_FILE]:
+        try:
+            with open(log_path, 'r') as f:
+                lines.extend(f.readlines())
+        except FileNotFoundError:
+            pass
 
     # Parse into structured entries, most recent first
     entries = []
@@ -734,7 +736,7 @@ def app_logs():
     # Limit to 500 most recent entries
     entries = entries[:500]
     log_config = _load_log_config()
-    log_file_size = os.path.getsize(LOG_FILE) if os.path.exists(LOG_FILE) else 0
+    log_file_size = sum(os.path.getsize(p) for p in [LOG_FILE, LOG_FILE + '.1'] if os.path.exists(p))
     return render_template('app_log.html', entries=entries, log_config=log_config, log_file_size=log_file_size)
 
 
@@ -745,6 +747,10 @@ def clear_logs():
     try:
         with open(LOG_FILE, 'w') as f:
             f.write('')
+        # Remove rotated backup file too
+        backup_log = LOG_FILE + '.1'
+        if os.path.exists(backup_log):
+            os.remove(backup_log)
         app_logger.info('Application log cleared by %s', current_username())
         flash('Application log cleared.', 'success')
     except Exception as e:
