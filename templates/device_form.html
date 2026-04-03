@@ -25,11 +25,18 @@
                 <input type="text" name="connectivity" value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
-        <div id="codenameRow" style="margin-top: 16px; display: none;">
+        <div id="codenameRow" style="margin-top: 16px; display: none; position: relative;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
                 Codename <span style="color: var(--accent-red);">*</span>
             </label>
-            <input type="text" name="codename" id="codenameInput" value="{{ device.get('codename', '') if device is mapping else '' }}" placeholder="e.g. Phoenix — name will be 'Phoenix (Manufacturer Model)'">
+            <input type="text" name="codename" id="codenameInput" autocomplete="off"
+                   value="{{ device.get('codename', '') if device is mapping else '' }}"
+                   placeholder="Start typing to search product reference..."
+                   oninput="searchCodename(this.value)" onfocus="searchCodename(this.value)">
+            <div id="codenameSuggestions" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; max-height:240px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+            </div>
+            <div id="codenameMatch" style="display:none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
+            </div>
         </div>
     </div>
     <script>
@@ -39,6 +46,77 @@
         row.style.display = (cat === 'Printer') ? 'block' : 'none';
     }
     toggleCodename();
+
+    var _searchTimeout = null;
+    function searchCodename(query) {
+        clearTimeout(_searchTimeout);
+        var box = document.getElementById('codenameSuggestions');
+        if (query.length < 1) { box.style.display = 'none'; return; }
+        _searchTimeout = setTimeout(function() {
+            fetch('{{ url_for("api_reference_search") }}?q=' + encodeURIComponent(query))
+                .then(function(r) { return r.json(); })
+                .then(function(results) {
+                    if (results.length === 0) { box.style.display = 'none'; return; }
+                    var html = '';
+                    results.forEach(function(r) {
+                        var sub = [r.year, r.model_family, r.market_segment].filter(Boolean).join(' · ');
+                        html += '<div class="codename-suggestion" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); transition:background 0.1s;" ' +
+                            'onmouseover="this.style.background=\'var(--bg-card-hover)\'" ' +
+                            'onmouseout="this.style.background=\'transparent\'" ' +
+                            'onclick=\'selectCodename(' + JSON.stringify(r) + ')\'>' +
+                            '<div style="font-weight:600; font-size:14px;">' + r.codename + '</div>' +
+                            (sub ? '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + sub + '</div>' : '') +
+                            '</div>';
+                    });
+                    box.innerHTML = html;
+                    box.style.display = 'block';
+                });
+        }, 200);
+    }
+
+    function selectCodename(ref) {
+        document.getElementById('codenameInput').value = ref.codename;
+        document.getElementById('codenameSuggestions').style.display = 'none';
+
+        // Auto-fill fields from product reference data
+        var data = ref.data || {};
+        var modelFamily = ref.model_family || '';
+
+        // Try to extract manufacturer from model family (e.g. "HP LaserJet M110w" -> manufacturer=HP, model=LaserJet M110w)
+        // Or use the model family as the model number if manufacturer is already filled
+        if (modelFamily) {
+            var mfgField = document.querySelector('input[name="manufacturer"]');
+            var modelField = document.querySelector('input[name="model_number"]');
+            if (mfgField && !mfgField.value) mfgField.value = 'HP';
+            if (modelField && !modelField.value) modelField.value = modelFamily;
+        }
+
+        // Auto-fill connectivity from Wi-Fi Gen
+        var wifiGen = data['Wi-Fi Gen'] || '';
+        if (wifiGen) {
+            var connField = document.querySelector('input[name="connectivity"]');
+            if (connField && !connField.value) {
+                var genMap = {'4': 'Wi-Fi 4 (802.11n)', '5': 'Wi-Fi 5 (802.11ac)', '6': 'Wi-Fi 6 (802.11ax)', '6E': 'Wi-Fi 6E'};
+                connField.value = genMap[wifiGen] || ('Wi-Fi ' + wifiGen);
+            }
+        }
+
+        // Show match info
+        var matchDiv = document.getElementById('codenameMatch');
+        var info = '<strong>' + ref.codename + '</strong>';
+        if (ref.year) info += ' (' + ref.year + ')';
+        if (modelFamily) info += ' — ' + modelFamily;
+        if (ref.market_segment) info += ' · ' + ref.market_segment;
+        matchDiv.innerHTML = 'Matched from product reference: ' + info;
+        matchDiv.style.display = 'block';
+    }
+
+    // Close suggestions on click outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#codenameRow')) {
+            document.getElementById('codenameSuggestions').style.display = 'none';
+        }
+    });
     </script>
 
     <!-- Hardware Details -->

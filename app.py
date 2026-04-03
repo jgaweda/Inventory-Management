@@ -1065,6 +1065,179 @@ def backup_restore(filename):
     return redirect(url_for('backup_list'))
 
 # ---------------------------------------------------------------------------
+# Product Reference (printer/device spec catalog)
+# ---------------------------------------------------------------------------
+
+@app.route('/reference')
+@login_required
+def product_reference_list():
+    search = request.args.get('q', '')
+    refs = db.get_all_product_references(search)
+    columns = db.get_product_reference_columns()
+    # Parse JSON data and extract display fields for the table
+    for ref in refs:
+        try:
+            d = json.loads(ref['data']) if isinstance(ref['data'], str) else ref.get('data', {})
+        except (json.JSONDecodeError, TypeError):
+            d = {}
+        ref['_wifi_gen'] = d.get('Wi-Fi Gen', '')
+        ref['_wpa3'] = d.get('WPA3', '')
+        ref['_asic'] = d.get('ASIC', '')
+        ref['_fw'] = d.get('FW Codebase', '')
+        ref['_eosl'] = d.get('EOSL', '')
+        ref['_print_tech'] = d.get('Print Technology', '')
+    return render_template('product_reference.html', refs=refs, columns=columns, search=search)
+
+
+@app.route('/reference/import', methods=['POST'])
+@login_required
+def product_reference_import():
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    file = request.files.get('csv_file')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    replace = request.form.get('replace') == '1'
+
+    try:
+        csv_text = file.read().decode('utf-8-sig')  # utf-8-sig handles BOM from Excel
+        result = db.import_product_references_csv(csv_text, replace=replace)
+        action = 'Replaced all with' if replace else 'Added'
+        flash(f'{action} {result["imported"]} product references.', 'success')
+        app_logger.info('Product reference import: %s %d entries (replace=%s) by %s',
+                        action.lower(), result['imported'], replace, g.user['username'])
+    except Exception as e:
+        flash(f'Import failed: {e}', 'error')
+        app_logger.error('Product reference import failed: %s', e)
+
+    return redirect(url_for('product_reference_list'))
+
+
+@app.route('/reference/add', methods=['GET', 'POST'])
+@login_required
+def product_reference_add():
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    columns = db.get_product_reference_columns()
+
+    if request.method == 'POST':
+        codename = request.form.get('codename', '').strip()
+        if not codename:
+            flash('Codename is required.', 'error')
+            return render_template('product_reference_form.html', ref=None, columns=columns)
+
+        data = {}
+        for key in request.form:
+            if key not in ('codename', 'year', 'model_family', 'market_segment'):
+                val = request.form[key].strip()
+                if val:
+                    data[key] = val
+
+        db.add_product_reference(
+            codename=codename,
+            year=request.form.get('year', '').strip(),
+            model_family=request.form.get('model_family', '').strip(),
+            market_segment=request.form.get('market_segment', '').strip(),
+            data=data,
+        )
+        flash(f'Product reference "{codename}" added.', 'success')
+        return redirect(url_for('product_reference_list'))
+
+    return render_template('product_reference_form.html', ref=None, columns=columns)
+
+
+@app.route('/reference/<int:ref_id>/edit', methods=['GET', 'POST'])
+@login_required
+def product_reference_edit(ref_id):
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    ref = db.get_product_reference(ref_id)
+    if not ref:
+        flash('Product reference not found.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    # Parse JSON data for the template
+    try:
+        ref['data'] = json.loads(ref['data']) if isinstance(ref['data'], str) else ref.get('data', {})
+    except (json.JSONDecodeError, TypeError):
+        ref['data'] = {}
+
+    columns = db.get_product_reference_columns()
+
+    if request.method == 'POST':
+        codename = request.form.get('codename', '').strip()
+        if not codename:
+            flash('Codename is required.', 'error')
+            return render_template('product_reference_form.html', ref=ref, columns=columns)
+
+        data = {}
+        for key in request.form:
+            if key not in ('codename', 'year', 'model_family', 'market_segment'):
+                val = request.form[key].strip()
+                if val:
+                    data[key] = val
+
+        db.update_product_reference(
+            ref_id=ref_id,
+            codename=codename,
+            year=request.form.get('year', '').strip(),
+            model_family=request.form.get('model_family', '').strip(),
+            market_segment=request.form.get('market_segment', '').strip(),
+            data=data,
+        )
+        flash(f'Product reference "{codename}" updated.', 'success')
+        return redirect(url_for('product_reference_list'))
+
+    return render_template('product_reference_form.html', ref=ref, columns=columns)
+
+
+@app.route('/reference/<int:ref_id>/delete', methods=['POST'])
+@login_required
+def product_reference_delete(ref_id):
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+    db.delete_product_reference(ref_id)
+    flash('Product reference deleted.', 'success')
+    return redirect(url_for('product_reference_list'))
+
+
+@app.route('/api/reference/search')
+def api_reference_search():
+    """JSON API for codename autocomplete in the device form."""
+    q = request.args.get('q', '').strip()
+    if len(q) < 1:
+        return jsonify([])
+    results = db.search_product_codenames(q)
+    # Enrich with full data for auto-fill
+    enriched = []
+    for r in results:
+        full = db.get_product_reference(r['ref_id'])
+        entry = {
+            'ref_id': r['ref_id'],
+            'codename': r['codename'],
+            'year': r['year'],
+            'model_family': r['model_family'],
+            'market_segment': r['market_segment'],
+        }
+        if full:
+            try:
+                entry['data'] = json.loads(full['data']) if isinstance(full['data'], str) else full['data']
+            except (json.JSONDecodeError, TypeError):
+                entry['data'] = {}
+        enriched.append(entry)
+    return jsonify(enriched)
+
+
+# ---------------------------------------------------------------------------
 # Health check endpoint (public, no auth required)
 # ---------------------------------------------------------------------------
 
