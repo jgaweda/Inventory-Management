@@ -177,7 +177,8 @@ def logout():
 @app.route('/')
 def dashboard():
     stats = db.get_stats()
-    return render_template('dashboard.html', stats=stats)
+    health = db.get_backup_health()
+    return render_template('dashboard.html', stats=stats, health=health)
 
 # ---------------------------------------------------------------------------
 # Device list (public)
@@ -1061,6 +1062,28 @@ def backup_restore(filename):
         app_logger.error('Restore failed: %s by=%s', e, current_username())
         flash(f'Restore failed: {e}', 'error')
     return redirect(url_for('backup_list'))
+
+# ---------------------------------------------------------------------------
+# Health check endpoint (public, no auth required)
+# ---------------------------------------------------------------------------
+
+@app.route('/health')
+def health_check():
+    """Return backup and database health status as JSON for external monitoring."""
+    health = db.get_backup_health()
+    db_status = db.get_database_status()
+    health['database'] = {
+        'integrity': db_status['integrity'],
+        'size_bytes': db_status['size_bytes'],
+        'wal_size_bytes': db_status['wal_size_bytes'],
+        'table_counts': db_status['table_counts'],
+    }
+    if db_status['integrity'] != 'ok':
+        health['healthy'] = False
+        health['issues'].append(f'Database integrity check failed: {db_status["integrity"]}')
+    status_code = 200 if health['healthy'] else 503
+    return jsonify(health), status_code
+
 
 # ---------------------------------------------------------------------------
 # Favicon / Apple Touch Icon (generated in-memory to suppress browser 404s)

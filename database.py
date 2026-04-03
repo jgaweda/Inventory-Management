@@ -51,10 +51,12 @@ UPDATABLE_FIELDS = [
 
 def get_connection():
     """Create a new SQLite connection with WAL mode and foreign keys enabled."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.execute('PRAGMA foreign_keys=ON')
+    conn.execute('PRAGMA busy_timeout=30000')
+    conn.execute('PRAGMA synchronous=NORMAL')
     return conn
 
 
@@ -74,6 +76,14 @@ def db_transaction():
 
 def init_db():
     """Create all tables, indexes, and seed default data. Safe to call multiple times."""
+    # Run integrity check on existing database
+    if os.path.exists(DB_PATH):
+        integrity = check_database_integrity()
+        if integrity['ok']:
+            _audit_logger.info('Database integrity check passed on startup')
+        else:
+            _audit_logger.error('DATABASE INTEGRITY CHECK FAILED: %s', integrity['result'])
+
     with db_transaction() as conn:
         # Devices table
         conn.execute('''
@@ -593,6 +603,7 @@ def _get_backup_config():
         'git_token': saved.get('git_token', ''),
         'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
         'last_git_push': saved.get('last_git_push', ''),
+        'last_backup': saved.get('last_backup', ''),
     }
 
 
@@ -627,6 +638,9 @@ def backup_database(performed_by='system', manual=False):
         backup_filename = f'auto_backup_{timestamp}.db'
     backup_path = os.path.join(backup_dir, backup_filename)
 
+    # Checkpoint WAL before backup to ensure all data is in the main file
+    checkpoint_wal()
+
     # Use SQLite online backup API for a consistent snapshot
     src = sqlite3.connect(DB_PATH)
     dst = sqlite3.connect(backup_path)
@@ -636,10 +650,24 @@ def backup_database(performed_by='system', manual=False):
         dst.close()
         src.close()
 
+    # Verify the backup is a valid SQLite database
+    try:
+        verify_conn = sqlite3.connect(backup_path)
+        result = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
+        verify_conn.close()
+        if result != 'ok':
+            _audit_logger.warning('Backup integrity check failed: %s — %s', backup_filename, result)
+    except Exception as e:
+        _audit_logger.warning('Backup verification error: %s — %s', backup_filename, e)
+
     file_size = os.path.getsize(backup_path)
 
     # Only prune automated backups beyond max_backups
     pruned = _prune_old_backups(config['max_backups'])
+
+    # Record last successful backup time
+    config['last_backup'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    save_backup_config(config)
 
     return {
         'filename': backup_filename,
@@ -648,6 +676,112 @@ def backup_database(performed_by='system', manual=False):
         'timestamp': timestamp,
         'pruned': pruned,
     }
+
+
+def get_backup_health():
+    """Check if backups and git pushes are on schedule. Returns health status."""
+    config = _get_backup_config()
+    now = datetime.now()
+    issues = []
+
+    # Check backup schedule
+    if config['backup_enabled']:
+        last = config.get('last_backup', '')
+        if not last:
+            issues.append('Auto-backup is enabled but no backup has been completed yet')
+        else:
+            last_dt = datetime.strptime(last, '%Y-%m-%d %H:%M:%S')
+            overdue_hours = config['backup_interval_hours'] * 2
+            if (now - last_dt).total_seconds() > overdue_hours * 3600:
+                hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
+                issues.append(f'Backup overdue: last backup was {hours_ago} hours ago (interval: {config["backup_interval_hours"]}h)')
+
+    # Check git push schedule
+    if config['git_enabled'] and config.get('git_repo'):
+        last = config.get('last_git_push', '')
+        if not last:
+            issues.append('Git push is enabled but no push has been completed yet')
+        else:
+            last_dt = datetime.strptime(last, '%Y-%m-%d %H:%M:%S')
+            overdue_hours = config['git_push_interval_hours'] * 2
+            if (now - last_dt).total_seconds() > overdue_hours * 3600:
+                hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
+                issues.append(f'Git push overdue: last push was {hours_ago} hours ago (interval: {config["git_push_interval_hours"]}h)')
+
+    # Check backup directory has files
+    backup_dir = _get_backup_dir()
+    backup_files = [f for f in os.listdir(backup_dir) if _is_backup_file(f)]
+
+    return {
+        'healthy': len(issues) == 0,
+        'issues': issues,
+        'last_backup': config.get('last_backup', ''),
+        'last_git_push': config.get('last_git_push', ''),
+        'backup_enabled': config['backup_enabled'],
+        'git_enabled': config['git_enabled'],
+        'backup_count': len(backup_files),
+        'db_size': os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+    }
+
+
+def check_database_integrity():
+    """Run SQLite integrity check and return results."""
+    try:
+        conn = get_connection()
+        result = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        conn.close()
+        return {'ok': result == 'ok', 'result': result}
+    except Exception as e:
+        return {'ok': False, 'result': str(e)}
+
+
+def checkpoint_wal():
+    """Force a WAL checkpoint to ensure all data is written to the main database file.
+    Should be called before backups for maximum data consistency."""
+    try:
+        conn = get_connection()
+        # TRUNCATE mode: checkpoint and truncate WAL file to zero size
+        result = conn.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
+        conn.close()
+        # result is (busy, log, checkpointed)
+        return {'success': True, 'busy': result[0], 'log_pages': result[1], 'checkpointed': result[2]}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def get_database_status():
+    """Get comprehensive database status for monitoring."""
+    status = {
+        'exists': os.path.exists(DB_PATH),
+        'size_bytes': 0,
+        'wal_size_bytes': 0,
+        'integrity': 'unknown',
+        'table_counts': {},
+    }
+    if not status['exists']:
+        return status
+
+    status['size_bytes'] = os.path.getsize(DB_PATH)
+
+    wal_path = DB_PATH + '-wal'
+    if os.path.exists(wal_path):
+        status['wal_size_bytes'] = os.path.getsize(wal_path)
+
+    # Integrity check
+    integrity = check_database_integrity()
+    status['integrity'] = 'ok' if integrity['ok'] else integrity['result']
+
+    # Row counts
+    try:
+        conn = get_connection()
+        for table in ['devices', 'audit_log', 'users', 'categories']:
+            count = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
+            status['table_counts'][table] = count
+        conn.close()
+    except Exception as e:
+        status['table_counts'] = {'error': str(e)}
+
+    return status
 
 
 def _prune_old_backups(max_backups):
@@ -823,13 +957,15 @@ def restore_database(filename):
     if not os.path.isfile(backup_path):
         raise FileNotFoundError(f'Backup file not found: {filename}')
 
-    # Validate the backup file is a valid SQLite database
+    # Validate the backup file is a valid SQLite database with full integrity check
     test_conn = sqlite3.connect(backup_path)
     try:
+        integrity = test_conn.execute('PRAGMA integrity_check').fetchone()[0]
+        if integrity != 'ok':
+            raise ValueError(f'Backup file failed integrity check: {integrity}')
         test_conn.execute('SELECT COUNT(*) FROM devices')
         test_conn.execute('SELECT COUNT(*) FROM users')
     except sqlite3.DatabaseError as e:
-        test_conn.close()
         raise ValueError(f'Backup file is not a valid database: {e}')
     finally:
         test_conn.close()
