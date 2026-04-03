@@ -37,13 +37,21 @@
             </div>
             <div id="codenameMatch" style="display:none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
             </div>
-            <div id="chipInfo" style="display:none; margin-top: 8px; display: none;">
-                <div style="display: flex; gap: 16px;">
-                    <div style="flex: 1;">
+            <div id="refDetails" style="display:none; margin-top: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px;">
+                    <div>
+                        <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Release Year</label>
+                        <div id="releaseYearDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">FW Codebase</label>
+                        <div id="fwCodebaseDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
+                    </div>
+                    <div>
                         <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Wireless Chip Vendor</label>
                         <div id="chipVendorDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
                     </div>
-                    <div style="flex: 1;">
+                    <div>
                         <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Chip Codename</label>
                         <div id="chipCodenameDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
                     </div>
@@ -126,14 +134,12 @@
             }
         }
 
-        var chipInfoDiv = document.getElementById('chipInfo');
-        if (chipVendor || chipCodename) {
-            document.getElementById('chipVendorDisplay').textContent = chipVendor || '—';
-            document.getElementById('chipCodenameDisplay').textContent = chipCodename || '—';
-            chipInfoDiv.style.display = 'block';
-        } else {
-            chipInfoDiv.style.display = 'none';
-        }
+        // Populate reference detail fields
+        document.getElementById('releaseYearDisplay').textContent = ref.year || '—';
+        document.getElementById('fwCodebaseDisplay').textContent = data['FW Codebase'] || '—';
+        document.getElementById('chipVendorDisplay').textContent = chipVendor || '—';
+        document.getElementById('chipCodenameDisplay').textContent = chipCodename || '—';
+        document.getElementById('refDetails').style.display = 'block';
 
         // Show match info
         var matchDiv = document.getElementById('codenameMatch');
