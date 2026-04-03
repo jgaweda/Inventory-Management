@@ -1262,6 +1262,9 @@ def product_reference_import():
 @login_required
 def product_reference_export():
     """Export all product references as a .csv download."""
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
     import csv, io
     refs = db.get_all_product_references()
     output = io.StringIO()
