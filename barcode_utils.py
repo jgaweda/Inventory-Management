@@ -96,8 +96,8 @@ def generate_label(device_id, barcode_value, device_name, save=True):
                 continue
         return ImageFont.load_default(size=size)
 
-    font_name = _find_font(["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
-                             "Helvetica-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"], 96)
+    BOLD_FONTS = ["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
+                  "Helvetica-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"]
     font_barcode_id = _find_font(["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
                                    "Courier.ttc", "Menlo.ttc", "Courier New Bold.ttf"], 64)
     font_team = _find_font(["DejaVuSans.ttf", "LiberationSans-Regular.ttf",
@@ -113,9 +113,16 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     right_x = 820
     text_w = W - right_x - 50  # available width for text/barcode
 
-    # Device name (bold, up to 2 lines)
-    display_name = device_name[:40] if len(device_name) <= 40 else device_name[:37] + '...'
-    draw.text((right_x, 60), display_name, fill='black', font=font_name)
+    # Device name — dynamically size font to fit available width
+    max_font_size = 96
+    min_font_size = 36
+    font_name = _find_font(BOLD_FONTS, max_font_size)
+    for size in range(max_font_size, min_font_size - 1, -4):
+        font_name = _find_font(BOLD_FONTS, size)
+        bbox = draw.textbbox((0, 0), device_name, font=font_name)
+        if bbox[2] - bbox[0] <= text_w:
+            break
+    draw.text((right_x, 60), device_name, fill='black', font=font_name)
 
     # Barcode value (monospace, bold)
     draw.text((right_x, 190), barcode_value, fill='#222222', font=font_barcode_id)
