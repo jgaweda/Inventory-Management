@@ -158,6 +158,7 @@ def init_db():
                 chip_codename TEXT DEFAULT '',
                 fw_codebase TEXT DEFAULT '',
                 print_technology TEXT DEFAULT '',
+                variant TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -167,7 +168,8 @@ def init_db():
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
-                             ('chip_codename', ''), ('fw_codebase', ''), ('print_technology', '')]:
+                             ('chip_codename', ''), ('fw_codebase', ''), ('print_technology', ''),
+                             ('variant', '')]:
             if col not in pr_cols:
                 conn.execute(f"ALTER TABLE product_reference ADD COLUMN {col} TEXT DEFAULT ''")
 
@@ -1258,28 +1260,28 @@ def get_product_reference_by_codename(codename):
 
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
-                          print_technology=''):
+                          print_technology='', variant=''):
     """Add a single product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             INSERT INTO product_reference
-                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology))
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant))
 
 
 def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
                              chip_manufacturer='', chip_codename='', fw_codebase='',
-                             print_technology=''):
+                             print_technology='', variant=''):
     """Update an existing product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             UPDATE product_reference
             SET codename = ?, model_name = ?, wifi_gen = ?, year = ?,
                 chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
-                print_technology = ?, updated_at = CURRENT_TIMESTAMP
+                print_technology = ?, variant = ?, updated_at = CURRENT_TIMESTAMP
             WHERE ref_id = ?
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, ref_id))
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant, ref_id))
 
 
 def delete_product_reference(ref_id):

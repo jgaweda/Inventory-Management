@@ -17,9 +17,20 @@
                 </label>
                 <input type="text" name="codename" value="{{ ref.codename if ref else '' }}" required placeholder="e.g. Marconi">
             </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Name</label>
-                <input type="text" name="model_name" value="{{ ref.model_name if ref else '' }}" placeholder="e.g. HP OfficeJet Pro 9120 Series">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Name</label>
+                    <input type="text" name="model_name" value="{{ ref.model_name if ref else '' }}" placeholder="e.g. HP OfficeJet Pro 9120 Series">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Variant</label>
+                    <select name="variant">
+                        <option value="">None</option>
+                        <option value="Base" {% if ref and ref.variant == 'Base' %}selected{% endif %}>Base</option>
+                        <option value="Plus" {% if ref and ref.variant == 'Plus' %}selected{% endif %}>Plus</option>
+                        <option value="Lite" {% if ref and ref.variant == 'Lite' %}selected{% endif %}>Lite</option>
+                    </select>
+                </div>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                 <div>

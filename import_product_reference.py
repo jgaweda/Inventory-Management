@@ -40,6 +40,7 @@ HEADER_MAP = {
     'chip codename': 'chip_codename',
     'fw codebase': 'fw_codebase',
     'print technology': 'print_technology',
+    'variant': 'variant',
 }
 
 
