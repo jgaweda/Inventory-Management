@@ -58,6 +58,7 @@
                     <th>Chipset Manufacturer</th>
                     <th>Chipset Codename</th>
                     <th>FW Codebase</th>
+                    <th style="text-align: center;">Inventory</th>
                     {% if current_user and current_user.role == 'admin' %}
                     <th style="width: 100px;">Actions</th>
                     {% endif %}
@@ -84,6 +85,17 @@
                     <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
                     <td class="font-mono" style="font-size: 13px;">{{ ref.chip_codename or '—' }}</td>
                     <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
+                    <td style="text-align: center; font-size: 12px;">
+                        {% set counts = inv_counts.get(ref.codename, {}) %}
+                        {% set total = counts.get('total', 0) %}
+                        {% if total > 0 %}
+                        <span style="font-weight: 600; color: var(--text-primary);">{{ total }}</span>
+                        <span style="color: var(--text-muted); margin-left: 2px;">(</span><span style="color: var(--accent-green);">{{ counts.get('available', 0) }}</span>
+                        <span style="color: var(--text-muted);">/</span><span style="color: var(--accent-amber);">{{ counts.get('checked_out', 0) }}</span><span style="color: var(--text-muted);">)</span>
+                        {% else %}
+                        <span style="color: var(--text-muted);">0</span>
+                        {% endif %}
+                    </td>
                     {% if current_user and current_user.role == 'admin' %}
                     <td>
                         <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">

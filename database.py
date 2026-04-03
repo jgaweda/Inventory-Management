@@ -1208,6 +1208,31 @@ def get_all_product_references(search=''):
         conn.close()
 
 
+def get_inventory_counts_by_codename():
+    """Return dict of codename -> {total, available, checked_out} from devices table."""
+    conn = get_connection()
+    try:
+        rows = conn.execute('''
+            SELECT codename, status, COUNT(*) as cnt
+            FROM devices
+            WHERE codename != '' AND codename IS NOT NULL AND status != 'retired'
+            GROUP BY codename, status
+        ''').fetchall()
+        counts = {}
+        for r in rows:
+            cn = r['codename']
+            if cn not in counts:
+                counts[cn] = {'total': 0, 'available': 0, 'checked_out': 0}
+            counts[cn]['total'] += r['cnt']
+            if r['status'] == 'available':
+                counts[cn]['available'] = r['cnt']
+            elif r['status'] == 'checked_out':
+                counts[cn]['checked_out'] = r['cnt']
+        return counts
+    finally:
+        conn.close()
+
+
 def get_product_reference(ref_id):
     """Return a single product reference by ID."""
     conn = get_connection()

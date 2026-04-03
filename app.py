@@ -1088,7 +1088,8 @@ def backup_restore(filename):
 def product_reference_list():
     search = request.args.get('q', '')
     refs = db.get_all_product_references(search)
-    return render_template('product_reference.html', refs=refs, search=search)
+    inv_counts = db.get_inventory_counts_by_codename()
+    return render_template('product_reference.html', refs=refs, search=search, inv_counts=inv_counts)
 
 
 @app.route('/reference/add', methods=['GET', 'POST'])
