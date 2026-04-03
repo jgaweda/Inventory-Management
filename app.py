@@ -689,7 +689,8 @@ def account():
         flash('Password changed successfully.', 'success')
         return redirect(url_for('account'))
 
-    return render_template('account.html')
+    users = db.get_all_users() if g.user['role'] == 'admin' else []
+    return render_template('account.html', users=users)
 
 # ---------------------------------------------------------------------------
 # Database backup (admin only)
