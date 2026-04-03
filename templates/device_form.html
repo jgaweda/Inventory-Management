@@ -26,15 +26,28 @@
                        value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
-        <div id="codenameRow" style="margin-top: 16px; display: none; position: relative;">
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-                Codename <span style="color: var(--accent-red);">*</span>
-            </label>
-            <input type="text" name="codename" id="codenameInput" autocomplete="off"
-                   value="{{ device.get('codename', '') if device is mapping else (device.codename if device and device.codename is defined else '') }}"
-                   placeholder="Start typing to search product reference..."
-                   oninput="searchCodename(this.value)" onfocus="searchCodename(this.value)">
-            <div id="codenameSuggestions" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; max-height:240px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+        <div id="codenameRow" style="margin-top: 16px; display: none;">
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+                <div style="position: relative;">
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                        Codename <span style="color: var(--accent-red);">*</span>
+                    </label>
+                    <input type="text" name="codename" id="codenameInput" autocomplete="off"
+                           value="{{ device.get('codename', '') if device is mapping else (device.codename if device and device.codename is defined else '') }}"
+                           placeholder="Start typing to search product reference..."
+                           oninput="searchCodename(this.value)" onfocus="searchCodename(this.value)">
+                    <div id="codenameSuggestions" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; max-height:240px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Variant</label>
+                    <select name="variant" id="variantSelect">
+                        <option value="">None</option>
+                        <option value="Base" {% if (device.get('variant', '') if device is mapping else '') == 'Base' %}selected{% endif %}>Base</option>
+                        <option value="Plus" {% if (device.get('variant', '') if device is mapping else '') == 'Plus' %}selected{% endif %}>Plus</option>
+                        <option value="Lite" {% if (device.get('variant', '') if device is mapping else '') == 'Lite' %}selected{% endif %}>Lite</option>
+                    </select>
+                </div>
             </div>
             <div id="codenameMatch" style="display:none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
             </div>
@@ -97,6 +110,12 @@
     function selectCodename(ref) {
         document.getElementById('codenameInput').value = ref.codename;
         document.getElementById('codenameSuggestions').style.display = 'none';
+
+        // Auto-set variant from product reference
+        var variantSel = document.getElementById('variantSelect');
+        if (variantSel && ref.variant) {
+            variantSel.value = ref.variant;
+        }
 
         // Auto-fill manufacturer and model from product reference
         if (ref.model_name) {
