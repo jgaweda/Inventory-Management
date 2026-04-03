@@ -252,7 +252,7 @@ def device_add():
 
         # Generate label
         device = db.get_device(device_id)
-        barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
 
         app_logger.info('Device added: id=%s name="%s" by=%s', device_id, name, current_username())
         flash(f'Device "{name}" added successfully.', 'success')
@@ -273,7 +273,7 @@ def device_detail(device_id):
         return redirect(url_for('device_list'))
 
     if not barcode_utils.label_exists(device_id):
-        barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
         app_logger.debug('Label generated on-the-fly: id=%s', device_id)
 
     app_logger.info('Device viewed: id=%s name="%s" ip=%s', device_id, device['name'], request.remote_addr)
@@ -339,7 +339,8 @@ def device_edit(device_id):
         }
         db.update_device(device_id, data, performed_by=current_username())
 
-        barcode_utils.generate_label(device_id, device['barcode_value'], name)
+        updated_device = db.get_device(device_id)
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(updated_device))
 
         app_logger.info('Device updated: id=%s name="%s" by=%s', device_id, name, current_username())
         flash(f'Device "{name}" updated successfully.', 'success')
@@ -389,17 +390,22 @@ def device_checkin(device_id):
 # Label serving and label sheet generation
 # ---------------------------------------------------------------------------
 
+def _label_name(device):
+    """Return the name to display on a device label. Printers use codename + variant only."""
+    if device.get('category') == 'Printer' and device.get('codename'):
+        variant = device.get('variant', '')
+        return f"{device['codename']} {variant}".strip() if variant else device['codename']
+    return device['name']
+
+
 @app.route('/labels/<device_id>.png')
 def serve_label(device_id):
-    """Serve a label PNG, generating it on the fly if it doesn't exist."""
-    if not barcode_utils.label_exists(device_id):
-        device = db.get_device(device_id)
-        if not device:
-            app_logger.warning('Label requested for unknown device: id=%s', device_id)
-            return 'Device not found', 404
-        barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
-        app_logger.info('Label generated: id=%s name="%s"', device_id, device['name'])
-
+    """Serve a label PNG, always regenerating to ensure it's current."""
+    device = db.get_device(device_id)
+    if not device:
+        app_logger.warning('Label requested for unknown device: id=%s', device_id)
+        return 'Device not found', 404
+    barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
     return send_file(path, mimetype='image/png')
 
@@ -407,13 +413,11 @@ def serve_label(device_id):
 @app.route('/labels/<device_id>.pdf')
 def serve_label_pdf(device_id):
     """Serve a label as a PDF with 4x6 inch page size for direct printing."""
-    import io
-    if not barcode_utils.label_exists(device_id):
-        device = db.get_device(device_id)
-        if not device:
-            return 'Device not found', 404
-        barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
-
+    device = db.get_device(device_id)
+    if not device:
+        return 'Device not found', 404
+    # Always regenerate to ensure PDF matches current label
+    barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
     img = Image.open(path)
     pdf_buffer = io.BytesIO()
