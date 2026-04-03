@@ -1163,6 +1163,101 @@ def product_reference_delete(ref_id):
     return redirect(url_for('product_reference_list'))
 
 
+HEADER_MAP = {
+    'codename': 'codename',
+    'model name': 'model_name',
+    'wi-fi gen': 'wifi_gen',
+    'wifi gen': 'wifi_gen',
+    'year': 'year',
+    'wireless chip set manufacturer': 'chip_manufacturer',
+    'wireless chipset manufacturer': 'chip_manufacturer',
+    'chip manufacturer': 'chip_manufacturer',
+    'wireless chipset codename': 'chip_codename',
+    'chip codename': 'chip_codename',
+    'fw codebase': 'fw_codebase',
+    'print technology': 'print_technology',
+}
+
+
+@app.route('/reference/import', methods=['POST'])
+@login_required
+def product_reference_import():
+    """Import product references from an uploaded .xlsx or .csv file."""
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    file = request.files.get('import_file')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    filename = file.filename.lower()
+    if not filename.endswith(('.xlsx', '.csv')):
+        flash('Unsupported file type. Use .xlsx or .csv', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    try:
+        imported = 0
+        skipped = 0
+
+        if filename.endswith('.xlsx'):
+            import openpyxl
+            wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
+            ws = wb.active
+            rows = ws.iter_rows()
+            raw_headers = [cell.value or '' for cell in next(rows)]
+            headers = [HEADER_MAP.get(str(h).strip().lower()) for h in raw_headers]
+
+            for row in rows:
+                values = [cell.value for cell in row]
+                if not any(v is not None and str(v).strip() for v in values):
+                    continue
+                record = {}
+                for i, val in enumerate(values):
+                    if i < len(headers) and headers[i]:
+                        record[headers[i]] = str(val).strip() if val is not None else ''
+                codename = record.get('codename', '').strip()
+                if not codename:
+                    skipped += 1
+                    continue
+                db.add_product_reference(**record)
+                imported += 1
+            wb.close()
+        else:
+            import csv, io
+            stream = io.TextIOWrapper(file.stream, encoding='utf-8-sig')
+            # Auto-detect delimiter
+            sample = stream.read(2048)
+            stream.seek(0)
+            delimiter = '\t' if '\t' in sample else ','
+            reader = csv.reader(stream, delimiter=delimiter)
+            raw_headers = next(reader)
+            headers = [HEADER_MAP.get(h.strip().lower()) for h in raw_headers]
+
+            for row in reader:
+                if not any(cell.strip() for cell in row):
+                    continue
+                record = {}
+                for i, val in enumerate(row):
+                    if i < len(headers) and headers[i]:
+                        record[headers[i]] = val.strip()
+                codename = record.get('codename', '').strip()
+                if not codename:
+                    skipped += 1
+                    continue
+                db.add_product_reference(**record)
+                imported += 1
+
+        flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
+              + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
+    except Exception as e:
+        app_logger.error('Product reference import failed: %s', e)
+        flash(f'Import failed: {e}', 'error')
+
+    return redirect(url_for('product_reference_list'))
+
+
 @app.route('/api/reference/search')
 def api_reference_search():
     """JSON API for printer dropdown in the device form."""

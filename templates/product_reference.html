@@ -8,10 +8,16 @@
         <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ refs|length }} product{{ 's' if refs|length != 1 else '' }} in catalog</p>
     </div>
     {% if current_user and current_user.role == 'admin' %}
-    <a href="{{ url_for('product_reference_add') }}" class="btn btn-primary btn-sm">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-        Add Product
-    </a>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <button onclick="document.getElementById('importModal').style.display='flex'" class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Import
+        </button>
+        <a href="{{ url_for('product_reference_add') }}" class="btn btn-primary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            Add Product
+        </a>
+    </div>
     {% endif %}
 </div>
 
@@ -90,4 +96,30 @@
     </p>
     {% endif %}
 </div>
+
+{% if current_user and current_user.role == 'admin' %}
+<!-- Import Modal -->
+<div id="importModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+    <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:24px; width:100%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+        <h3 style="font-size:18px; font-weight:700; margin-bottom:16px;">Import Product References</h3>
+        <form method="POST" action="{{ url_for('product_reference_import') }}" enctype="multipart/form-data">
+            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+                Upload a <strong>.xlsx</strong> or <strong>.csv</strong> file with columns:<br>
+                <span class="font-mono" style="font-size:11px; color:var(--text-muted); line-height:1.8;">
+                    Codename, Model Name, Wi-Fi Gen, Year,<br>
+                    Wireless Chip Set Manufacturer, Wireless Chipset Codename, FW Codebase
+                </span>
+            </p>
+            <div style="margin-bottom:16px;">
+                <input type="file" name="import_file" accept=".xlsx,.csv" required
+                       style="font-size:13px; width:100%; padding:8px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary);">
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('importModal').style.display='none'">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Import</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
