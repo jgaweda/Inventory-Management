@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-One-time import script for populating the product_reference table from a
-tab-separated spreadsheet (TSV).
+One-time import script for populating the product_reference table from an
+Excel (.xlsx) or tab-separated (.tsv) spreadsheet.
 
-Expected columns (tab-separated, first row is header):
+Expected columns (first row is header):
     Codename | Model Name | Wi-Fi Gen | Year | Wireless Chip Set Manufacturer | Wireless Chipset Codename | FW Codebase
 
 Usage:
+    python import_product_reference.py <file.xlsx>
     python import_product_reference.py <file.tsv>
 
 Optional flags:
     --print-technology <Ink|Laser>   Set print technology for all imported rows
     --dry-run                        Show what would be imported without writing
+    --sheet <name>                   Excel sheet name (default: first sheet)
 """
 
 import argparse
@@ -43,7 +45,42 @@ HEADER_MAP = {
 
 def normalize_header(h):
     """Lowercase and strip a header for matching."""
-    return h.strip().lower()
+    return str(h).strip().lower()
+
+
+def parse_xlsx(filepath, sheet_name=None):
+    """Read an Excel file and yield dicts with normalized keys."""
+    try:
+        import openpyxl
+    except ImportError:
+        print("Error: openpyxl is required for .xlsx files.")
+        print("Install it with:  pip install openpyxl")
+        sys.exit(1)
+
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb[sheet_name] if sheet_name else wb.active
+    print(f"  Sheet: {ws.title}")
+
+    rows = ws.iter_rows()
+    raw_headers = [cell.value or '' for cell in next(rows)]
+    headers = []
+    for h in raw_headers:
+        key = HEADER_MAP.get(normalize_header(h))
+        if key is None and str(h).strip():
+            print(f"  Warning: unknown column '{str(h).strip()}' — skipping")
+        headers.append(key)
+
+    for row_num, row in enumerate(rows, start=2):
+        values = [cell.value for cell in row]
+        if not any(v is not None and str(v).strip() for v in values):
+            continue  # skip blank rows
+        record = {}
+        for i, val in enumerate(values):
+            if i < len(headers) and headers[i]:
+                record[headers[i]] = str(val).strip() if val is not None else ''
+        yield row_num, record
+
+    wb.close()
 
 
 def parse_tsv(filepath):
@@ -54,7 +91,7 @@ def parse_tsv(filepath):
         headers = []
         for h in raw_headers:
             key = HEADER_MAP.get(normalize_header(h))
-            if key is None:
+            if key is None and h.strip():
                 print(f"  Warning: unknown column '{h.strip()}' — skipping")
             headers.append(key)
 
@@ -69,16 +106,28 @@ def parse_tsv(filepath):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Import product references from TSV')
-    parser.add_argument('file', help='Path to the tab-separated file')
+    parser = argparse.ArgumentParser(description='Import product references from Excel or TSV')
+    parser.add_argument('file', help='Path to the .xlsx or .tsv file')
     parser.add_argument('--print-technology', choices=['Ink', 'Laser'], default='',
                         help='Set print technology for all imported rows')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview import without writing to database')
+    parser.add_argument('--sheet', default=None,
+                        help='Excel sheet name (default: first sheet)')
     args = parser.parse_args()
 
     if not os.path.isfile(args.file):
         print(f"Error: file not found: {args.file}")
+        sys.exit(1)
+
+    # Pick parser based on file extension
+    ext = os.path.splitext(args.file)[1].lower()
+    if ext in ('.xlsx', '.xls'):
+        row_iter = parse_xlsx(args.file, args.sheet)
+    elif ext in ('.tsv', '.txt', '.csv'):
+        row_iter = parse_tsv(args.file)
+    else:
+        print(f"Error: unsupported file type '{ext}'. Use .xlsx or .tsv")
         sys.exit(1)
 
     # Initialize database (creates tables if needed)
@@ -90,7 +139,7 @@ def main():
     print(f"Reading: {args.file}")
     print()
 
-    for row_num, record in parse_tsv(args.file):
+    for row_num, record in row_iter:
         codename = record.get('codename', '').strip()
         if not codename:
             print(f"  Row {row_num}: skipped (no codename)")
