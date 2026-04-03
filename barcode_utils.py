@@ -1,8 +1,8 @@
 """
 Barcode and label utilities for the HP Connectivity Team Inventory System.
 
-Generates QR codes, Code 128 barcodes, individual device labels (600x300 px),
-and printable label sheets (US Letter, 3x5 grid).
+Generates Code 128 barcodes and individual device labels (1050x450 px = 3.5x1.5"
+at 300 DPI) and printable label sheets.
 
 Dependencies: qrcode, python-barcode, Pillow
 """
@@ -21,6 +21,35 @@ LABELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 
 def _ensure_labels_dir():
     """Create the labels directory if it doesn't exist."""
     os.makedirs(LABELS_DIR, exist_ok=True)
+
+
+def _find_font(names, size):
+    """Try multiple font paths (Linux + macOS) and return the first that works."""
+    for name in names:
+        for path in [
+            f"/usr/share/fonts/truetype/dejavu/{name}",
+            f"/usr/share/fonts/truetype/liberation/{name}",
+            f"/System/Library/Fonts/{name}",
+            f"/Library/Fonts/{name}",
+            f"/System/Library/Fonts/Supplemental/{name}",
+        ]:
+            try:
+                return ImageFont.truetype(path, size)
+            except (OSError, IOError):
+                continue
+    # Last resort: try by name only (Pillow searches system paths)
+    for name in names:
+        try:
+            return ImageFont.truetype(name, size)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default(size=size)
+
+
+BOLD_FONTS = ["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
+              "Helvetica-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"]
+MONO_BOLD_FONTS = ["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
+                   "Courier.ttc", "Menlo.ttc", "Courier New Bold.ttf"]
 
 
 def generate_qr_code(data, size=200):
@@ -44,124 +73,84 @@ def generate_barcode_image(data, width=350, height=80):
     """
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image resized to width x height.
+    Uses NEAREST interpolation to keep bars crisp for scanning.
     """
-    # Render barcode to a bytes buffer
     writer = ImageWriter()
     code = Code128(data, writer=writer)
     buffer = io.BytesIO()
     code.render(writer_options={
         'font_size': 0,
         'text_distance': 0,
-        'quiet_zone': 0,
+        'quiet_zone': 2,
+        'module_width': 0.4,
+        'module_height': 20,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
     img = Image.open(buffer).convert('RGB')
-    return img.resize((width, height), Image.LANCZOS)
+    # Use NEAREST to keep barcode bars sharp (no anti-aliasing blur)
+    return img.resize((width, height), Image.NEAREST)
 
 
 def generate_label(device_id, barcode_value, device_name, save=True):
     """
-    Create a 1800x1200 pixel device label (4x6 inches at 300 DPI) containing:
-    - Left: QR code (500x500, centered vertically)
-    - Right: Device name, barcode value, team name, Code 128 barcode
-    - 2px gray border
+    Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI) containing:
+    - Top: Device name (left-aligned)
+    - Middle: Full-width Code 128 barcode
+    - Bottom: Barcode ID value (large, prominent, mono font)
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
     """
-    W, H = 1800, 1200
+    W, H = 1050, 450
+    MARGIN = 30
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    def _find_font(names, size):
-        """Try multiple font paths (Linux + macOS) and return the first that works."""
-        for name in names:
-            for path in [
-                f"/usr/share/fonts/truetype/dejavu/{name}",
-                f"/usr/share/fonts/truetype/liberation/{name}",
-                f"/System/Library/Fonts/{name}",
-                f"/Library/Fonts/{name}",
-                f"/System/Library/Fonts/Supplemental/{name}",
-            ]:
-                try:
-                    return ImageFont.truetype(path, size)
-                except (OSError, IOError):
-                    continue
-        # Last resort: try by name only (Pillow searches system paths)
-        for name in names:
-            try:
-                return ImageFont.truetype(name, size)
-            except (OSError, IOError):
-                continue
-        return ImageFont.load_default(size=size)
+    content_w = W - 2 * MARGIN
 
-    BOLD_FONTS = ["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
-                  "Helvetica-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"]
-    font_barcode_id = _find_font(["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
-                                   "Courier.ttc", "Menlo.ttc", "Courier New Bold.ttf"], 64)
-    font_team = _find_font(["DejaVuSans.ttf", "LiberationSans-Regular.ttf",
-                             "Helvetica.ttc", "Helvetica-Light.ttf", "Arial.ttf"], 52)
-
-    # --- Left side: QR code ---
-    qr_size = 700
-    qr_img = generate_qr_code(barcode_value, size=qr_size)
-    qr_y = (H - qr_size) // 2
-    label.paste(qr_img, (50, qr_y))
-
-    # --- Right side: text and barcode, top-aligned with QR code ---
-    right_x = 820
-    text_w = W - right_x - 50  # available width for text/barcode
-    spacing = 16  # gap between elements
-
-    # Device name — dynamically size font to fit available width
-    max_font_size = 96
-    min_font_size = 36
-    font_name = _find_font(BOLD_FONTS, max_font_size)
-    for size in range(max_font_size, min_font_size - 1, -4):
+    # Device name — dynamically size font to fit width
+    max_name_size = 48
+    min_name_size = 24
+    font_name = _find_font(BOLD_FONTS, max_name_size)
+    for size in range(max_name_size, min_name_size - 1, -2):
         font_name = _find_font(BOLD_FONTS, size)
         bbox = draw.textbbox((0, 0), device_name, font=font_name)
-        if bbox[2] - bbox[0] <= text_w:
+        if bbox[2] - bbox[0] <= content_w:
             break
     name_h = bbox[3] - bbox[1]
 
-    # Measure other text heights
-    id_bbox = draw.textbbox((0, 0), barcode_value, font=font_barcode_id)
+    # Barcode ID text — large and prominent
+    font_id = _find_font(MONO_BOLD_FONTS, 48)
+    id_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
     id_h = id_bbox[3] - id_bbox[1]
-    team_bbox = draw.textbbox((0, 0), 'HP Connectivity Team', font=font_team)
-    team_h = team_bbox[3] - team_bbox[1]
 
-    # Right side starts at same y as QR code top
-    y = qr_y
+    # Layout: name at top, ID at bottom, barcode fills the middle
+    name_y = MARGIN
+    id_y = H - MARGIN - id_h
+    barcode_y = name_y + name_h + 12
+    barcode_h = id_y - barcode_y - 12
 
-    # Compensate for font left bearing so text aligns with barcode left edge
-    name_bbox_at_pos = draw.textbbox((right_x, y), device_name, font=font_name)
-    name_offset_x = name_bbox_at_pos[0] - right_x
-    draw.text((right_x - name_offset_x, y), device_name, fill='black', font=font_name)
-    y += name_h + spacing
+    if barcode_h < 60:
+        barcode_h = 60
 
-    id_bbox_at_pos = draw.textbbox((right_x, y), barcode_value, font=font_barcode_id)
-    id_offset_x = id_bbox_at_pos[0] - right_x
-    draw.text((right_x - id_offset_x, y), barcode_value, fill='#222222', font=font_barcode_id)
-    y += id_h + spacing
+    # Draw device name (left-aligned, compensate for font bearing)
+    name_draw_bbox = draw.textbbox((MARGIN, name_y), device_name, font=font_name)
+    name_offset_x = name_draw_bbox[0] - MARGIN
+    draw.text((MARGIN - name_offset_x, name_y), device_name, fill='black', font=font_name)
 
-    team_bbox_at_pos = draw.textbbox((right_x, y), 'HP Connectivity Team', font=font_team)
-    team_offset_x = team_bbox_at_pos[0] - right_x
-    draw.text((right_x - team_offset_x, y), 'HP Connectivity Team', fill='#666666', font=font_team)
-    y += team_h + spacing * 2
-
-    # Code 128 barcode — fill remaining space down to match QR bottom
-    barcode_h = (qr_y + qr_size) - y
-    if barcode_h < 150:
-        barcode_h = 150
+    # Draw barcode — full content width, crisp bars
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=text_w, height=barcode_h)
-        label.paste(barcode_img, (right_x, y))
+        barcode_img = generate_barcode_image(barcode_value, width=content_w, height=barcode_h)
+        label.paste(barcode_img, (MARGIN, barcode_y))
     except Exception:
-        draw.text((right_x, y + 50), barcode_value, fill='black', font=font_barcode_id)
+        draw.text((MARGIN, barcode_y + 20), barcode_value, fill='black', font=font_id)
 
-    # 3px gray border around the entire label
-    draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=3)
+    # Draw barcode ID text — centered horizontally
+    id_draw_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
+    id_text_w = id_draw_bbox[2] - id_draw_bbox[0]
+    id_x = (W - id_text_w) // 2
+    draw.text((id_x, id_y), barcode_value, fill='black', font=font_id)
 
     if save:
         _ensure_labels_dir()
@@ -172,22 +161,21 @@ def generate_label(device_id, barcode_value, device_name, save=True):
         return label
 
 
-def generate_label_sheet(devices, cols=2, rows=4):
+def generate_label_sheet(devices, cols=3, rows=6):
     """
     Generate a US Letter page (2550x3300 px at 300 DPI) with a grid of labels.
-    Each label is 1800x1200 px (4x6 at 300 DPI), scaled to fit grid cells.
+    Each label is 1050x450 px (3.5x1.5 at 300 DPI).
 
     Args:
         devices: list of dicts with device_id, barcode_value, name keys
-        cols: number of columns (default 2)
-        rows: number of rows (default 4)
+        cols: number of columns (default 3)
+        rows: number of rows (default 6)
 
     Returns: PIL Image of the full sheet
     """
     page_w, page_h = 2550, 3300
     margin = 75
 
-    # Calculate cell size and spacing
     usable_w = page_w - 2 * margin
     usable_h = page_h - 2 * margin
     cell_w = usable_w // cols
@@ -199,7 +187,6 @@ def generate_label_sheet(devices, cols=2, rows=4):
         col = i % cols
         row = i // cols
 
-        # Generate label (don't save individual file)
         label_img = generate_label(
             device['device_id'],
             device['barcode_value'],
@@ -207,13 +194,11 @@ def generate_label_sheet(devices, cols=2, rows=4):
             save=False,
         )
 
-        # Scale label to fit within cell while maintaining aspect ratio
         scale = min(cell_w / label_img.width, cell_h / label_img.height)
         scaled_w = int(label_img.width * scale)
         scaled_h = int(label_img.height * scale)
         scaled_img = label_img.resize((scaled_w, scaled_h), Image.LANCZOS)
 
-        # Center scaled label within cell
         cell_x = margin + col * cell_w
         cell_y = margin + row * cell_h
         offset_x = cell_x + (cell_w - scaled_w) // 2
