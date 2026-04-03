@@ -447,11 +447,11 @@ def serve_label_pdf(device_id):
     xref_offsets.append(pdf.tell())
     pdf.write(b'2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
 
-    # Object 3: Page — landscape MediaBox with /Rotate 270 to display as portrait
+    # Object 3: Page — landscape MediaBox with /Rotate 90 to display as portrait
     # The viewer/printer rotates the rendered page 270° for display,
     # which maps our landscape content onto the portrait label stock.
     xref_offsets.append(pdf.tell())
-    pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Rotate 270 /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
+    pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Rotate 90 /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
 
     # Object 4: Image XObject
     xref_offsets.append(pdf.tell())
