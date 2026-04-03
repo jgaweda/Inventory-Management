@@ -659,6 +659,7 @@ def _get_backup_config():
         'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
         'last_git_push': saved.get('last_git_push', ''),
         'last_backup': saved.get('last_backup', ''),
+        'last_backup_hash': saved.get('last_backup_hash', ''),
     }
 
 
