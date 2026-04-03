@@ -47,9 +47,10 @@
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Variant</label>
                 <select name="Variant">
-                    <option value="">Standard</option>
+                    <option value="">—</option>
                     <option value="Base" {% if d.get('Variant') == 'Base' %}selected{% endif %}>Base</option>
                     <option value="Plus" {% if d.get('Variant') == 'Plus' %}selected{% endif %}>Plus</option>
+                    <option value="Lite" {% if d.get('Variant') == 'Lite' %}selected{% endif %}>Lite</option>
                 </select>
             </div>
         </div>

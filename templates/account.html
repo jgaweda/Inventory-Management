@@ -99,5 +99,18 @@
         </table>
     </div>
 </div>
+<!-- Admin: Product Reference -->
+<div class="card" style="cursor: default; margin-top: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <div class="section-label" style="margin-bottom: 4px;">Product Reference</div>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Manage the printer/device spec catalog used for codename autocomplete.</p>
+        </div>
+        <a href="{{ url_for('product_reference_list') }}" class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+            Manage
+        </a>
+    </div>
+</div>
 {% endif %}
 {% endblock %}
