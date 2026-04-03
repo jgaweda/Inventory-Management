@@ -696,17 +696,17 @@ def get_backup_health():
                 hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
                 issues.append(f'Backup overdue: last backup was {hours_ago} hours ago (interval: {config["backup_interval_hours"]}h)')
 
-    # Check git push schedule
+    # Check cloud backup (git push) schedule
     if config['git_enabled'] and config.get('git_repo'):
         last = config.get('last_git_push', '')
         if not last:
-            issues.append('Git push is enabled but no push has been completed yet')
+            issues.append('Cloud backup is enabled but no cloud backup has been completed yet')
         else:
             last_dt = datetime.strptime(last, '%Y-%m-%d %H:%M:%S')
             overdue_hours = config['git_push_interval_hours'] * 2
             if (now - last_dt).total_seconds() > overdue_hours * 3600:
                 hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
-                issues.append(f'Git push overdue: last push was {hours_ago} hours ago (interval: {config["git_push_interval_hours"]}h)')
+                issues.append(f'Cloud backup overdue: last cloud backup was {hours_ago} hours ago (interval: {config["git_push_interval_hours"]}h)')
 
     # Check backup directory has files
     backup_dir = _get_backup_dir()

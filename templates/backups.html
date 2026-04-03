@@ -18,9 +18,9 @@
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
             Restore from Local
         </button>
-        <button type="button" class="btn btn-secondary" onclick="openGitRestoreDialog()">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-            Restore from Git
+        <button type="button" class="btn btn-secondary" onclick="openCloudRestoreDialog()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+            Restore from Cloud
         </button>
     </div>
 </div>
@@ -77,9 +77,12 @@
 
         <!-- Git Push Settings -->
         <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 16px;">
-            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Git Push</div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px; margin-right: 4px;"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
+                Cloud Backup
+            </div>
             <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                Zips the most recent backups (up to "max backups to keep") into <code>inventory_backups.zip</code> and pushes to a dedicated git branch. Each push overwrites the previous zip. Leave repo blank to use origin.
+                Pushes your backups to a remote Git repository for off-site cloud storage. Use "Restore from Cloud" to pull the latest backup if your local data is lost.
             </p>
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -122,7 +125,7 @@
         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
             {% if config.last_git_push %}
-            <span style="font-size: 12px; color: var(--text-muted);">Last git push: {{ config.last_git_push }}</span>
+            <span style="font-size: 12px; color: var(--text-muted);">Last cloud backup: {{ config.last_git_push }}</span>
             {% endif %}
         </div>
     </form>
@@ -131,8 +134,8 @@
     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
         <form method="POST" action="{{ url_for('backup_push_git') }}" style="display: inline;">
             <button type="submit" class="btn btn-secondary btn-sm">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                Push to Git Now
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
+                Push to Cloud Now
             </button>
         </form>
     </div>
@@ -158,9 +161,9 @@
         {% endif %}
         {% if config.git_enabled and config.git_repo %}
         <div style="padding: 8px 14px; border-radius: 8px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15); font-size: 12px; color: var(--accent-blue, #6366f1);">
-            Git push <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_repo }} ({{ config.git_branch }})
+            Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
             {% if next_git_push_time %}
-            <br>Next push: <strong>{{ next_git_push_time }}</strong>
+            <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
             {% endif %}
         </div>
         {% endif %}
@@ -198,22 +201,42 @@
     </div>
 </div>
 
-<!-- Git Restore Modal -->
-<div id="gitRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
-    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
+<!-- Cloud Restore Modal -->
+<div id="cloudRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 480px; width: 90%; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h3 style="font-size: 18px; font-weight: 700;">Restore from Git</h3>
-            <button onclick="closeGitRestoreDialog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
+            <h3 style="font-size: 18px; font-weight: 700;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -3px; margin-right: 6px;"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+                Restore from Cloud
+            </h3>
+            <button onclick="closeCloudRestoreDialog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
         </div>
-        <div id="gitRestoreLoading" style="text-align: center; padding: 32px; color: var(--text-muted);">
-            <p>Fetching backups from git...</p>
+        <div id="cloudRestoreLoading" style="text-align: center; padding: 32px; color: var(--text-muted);">
+            <p>Fetching latest cloud backup...</p>
         </div>
-        <div id="gitRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
+        <div id="cloudRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
         </div>
-        <div id="gitRestoreList" style="display:none; overflow-y: auto; flex: 1;">
-            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Click a backup to restore from it. A safety backup will be created first.</p>
-            <div id="gitRestoreBody" style="display: flex; flex-direction: column; gap: 4px;">
+        <div id="cloudRestoreReady" style="display:none;">
+            <div style="padding: 16px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); margin-bottom: 16px;">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Latest cloud backup</div>
+                <div id="cloudRestoreFilename" class="font-mono" style="font-size: 14px; font-weight: 600;"></div>
+                <div id="cloudRestoreMeta" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
             </div>
+            <div style="padding: 12px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); margin-bottom: 16px;">
+                <p style="font-size: 12px; color: var(--accent-amber); margin: 0;">
+                    <strong>Warning:</strong> This will replace your current database with the cloud backup. A safety backup of your current data will be created first.
+                </p>
+            </div>
+            <form id="cloudRestoreForm" method="POST" action="{{ url_for('backup_git_restore') }}">
+                <input type="hidden" id="cloudRestoreFilenameInput" name="filename" value="">
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeCloudRestoreDialog()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
+                        Restore Cloud Backup
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -286,72 +309,50 @@ document.getElementById('localRestoreModal').addEventListener('click', function(
     if (e.target === this) closeLocalRestoreDialog();
 });
 
-function openGitRestoreDialog() {
-    var modal = document.getElementById('gitRestoreModal');
+function openCloudRestoreDialog() {
+    var modal = document.getElementById('cloudRestoreModal');
     modal.style.display = 'flex';
-    document.getElementById('gitRestoreLoading').style.display = 'block';
-    document.getElementById('gitRestoreError').style.display = 'none';
-    document.getElementById('gitRestoreList').style.display = 'none';
+    document.getElementById('cloudRestoreLoading').style.display = 'block';
+    document.getElementById('cloudRestoreError').style.display = 'none';
+    document.getElementById('cloudRestoreReady').style.display = 'none';
 
     fetch('{{ url_for("backup_git_list") }}')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            document.getElementById('gitRestoreLoading').style.display = 'none';
+            document.getElementById('cloudRestoreLoading').style.display = 'none';
             if (!data.ok) {
-                document.getElementById('gitRestoreError').style.display = 'block';
-                document.getElementById('gitRestoreError').textContent = data.error;
+                document.getElementById('cloudRestoreError').style.display = 'block';
+                document.getElementById('cloudRestoreError').textContent = data.error;
                 return;
             }
             if (data.backups.length === 0) {
-                document.getElementById('gitRestoreError').style.display = 'block';
-                document.getElementById('gitRestoreError').textContent = 'No backup files found in git.';
+                document.getElementById('cloudRestoreError').style.display = 'block';
+                document.getElementById('cloudRestoreError').textContent = 'No cloud backups found. Push a backup to the cloud first.';
                 return;
             }
-            var container = document.getElementById('gitRestoreBody');
-            container.innerHTML = '';
-            data.backups.forEach(function(b) {
-                var sizeStr = b.size >= 1048576
-                    ? (b.size / 1048576).toFixed(1) + ' MB'
-                    : (b.size / 1024).toFixed(1) + ' KB';
-                var row = document.createElement('form');
-                row.method = 'POST';
-                row.action = '{{ url_for("backup_git_restore") }}';
-                row.innerHTML = '<input type="hidden" name="filename" value="' + b.filename + '">';
-                row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.15s; margin:0;';
-                row.onmouseover = function() { this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)'; };
-                row.onmouseout = function() { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; };
-                row.onsubmit = function() { return confirm('Restore from this git backup?\n\nThe current database will be overwritten. A safety backup will be created first.'); };
-                row.onclick = function(e) { if (e.target === this || e.target.parentElement === this) this.submit(); };
-
-                var info = document.createElement('div');
-                info.style.cssText = 'flex:1; min-width:0;';
-                info.innerHTML =
-                    '<div class="font-mono" style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + b.filename + '</div>' +
-                    '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + b.timestamp + ' &middot; ' + sizeStr + '</div>';
-                row.appendChild(info);
-
-                var arrow = document.createElement('div');
-                arrow.style.cssText = 'color:var(--text-muted); flex-shrink:0;';
-                arrow.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>';
-                row.appendChild(arrow);
-
-                container.appendChild(row);
-            });
-            document.getElementById('gitRestoreList').style.display = 'block';
+            // Use the latest (first) backup
+            var latest = data.backups[0];
+            var sizeStr = latest.size >= 1048576
+                ? (latest.size / 1048576).toFixed(1) + ' MB'
+                : (latest.size / 1024).toFixed(1) + ' KB';
+            document.getElementById('cloudRestoreFilename').textContent = latest.filename;
+            document.getElementById('cloudRestoreMeta').textContent = latest.timestamp + ' \u00b7 ' + sizeStr;
+            document.getElementById('cloudRestoreFilenameInput').value = latest.filename;
+            document.getElementById('cloudRestoreReady').style.display = 'block';
         })
         .catch(function(err) {
-            document.getElementById('gitRestoreLoading').style.display = 'none';
-            document.getElementById('gitRestoreError').style.display = 'block';
-            document.getElementById('gitRestoreError').textContent = 'Failed to fetch: ' + err.message;
+            document.getElementById('cloudRestoreLoading').style.display = 'none';
+            document.getElementById('cloudRestoreError').style.display = 'block';
+            document.getElementById('cloudRestoreError').textContent = 'Failed to connect: ' + err.message;
         });
 }
 
-function closeGitRestoreDialog() {
-    document.getElementById('gitRestoreModal').style.display = 'none';
+function closeCloudRestoreDialog() {
+    document.getElementById('cloudRestoreModal').style.display = 'none';
 }
 
-document.getElementById('gitRestoreModal').addEventListener('click', function(e) {
-    if (e.target === this) closeGitRestoreDialog();
+document.getElementById('cloudRestoreModal').addEventListener('click', function(e) {
+    if (e.target === this) closeCloudRestoreDialog();
 });
 </script>
 {% endblock %}
