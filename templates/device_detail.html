@@ -277,13 +277,13 @@
 
 <script>
 function printLabel() {
-    var w = window.open('', '_blank', 'width=400,height=200');
+    var w = window.open('', '_blank', 'width=600,height=400');
     w.document.write(
         '<!DOCTYPE html><html><head>' +
         '<style>' +
-        'html,body{margin:0;padding:0;height:auto}' +
-        'img{width:100%;height:auto;object-fit:contain}' +
-        '@page{margin:0.5in}' +
+        '@page{size:6in 4in landscape;margin:0;}' +
+        'html,body{margin:0;padding:0;width:6in;height:4in;overflow:hidden}' +
+        'img{width:100%;height:100%;object-fit:contain}' +
         '</style></head><body>' +
         '<img src="{{ url_for("serve_label", device_id=device.device_id) }}">' +
         '</body></html>'
