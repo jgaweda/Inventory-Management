@@ -1086,7 +1086,6 @@ def backup_restore(filename):
 # ---------------------------------------------------------------------------
 
 @app.route('/reference')
-@login_required
 def product_reference_list():
     search = request.args.get('q', '')
     refs = db.get_all_product_references(search)
