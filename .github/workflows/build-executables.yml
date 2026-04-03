@@ -1,0 +1,90 @@
+name: Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*'          # Build on version tags (e.g. v1.0.0)
+  workflow_dispatch:    # Allow manual trigger from GitHub UI
+
+jobs:
+  build-windows:
+    runs-on: windows-2019    # Older runner for better Win7 compatibility
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.8 (Windows 7 compatible)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_win7.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller --clean inventory.spec
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: InventorySystem-Windows
+          path: dist/InventorySystem/
+
+  build-macos:
+    runs-on: macos-13        # Intel Mac for broader compatibility
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: pyinstaller --clean inventory.spec
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: InventorySystem-macOS
+          path: dist/InventorySystem/
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: InventorySystem-Windows
+          path: InventorySystem-Windows/
+
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: InventorySystem-macOS
+          path: InventorySystem-macOS/
+
+      - name: Zip builds
+        run: |
+          cd InventorySystem-Windows && zip -r ../InventorySystem-Windows.zip . && cd ..
+          cd InventorySystem-macOS && zip -r ../InventorySystem-macOS.zip . && cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            InventorySystem-Windows.zip
+            InventorySystem-macOS.zip
+          generate_release_notes: true
