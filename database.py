@@ -146,21 +146,30 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
 
-        # Product reference table (flexible spec catalog for printers/devices)
+        # Product reference table for printer specs
         conn.execute('''
             CREATE TABLE IF NOT EXISTS product_reference (
                 ref_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codename TEXT NOT NULL,
+                model_name TEXT DEFAULT '',
+                wifi_gen TEXT DEFAULT '',
                 year TEXT DEFAULT '',
-                model_family TEXT DEFAULT '',
-                market_segment TEXT DEFAULT '',
-                data TEXT DEFAULT '{}',
+                chip_manufacturer TEXT DEFAULT '',
+                chip_codename TEXT DEFAULT '',
+                fw_codebase TEXT DEFAULT '',
+                print_technology TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_prodref_codename ON product_reference(codename)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_prodref_year ON product_reference(year)')
+
+        # Migrate: add new columns if upgrading from old schema
+        pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
+        for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
+                             ('chip_codename', ''), ('fw_codebase', ''), ('print_technology', '')]:
+            if col not in pr_cols:
+                conn.execute(f"ALTER TABLE product_reference ADD COLUMN {col} TEXT DEFAULT ''")
 
         # Indexes for common queries
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)')
@@ -1169,39 +1178,22 @@ def restore_from_git(filename):
 
 
 # ---------------------------------------------------------------------------
-# Product Reference (printer/device spec catalog)
+# Product Reference (printer spec catalog)
 # ---------------------------------------------------------------------------
-
-# Core columns extracted from CSV into their own DB columns for indexing
-_PRODREF_CORE_KEYS = {'year', 'codename', 'model_family', 'market_segment'}
-
-# Normalized key mapping: CSV header → clean key name
-_PRODREF_KEY_MAP = {
-    'year': 'year',
-    'codename': 'codename',
-    'model family name': 'model_family',
-    'market segment': 'market_segment',
-}
-
-
-def _normalize_header(header):
-    """Normalize a CSV header to a clean key name."""
-    h = header.strip().lower()
-    return _PRODREF_KEY_MAP.get(h, header.strip())
 
 
 def get_all_product_references(search=''):
-    """Return all product reference entries, optionally filtered by search term."""
+    """Return all product reference entries, optionally filtered."""
     conn = get_connection()
     try:
         if search:
             like = f'%{search}%'
             rows = conn.execute('''
                 SELECT * FROM product_reference
-                WHERE codename LIKE ? OR model_family LIKE ? OR year LIKE ?
-                    OR market_segment LIKE ? OR data LIKE ?
+                WHERE codename LIKE ? OR model_name LIKE ? OR year LIKE ?
+                    OR chip_manufacturer LIKE ? OR chip_codename LIKE ? OR wifi_gen LIKE ?
                 ORDER BY year DESC, codename ASC
-            ''', (like, like, like, like, like)).fetchall()
+            ''', (like, like, like, like, like, like)).fetchall()
         else:
             rows = conn.execute(
                 'SELECT * FROM product_reference ORDER BY year DESC, codename ASC'
@@ -1234,113 +1226,33 @@ def get_product_reference_by_codename(codename):
         conn.close()
 
 
-def search_product_codenames(query):
-    """Return codenames matching a partial query (for autocomplete)."""
-    conn = get_connection()
-    try:
-        like = f'%{query}%'
-        rows = conn.execute('''
-            SELECT ref_id, codename, year, model_family, market_segment
-            FROM product_reference
-            WHERE codename LIKE ? OR model_family LIKE ?
-            ORDER BY year DESC, codename ASC
-            LIMIT 20
-        ''', (like, like)).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
-
-
-def add_product_reference(codename, year='', model_family='', market_segment='', data=None):
+def add_product_reference(codename, model_name='', wifi_gen='', year='',
+                          chip_manufacturer='', chip_codename='', fw_codebase='',
+                          print_technology=''):
     """Add a single product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
-            INSERT INTO product_reference (codename, year, model_family, market_segment, data)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (codename, year, model_family, market_segment, json.dumps(data or {})))
+            INSERT INTO product_reference
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology))
 
 
-def update_product_reference(ref_id, codename, year='', model_family='', market_segment='', data=None):
+def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
+                             chip_manufacturer='', chip_codename='', fw_codebase='',
+                             print_technology=''):
     """Update an existing product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             UPDATE product_reference
-            SET codename = ?, year = ?, model_family = ?, market_segment = ?,
-                data = ?, updated_at = CURRENT_TIMESTAMP
+            SET codename = ?, model_name = ?, wifi_gen = ?, year = ?,
+                chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
+                print_technology = ?, updated_at = CURRENT_TIMESTAMP
             WHERE ref_id = ?
-        ''', (codename, year, model_family, market_segment, json.dumps(data or {}), ref_id))
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, ref_id))
 
 
 def delete_product_reference(ref_id):
     """Delete a product reference entry."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM product_reference WHERE ref_id = ?', (ref_id,))
-
-
-def import_product_references_csv(csv_text, replace=False):
-    """
-    Import product references from CSV text.
-    If replace=True, clears existing data first.
-    Returns dict with counts.
-    """
-    import csv
-    import io
-
-    reader = csv.DictReader(io.StringIO(csv_text))
-    if not reader.fieldnames:
-        raise ValueError('CSV has no headers')
-
-    # Normalize headers
-    headers = [h.strip() for h in reader.fieldnames]
-
-    with db_transaction() as conn:
-        if replace:
-            conn.execute('DELETE FROM product_reference')
-
-        count = 0
-        for row in reader:
-            # Extract core fields
-            normalized = {}
-            extra = {}
-            for header in headers:
-                value = (row.get(header) or '').strip()
-                key = _normalize_header(header)
-                if key in _PRODREF_CORE_KEYS:
-                    normalized[key] = value
-                else:
-                    extra[header] = value
-
-            codename = normalized.get('codename', '')
-            if not codename:
-                continue  # Skip rows without a codename
-
-            conn.execute('''
-                INSERT INTO product_reference (codename, year, model_family, market_segment, data)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (
-                codename,
-                normalized.get('year', ''),
-                normalized.get('model_family', ''),
-                normalized.get('market_segment', ''),
-                json.dumps(extra),
-            ))
-            count += 1
-
-    return {'imported': count, 'replaced': replace}
-
-
-def get_product_reference_columns():
-    """Return all unique data keys across all product references (for table headers)."""
-    conn = get_connection()
-    try:
-        rows = conn.execute('SELECT data FROM product_reference').fetchall()
-        keys = set()
-        for row in rows:
-            try:
-                d = json.loads(row['data'])
-                keys.update(d.keys())
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return sorted(keys)
-    finally:
-        conn.close()

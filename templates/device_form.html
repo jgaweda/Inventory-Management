@@ -78,8 +78,7 @@
                     if (results.length === 0) { box.style.display = 'none'; return; }
                     var html = '';
                     results.forEach(function(r) {
-                        var wifiGen = (r.data || {})['Wi-Fi Gen'];
-                        var sub = [r.model_family, wifiGen ? 'Wi-Fi ' + wifiGen : '', r.year].filter(Boolean).join(' · ');
+                        var sub = [r.model_name, r.wifi_gen ? 'Wi-Fi ' + r.wifi_gen : '', r.year].filter(Boolean).join(' · ');
                         html += '<div class="codename-suggestion" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border-color); transition:background 0.1s;" ' +
                             'onmouseover="this.style.background=\'var(--bg-card-hover)\'" ' +
                             'onmouseout="this.style.background=\'transparent\'" ' +
@@ -98,56 +97,36 @@
         document.getElementById('codenameInput').value = ref.codename;
         document.getElementById('codenameSuggestions').style.display = 'none';
 
-        // Auto-fill fields from product reference data
-        var data = ref.data || {};
-        var modelFamily = ref.model_family || '';
-
-        // Try to extract manufacturer from model family (e.g. "HP LaserJet M110w" -> manufacturer=HP, model=LaserJet M110w)
-        // Or use the model family as the model number if manufacturer is already filled
-        if (modelFamily) {
+        // Auto-fill manufacturer and model from product reference
+        if (ref.model_name) {
             var mfgField = document.querySelector('input[name="manufacturer"]');
             var modelField = document.querySelector('input[name="model_number"]');
             if (mfgField && !mfgField.value) mfgField.value = 'HP';
-            if (modelField && !modelField.value) modelField.value = modelFamily;
+            if (modelField && !modelField.value) modelField.value = ref.model_name;
         }
 
         // Auto-fill connectivity from Wi-Fi Gen
-        var wifiGen = data['Wi-Fi Gen'] || '';
-        if (wifiGen) {
+        if (ref.wifi_gen) {
             var connField = document.querySelector('input[name="connectivity"]');
             if (connField && !connField.value) {
                 var genMap = {'4': 'Wi-Fi 4 (802.11n)', '5': 'Wi-Fi 5 (802.11ac)', '6': 'Wi-Fi 6 (802.11ax)', '6E': 'Wi-Fi 6E'};
-                connField.value = genMap[wifiGen] || ('Wi-Fi ' + wifiGen);
-            }
-        }
-
-        // Extract wireless chip vendor and codename
-        var chipVendors = ['Marvell (NXP)', 'Infineon', 'Realtek', 'TI'];
-        var chipVendor = '';
-        var chipCodename = '';
-        for (var i = 0; i < chipVendors.length; i++) {
-            var val = (data[chipVendors[i]] || '').trim();
-            if (val) {
-                chipVendor = chipVendors[i];
-                chipCodename = val;
-                break;
+                connField.value = genMap[ref.wifi_gen] || ('Wi-Fi ' + ref.wifi_gen);
             }
         }
 
         // Populate reference detail fields
         document.getElementById('releaseYearDisplay').textContent = ref.year || '—';
-        document.getElementById('fwCodebaseDisplay').textContent = data['FW Codebase'] || '—';
-        document.getElementById('chipVendorDisplay').textContent = chipVendor || '—';
-        document.getElementById('chipCodenameDisplay').textContent = chipCodename || '—';
+        document.getElementById('fwCodebaseDisplay').textContent = ref.fw_codebase || '—';
+        document.getElementById('chipVendorDisplay').textContent = ref.chip_manufacturer || '—';
+        document.getElementById('chipCodenameDisplay').textContent = ref.chip_codename || '—';
         document.getElementById('refDetails').style.display = 'block';
 
         // Show match info
         var matchDiv = document.getElementById('codenameMatch');
         var info = '<strong>' + ref.codename + '</strong>';
         if (ref.year) info += ' (' + ref.year + ')';
-        if (modelFamily) info += ' — ' + modelFamily;
-        if (ref.market_segment) info += ' · ' + ref.market_segment;
-        if (chipVendor) info += ' · ' + chipVendor + ' ' + chipCodename;
+        if (ref.model_name) info += ' — ' + ref.model_name;
+        if (ref.chip_manufacturer) info += ' · ' + ref.chip_manufacturer + ' ' + ref.chip_codename;
         matchDiv.innerHTML = 'Matched from product reference: ' + info;
         matchDiv.style.display = 'block';
     }

@@ -8,110 +8,59 @@
 
 <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">{{ 'Edit' if ref else 'Add' }} Product Reference</h2>
 
-{% set d = {} %}
-{% if ref and ref.data %}
-{% set d = ref.data if ref.data is mapping else ({} if not ref.data else {}) %}
-{% endif %}
-
-<form method="POST" style="max-width: 700px;">
-    <div class="card" style="cursor: default; margin-bottom: 20px;">
-        <div class="section-label">Core Information</div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+<form method="POST" style="max-width: 600px;">
+    <div class="card" style="cursor: default;">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
                     Codename <span style="color: var(--accent-red);">*</span>
                 </label>
-                <input type="text" name="codename" value="{{ ref.codename if ref else '' }}" required>
+                <input type="text" name="codename" value="{{ ref.codename if ref else '' }}" required placeholder="e.g. Marconi">
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Year</label>
-                <input type="text" name="year" value="{{ ref.year if ref else '' }}" placeholder="e.g. 2024">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Name</label>
+                <input type="text" name="model_name" value="{{ ref.model_name if ref else '' }}" placeholder="e.g. HP OfficeJet Pro 9120 Series">
             </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Family Name</label>
-                <input type="text" name="model_family" value="{{ ref.model_family if ref else '' }}" placeholder="e.g. LaserJet Pro 4006">
-            </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Market Segment</label>
-                <input type="text" name="market_segment" value="{{ ref.market_segment if ref else '' }}" placeholder="e.g. Home, SMB">
-            </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Print Technology</label>
-                <select name="Print Technology">
-                    <option value="">Select...</option>
-                    <option value="Laser" {% if d.get('Print Technology') == 'Laser' %}selected{% endif %}>Laser</option>
-                    <option value="Ink" {% if d.get('Print Technology') == 'Ink' %}selected{% endif %}>Ink</option>
-                    <option value="PageWide" {% if d.get('Print Technology') == 'PageWide' %}selected{% endif %}>PageWide</option>
-                </select>
-            </div>
-            <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Variant</label>
-                <select name="Variant">
-                    <option value="">—</option>
-                    <option value="Base" {% if d.get('Variant') == 'Base' %}selected{% endif %}>Base</option>
-                    <option value="Plus" {% if d.get('Variant') == 'Plus' %}selected{% endif %}>Plus</option>
-                    <option value="Lite" {% if d.get('Variant') == 'Lite' %}selected{% endif %}>Lite</option>
-                </select>
-            </div>
-        </div>
-    </div>
-
-    <div class="card" style="cursor: default; margin-bottom: 20px;">
-        <div class="section-label">Specifications</div>
-        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Add any specification fields. Use "Add Field" for new specs not shown below.</p>
-
-        <div id="specFields" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-            {% if ref %}
-            {% for key, val in (d.items() if d is mapping else []) %}
-            <div class="spec-row" style="display: flex; gap: 8px; align-items: start;">
-                <div style="flex: 1;">
-                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">{{ key }}</label>
-                    <input type="text" name="{{ key }}" value="{{ val }}" style="font-size: 13px; padding: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Wi-Fi Gen</label>
+                    <input type="text" name="wifi_gen" value="{{ ref.wifi_gen if ref else '' }}" placeholder="e.g. 5, 6, 6E">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Year</label>
+                    <input type="text" name="year" value="{{ ref.year if ref else '' }}" placeholder="e.g. 2024">
                 </div>
             </div>
-            {% endfor %}
-            {% endif %}
-        </div>
-
-        <div style="margin-top: 16px; display: flex; gap: 8px; align-items: end;">
-            <div style="flex: 1;">
-                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Field name</label>
-                <input type="text" id="newFieldName" placeholder="e.g. Wi-Fi Gen" style="font-size: 13px; padding: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Wireless Chipset Manufacturer</label>
+                    <input type="text" name="chip_manufacturer" value="{{ ref.chip_manufacturer if ref else '' }}" placeholder="e.g. Realtek, Infineon, TI">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Wireless Chipset Codename</label>
+                    <input type="text" name="chip_codename" value="{{ ref.chip_codename if ref else '' }}" placeholder="e.g. Stingray, Stellar">
+                </div>
             </div>
-            <div style="flex: 1;">
-                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Value</label>
-                <input type="text" id="newFieldValue" placeholder="e.g. 6" style="font-size: 13px; padding: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">FW Codebase</label>
+                    <input type="text" name="fw_codebase" value="{{ ref.fw_codebase if ref else '' }}" placeholder="e.g. Dune, SoL, Phoenix">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Print Technology</label>
+                    <select name="print_technology">
+                        <option value="">Select...</option>
+                        <option value="Ink" {% if ref and ref.print_technology == 'Ink' %}selected{% endif %}>Ink</option>
+                        <option value="Laser" {% if ref and ref.print_technology == 'Laser' %}selected{% endif %}>Laser</option>
+                    </select>
+                </div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="addSpecField()" style="white-space: nowrap;">+ Add Field</button>
         </div>
     </div>
 
-    <div style="display: flex; gap: 8px;">
-        <button type="submit" class="btn btn-primary">{{ 'Save Changes' if ref else 'Add Reference' }}</button>
+    <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button type="submit" class="btn btn-primary">{{ 'Save Changes' if ref else 'Add Product' }}</button>
         <a href="{{ url_for('product_reference_list') }}" class="btn btn-secondary">Cancel</a>
     </div>
 </form>
-
-<script>
-function addSpecField() {
-    var name = document.getElementById('newFieldName').value.trim();
-    var value = document.getElementById('newFieldValue').value.trim();
-    if (!name) return;
-
-    var container = document.getElementById('specFields');
-    var div = document.createElement('div');
-    div.className = 'spec-row';
-    div.style.cssText = 'display: flex; gap: 8px; align-items: start;';
-    div.innerHTML =
-        '<div style="flex: 1;">' +
-        '<label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">' + name + '</label>' +
-        '<input type="text" name="' + name + '" value="' + value.replace(/"/g, '&quot;') + '" style="font-size: 13px; padding: 8px;">' +
-        '</div>';
-    container.appendChild(div);
-
-    document.getElementById('newFieldName').value = '';
-    document.getElementById('newFieldValue').value = '';
-    document.getElementById('newFieldName').focus();
-}
-</script>
 {% endblock %}
