@@ -277,28 +277,7 @@
 
 <script>
 function printLabel() {
-    var w = window.open('', '_blank', 'width=700,height=500');
-    w.document.write(
-        '<!DOCTYPE html><html><head>' +
-        '<style>' +
-        '@page{size:6in 4in landscape;margin:0;}' +
-        'html,body{margin:0;padding:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#f5f5f5}' +
-        '.label-wrap{width:6in;height:4in;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.1)}' +
-        '.label-wrap img{width:100%;height:100%;object-fit:contain}' +
-        '.print-hint{text-align:center;margin-top:12px;font-family:-apple-system,system-ui,sans-serif;font-size:13px;color:#888}' +
-        '@media print{.print-hint{display:none}body{background:white}.label-wrap{box-shadow:none}}' +
-        '</style></head><body>' +
-        '<div><div class="label-wrap">' +
-        '<img src="{{ url_for("serve_label", device_id=device.device_id) }}">' +
-        '</div>' +
-        '<div class="print-hint">Set paper to <b>4 x 6</b> and orientation to <b>Landscape</b></div>' +
-        '</div></body></html>'
-    );
-    w.document.close();
-    w.document.querySelector('img').onload = function() {
-        w.focus();
-        w.print();
-    };
+    window.open('{{ url_for("serve_label_pdf", device_id=device.device_id) }}', '_blank');
 }
 
 (function() {

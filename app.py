@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+from PIL import Image
 from functools import wraps
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -401,6 +402,26 @@ def serve_label(device_id):
 
     path = barcode_utils.get_label_path(device_id)
     return send_file(path, mimetype='image/png')
+
+
+@app.route('/labels/<device_id>.pdf')
+def serve_label_pdf(device_id):
+    """Serve a label as a PDF with 4x6 inch page size for direct printing."""
+    import io
+    if not barcode_utils.label_exists(device_id):
+        device = db.get_device(device_id)
+        if not device:
+            return 'Device not found', 404
+        barcode_utils.generate_label(device_id, device['barcode_value'], device['name'])
+
+    path = barcode_utils.get_label_path(device_id)
+    img = Image.open(path)
+    pdf_buffer = io.BytesIO()
+    # 1800x1200 px at 300 DPI = 6x4 inches (landscape)
+    img.save(pdf_buffer, 'PDF', resolution=300.0)
+    pdf_buffer.seek(0)
+    return send_file(pdf_buffer, mimetype='application/pdf',
+                     download_name=f'{device_id}_label.pdf')
 
 
 @app.route('/labels/sheet', methods=['POST'])
