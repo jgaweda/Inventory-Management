@@ -10,6 +10,7 @@ Anyone on the network can view the inventory without logging in.
 import argparse
 import csv
 import io
+import json
 import logging
 import os
 from functools import wraps
@@ -238,6 +239,7 @@ def device_add():
             'vendor_supplied': 1 if request.form.get('vendor_supplied') else 0,
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
+            'codename': codename,
         }
         device_id = db.add_device(data, performed_by=current_username())
 
@@ -269,7 +271,21 @@ def device_detail(device_id):
 
     app_logger.info('Device viewed: id=%s name="%s" ip=%s', device_id, device['name'], request.remote_addr)
     audit = db.get_audit_log(device_id=device_id, limit=50)
-    return render_template('device_detail.html', device=device, audit=audit)
+
+    # Look up product reference data if this is a printer with a codename
+    prod_ref = None
+    if device.get('category') == 'Printer':
+        codename = device.get('codename', '')
+        if codename:
+            refs = db.get_product_reference_by_codename(codename)
+            if refs:
+                prod_ref = refs[0]
+                try:
+                    prod_ref['data'] = json.loads(prod_ref['data']) if isinstance(prod_ref['data'], str) else prod_ref.get('data', {})
+                except (json.JSONDecodeError, TypeError):
+                    prod_ref['data'] = {}
+
+    return render_template('device_detail.html', device=device, audit=audit, prod_ref=prod_ref)
 
 # ---------------------------------------------------------------------------
 # Edit device (admin only)
@@ -313,6 +329,7 @@ def device_edit(device_id):
             'location': request.form.get('location', ''),
             'assigned_to': request.form.get('assigned_to', ''),
             'notes': request.form.get('notes', ''),
+            'codename': codename,
         }
         db.update_device(device_id, data, performed_by=current_username())
 

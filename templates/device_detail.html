@@ -143,6 +143,64 @@
         </div>
         {% endif %}
 
+        {% if prod_ref %}
+        <!-- Product Reference Info -->
+        <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(6,182,212,0.2);">
+            <div class="section-label">Product Reference</div>
+            <div class="grid-responsive" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px;">
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Codename</div>
+                    <div style="font-size: 14px; font-weight: 600;">{{ prod_ref.codename }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Model Family</div>
+                    <div style="font-size: 14px;">{{ prod_ref.model_family or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Release Year</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ prod_ref.year or '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">FW Codebase</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ prod_ref.data.get('FW Codebase', '—') if prod_ref.data is mapping else '—' }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Wi-Fi Gen</div>
+                    <div class="font-mono" style="font-size: 14px;">
+                        {% set wg = prod_ref.data.get('Wi-Fi Gen', '') if prod_ref.data is mapping else '' %}
+                        {% if wg %}
+                        <span style="background: rgba(59,130,246,0.12); color: var(--accent-blue); padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">{{ wg }}</span>
+                        {% else %}—{% endif %}
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Market Segment</div>
+                    <div style="font-size: 14px;">{{ prod_ref.market_segment or '—' }}</div>
+                </div>
+                {% set chip_vendors = ['Marvell (NXP)', 'Infineon', 'Realtek', 'TI'] %}
+                {% set ns = namespace(vendor='', chip='') %}
+                {% if prod_ref.data is mapping %}
+                {% for v in chip_vendors %}
+                {% if prod_ref.data.get(v, '')|trim %}
+                {% set ns.vendor = v %}
+                {% set ns.chip = prod_ref.data.get(v, '')|trim %}
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+                {% if ns.vendor %}
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Wireless Chip Vendor</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ ns.vendor }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Chip Codename</div>
+                    <div class="font-mono" style="font-size: 14px;">{{ ns.chip }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Activity History -->
         <div class="card" style="cursor: default;">
             <div class="section-label">Activity History</div>

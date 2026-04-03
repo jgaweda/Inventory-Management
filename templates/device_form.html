@@ -30,7 +30,7 @@
                 Codename <span style="color: var(--accent-red);">*</span>
             </label>
             <input type="text" name="codename" id="codenameInput" autocomplete="off"
-                   value="{{ device.get('codename', '') if device is mapping else '' }}"
+                   value="{{ device.get('codename', '') if device is mapping else (device.codename if device and device.codename is defined else '') }}"
                    placeholder="Start typing to search product reference..."
                    oninput="searchCodename(this.value)" onfocus="searchCodename(this.value)">
             <div id="codenameSuggestions" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; margin-top:4px; max-height:240px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.3);">
