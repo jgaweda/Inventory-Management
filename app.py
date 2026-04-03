@@ -412,19 +412,72 @@ def serve_label(device_id):
 
 @app.route('/labels/<device_id>.pdf')
 def serve_label_pdf(device_id):
-    """Serve a label as a PDF with 4x6 inch page size for direct printing."""
+    """Serve a label as a PDF with 6x4 inch landscape page (4x6 label stock)."""
     device = db.get_device(device_id)
     if not device:
         return 'Device not found', 404
     # Always regenerate to ensure PDF matches current label
     barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
+
+    # Read the PNG and build a PDF with explicit 6"x4" landscape MediaBox
     img = Image.open(path)
-    pdf_buffer = io.BytesIO()
-    # 1800x1200 px at 300 DPI = 6x4 inches (landscape)
-    img.save(pdf_buffer, 'PDF', resolution=300.0)
-    pdf_buffer.seek(0)
-    return send_file(pdf_buffer, mimetype='application/pdf',
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, 'JPEG', quality=95)
+    img_data = img_buffer.getvalue()
+    img_w, img_h = img.size  # 1800 x 1200 px
+
+    # Page size in points: 6" x 4" landscape (1 inch = 72 points)
+    page_w = 6 * 72   # 432
+    page_h = 4 * 72   # 288
+
+    # Build minimal PDF manually with landscape page
+    xref_offsets = []
+    pdf = io.BytesIO()
+
+    pdf.write(b'%PDF-1.4\n')
+
+    # Object 1: Catalog
+    xref_offsets.append(pdf.tell())
+    pdf.write(b'1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
+
+    # Object 2: Pages
+    xref_offsets.append(pdf.tell())
+    pdf.write(b'2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
+
+    # Object 3: Page with landscape MediaBox
+    xref_offsets.append(pdf.tell())
+    pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
+
+    # Object 4: Image XObject
+    xref_offsets.append(pdf.tell())
+    pdf.write(f'4 0 obj\n<< /Type /XObject /Subtype /Image /Width {img_w} /Height {img_h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(img_data)} >>\nstream\n'.encode())
+    pdf.write(img_data)
+    pdf.write(b'\nendstream\nendobj\n')
+
+    # Object 5: Content stream (draw image full page)
+    content = f'q {page_w} 0 0 {page_h} 0 0 cm /Img Do Q'.encode()
+    xref_offsets.append(pdf.tell())
+    pdf.write(f'5 0 obj\n<< /Length {len(content)} >>\nstream\n'.encode())
+    pdf.write(content)
+    pdf.write(b'\nendstream\nendobj\n')
+
+    # Xref table
+    xref_start = pdf.tell()
+    pdf.write(b'xref\n')
+    pdf.write(f'0 {len(xref_offsets) + 1}\n'.encode())
+    pdf.write(b'0000000000 65535 f \n')
+    for offset in xref_offsets:
+        pdf.write(f'{offset:010d} 00000 n \n'.encode())
+
+    # Trailer
+    pdf.write(f'trailer\n<< /Size {len(xref_offsets) + 1} /Root 1 0 R >>\n'.encode())
+    pdf.write(b'startxref\n')
+    pdf.write(f'{xref_start}\n'.encode())
+    pdf.write(b'%%EOF\n')
+
+    pdf.seek(0)
+    return send_file(pdf, mimetype='application/pdf',
                      download_name=f'{device_id}_label.pdf')
 
 
