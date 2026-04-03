@@ -1106,7 +1106,9 @@ def favicon():
 
 @app.route('/apple-touch-icon.png')
 @app.route('/apple-touch-icon-precomposed.png')
-def apple_touch_icon():
+@app.route('/apple-touch-icon-<dimensions>.png')
+@app.route('/apple-touch-icon-<dimensions>-precomposed.png')
+def apple_touch_icon(**kwargs):
     return Response(_FAVICON_SVG, mimetype='image/svg+xml',
                     headers={'Cache-Control': 'public, max-age=86400'})
 
