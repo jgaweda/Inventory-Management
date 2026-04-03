@@ -37,6 +37,18 @@
             </div>
             <div id="codenameMatch" style="display:none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
             </div>
+            <div id="chipInfo" style="display:none; margin-top: 8px; display: none;">
+                <div style="display: flex; gap: 16px;">
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Wireless Chip Vendor</label>
+                        <div id="chipVendorDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Chip Codename</label>
+                        <div id="chipCodenameDisplay" class="font-mono" style="font-size: 14px; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">—</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script>
@@ -101,12 +113,35 @@
             }
         }
 
+        // Extract wireless chip vendor and codename
+        var chipVendors = ['Marvell (NXP)', 'Infineon', 'Realtek', 'TI'];
+        var chipVendor = '';
+        var chipCodename = '';
+        for (var i = 0; i < chipVendors.length; i++) {
+            var val = (data[chipVendors[i]] || '').trim();
+            if (val) {
+                chipVendor = chipVendors[i];
+                chipCodename = val;
+                break;
+            }
+        }
+
+        var chipInfoDiv = document.getElementById('chipInfo');
+        if (chipVendor || chipCodename) {
+            document.getElementById('chipVendorDisplay').textContent = chipVendor || '—';
+            document.getElementById('chipCodenameDisplay').textContent = chipCodename || '—';
+            chipInfoDiv.style.display = 'block';
+        } else {
+            chipInfoDiv.style.display = 'none';
+        }
+
         // Show match info
         var matchDiv = document.getElementById('codenameMatch');
         var info = '<strong>' + ref.codename + '</strong>';
         if (ref.year) info += ' (' + ref.year + ')';
         if (modelFamily) info += ' — ' + modelFamily;
         if (ref.market_segment) info += ' · ' + ref.market_segment;
+        if (chipVendor) info += ' · ' + chipVendor + ' ' + chipCodename;
         matchDiv.innerHTML = 'Matched from product reference: ' + info;
         matchDiv.style.display = 'block';
     }
