@@ -74,14 +74,34 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    try:
-        font_name = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 96)
-        font_barcode_id = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 64)
-        font_team = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 52)
-    except (OSError, IOError):
-        font_name = ImageFont.load_default()
-        font_barcode_id = ImageFont.load_default()
-        font_team = ImageFont.load_default()
+    def _find_font(names, size):
+        """Try multiple font paths (Linux + macOS) and return the first that works."""
+        for name in names:
+            for path in [
+                f"/usr/share/fonts/truetype/dejavu/{name}",
+                f"/usr/share/fonts/truetype/liberation/{name}",
+                f"/System/Library/Fonts/{name}",
+                f"/Library/Fonts/{name}",
+                f"/System/Library/Fonts/Supplemental/{name}",
+            ]:
+                try:
+                    return ImageFont.truetype(path, size)
+                except (OSError, IOError):
+                    continue
+        # Last resort: try by name only (Pillow searches system paths)
+        for name in names:
+            try:
+                return ImageFont.truetype(name, size)
+            except (OSError, IOError):
+                continue
+        return ImageFont.load_default(size=size)
+
+    font_name = _find_font(["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
+                             "Helvetica-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"], 96)
+    font_barcode_id = _find_font(["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
+                                   "Courier.ttc", "Menlo.ttc", "Courier New Bold.ttf"], 64)
+    font_team = _find_font(["DejaVuSans.ttf", "LiberationSans-Regular.ttf",
+                             "Helvetica.ttc", "Helvetica-Light.ttf", "Arial.ttf"], 52)
 
     # --- Left side: QR code ---
     qr_size = 700
