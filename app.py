@@ -1287,6 +1287,14 @@ def product_reference_export():
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
 
 
+@app.route('/api/devices/distinct/<field>')
+@login_required
+def api_distinct_values(field):
+    """Return distinct values for a device field, for autocomplete."""
+    values = db.get_distinct_values(field)
+    return jsonify(values)
+
+
 @app.route('/api/reference/search')
 def api_reference_search():
     """JSON API for printer dropdown in the device form."""

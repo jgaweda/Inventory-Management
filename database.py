@@ -444,6 +444,18 @@ def get_audit_log(device_id=None, limit=100):
         return [dict(r) for r in rows]
 
 
+def get_distinct_values(column):
+    """Return sorted list of distinct non-empty values for a device column."""
+    allowed = {'connectivity', 'manufacturer', 'model_number', 'location', 'assigned_to'}
+    if column not in allowed:
+        return []
+    with db_transaction() as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column} FROM devices WHERE {column} != '' AND {column} IS NOT NULL AND status != 'retired' ORDER BY {column}"
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
 def get_categories():
     """Get all categories ordered by sort_order."""
     with db_transaction() as conn:

@@ -116,9 +116,10 @@
         <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(16,185,129,0.3);">
             <div class="section-label" style="color: var(--accent-green);">Check Out Device</div>
             <form method="POST" action="{{ url_for('device_checkout', device_id=device.device_id) }}" style="display: flex; gap: 12px; align-items: end;">
-                <div style="flex: 1;">
+                <div style="flex: 1; position: relative;">
                     <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assign To</label>
-                    <input type="text" name="assigned_to" required placeholder="Person's name">
+                    <input type="text" name="assigned_to" id="checkoutAssignee" autocomplete="off" required placeholder="Person's name">
+                    <div id="assigneeDd" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border-color); border-radius:0 0 8px 8px; max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">Check Out</button>
             </form>
@@ -294,5 +295,40 @@ function printLabel() {
         w.close();
     };
 }
+
+(function() {
+    var inp = document.getElementById('checkoutAssignee');
+    if (!inp) return;
+    var dd = document.getElementById('assigneeDd');
+    var vals = null;
+
+    function render(q) {
+        if (!vals) return;
+        var filtered = vals.filter(function(v) { return v.toLowerCase().indexOf(q.toLowerCase()) >= 0; });
+        dd.innerHTML = '';
+        if (!filtered.length) { dd.style.display = 'none'; return; }
+        filtered.forEach(function(v) {
+            var item = document.createElement('div');
+            item.textContent = v;
+            item.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border-color);';
+            item.addEventListener('mouseenter', function() { item.style.background = 'var(--bg-hover)'; });
+            item.addEventListener('mouseleave', function() { item.style.background = 'none'; });
+            item.addEventListener('mousedown', function(e) { e.preventDefault(); inp.value = v; dd.style.display = 'none'; });
+            dd.appendChild(item);
+        });
+        dd.style.display = 'block';
+    }
+
+    function load(cb) {
+        if (vals) { cb(); return; }
+        fetch('{{ url_for("api_distinct_values", field="assigned_to") }}')
+            .then(function(r) { return r.json(); })
+            .then(function(v) { vals = v; cb(); });
+    }
+
+    inp.addEventListener('focus', function() { load(function() { render(inp.value); }); });
+    inp.addEventListener('input', function() { load(function() { render(inp.value); }); });
+    inp.addEventListener('blur', function() { setTimeout(function() { dd.style.display = 'none'; }, 150); });
+})();
 </script>
 {% endblock %}

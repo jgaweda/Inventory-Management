@@ -20,9 +20,10 @@
                     {% endfor %}
                 </select>
             </div>
-            <div>
+            <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity Type/Version</label>
-                <input type="text" name="connectivity" value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
+                <input type="text" name="connectivity" autocomplete="off" data-ac-field="connectivity"
+                       value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
             </div>
         </div>
         <div id="codenameRow" style="margin-top: 16px; display: none; position: relative;">
@@ -143,15 +144,17 @@
     <div class="card" style="margin-bottom: 16px; cursor: default;">
         <div class="section-label">Hardware Details</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div>
+            <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
                     Manufacturer <span style="color: var(--accent-red);">*</span>
                 </label>
-                <input type="text" name="manufacturer" value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" required placeholder="e.g. Intel">
+                <input type="text" name="manufacturer" autocomplete="off" data-ac-field="manufacturer"
+                       value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" required placeholder="e.g. Intel">
             </div>
-            <div>
+            <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Number</label>
-                <input type="text" name="model_number" value="{{ device.get('model_number', '') if device is mapping else device.model_number if device else '' }}" placeholder="e.g. AX211NGW">
+                <input type="text" name="model_number" autocomplete="off" data-ac-field="model_number"
+                       value="{{ device.get('model_number', '') if device is mapping else device.model_number if device else '' }}" placeholder="e.g. AX211NGW">
             </div>
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Serial Number</label>
@@ -172,9 +175,10 @@
     <div class="card" style="margin-bottom: 16px; cursor: default;">
         <div class="section-label">Location & Status</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div>
+            <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Location</label>
-                <input type="text" name="location" value="{{ device.get('location', '') if device is mapping else device.location if device else '' }}" placeholder="e.g. Lab A Shelf 2">
+                <input type="text" name="location" autocomplete="off" data-ac-field="location"
+                       value="{{ device.get('location', '') if device is mapping else device.location if device else '' }}" placeholder="e.g. Lab A Shelf 2">
             </div>
             {% if is_edit %}
             <div>
@@ -186,9 +190,10 @@
                     <option value="retired" {% if (device.get('status', '') if device is mapping else device.status if device else '') == 'retired' %}selected{% endif %}>Retired</option>
                 </select>
             </div>
-            <div>
+            <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assigned To</label>
-                <input type="text" name="assigned_to" value="{{ device.get('assigned_to', '') if device is mapping else device.assigned_to if device else '' }}" placeholder="Person name">
+                <input type="text" name="assigned_to" autocomplete="off" data-ac-field="assigned_to"
+                       value="{{ device.get('assigned_to', '') if device is mapping else device.assigned_to if device else '' }}" placeholder="Person name">
             </div>
             {% endif %}
         </div>
@@ -206,4 +211,72 @@
         </button>
     </div>
 </form>
+
+<script>
+(function() {
+    var cache = {};
+
+    function fetchValues(field, cb) {
+        if (cache[field]) { cb(cache[field]); return; }
+        fetch('{{ url_for("api_distinct_values", field="__FIELD__") }}'.replace('__FIELD__', field))
+            .then(function(r) { return r.json(); })
+            .then(function(vals) { cache[field] = vals; cb(vals); });
+    }
+
+    function createDropdown(input) {
+        var dd = document.createElement('div');
+        dd.className = 'ac-dropdown';
+        dd.style.cssText = 'display:none; position:absolute; top:100%; left:0; right:0; z-index:100; ' +
+            'background:var(--bg-card); border:1px solid var(--border-color); border-radius:0 0 8px 8px; ' +
+            'max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+        input.parentNode.appendChild(dd);
+        return dd;
+    }
+
+    function renderItems(dd, input, items) {
+        dd.innerHTML = '';
+        if (!items.length) { dd.style.display = 'none'; return; }
+        items.forEach(function(val) {
+            var item = document.createElement('div');
+            item.textContent = val;
+            item.style.cssText = 'padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--border-color);';
+            item.addEventListener('mouseenter', function() { item.style.background = 'var(--bg-hover)'; });
+            item.addEventListener('mouseleave', function() { item.style.background = 'none'; });
+            item.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                input.value = val;
+                dd.style.display = 'none';
+                input.dispatchEvent(new Event('input', {bubbles: true}));
+            });
+            dd.appendChild(item);
+        });
+        dd.style.display = 'block';
+    }
+
+    document.querySelectorAll('[data-ac-field]').forEach(function(input) {
+        var field = input.getAttribute('data-ac-field');
+        var dd = createDropdown(input);
+
+        input.addEventListener('focus', function() {
+            fetchValues(field, function(vals) {
+                var q = input.value.toLowerCase();
+                var filtered = vals.filter(function(v) { return v.toLowerCase().indexOf(q) >= 0; });
+                renderItems(dd, input, filtered);
+            });
+        });
+
+        input.addEventListener('input', function() {
+            fetchValues(field, function(vals) {
+                var q = input.value.toLowerCase();
+                var filtered = vals.filter(function(v) { return v.toLowerCase().indexOf(q) >= 0; });
+                renderItems(dd, input, filtered);
+            });
+        });
+
+        input.addEventListener('blur', function() {
+            setTimeout(function() { dd.style.display = 'none'; }, 150);
+        });
+    });
+})();
+</script>
 {% endblock %}
