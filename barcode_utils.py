@@ -105,7 +105,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    PAD = 15
+    PAD = 36  # ~0.12" at 300 DPI — safe zone for label printer margins
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
