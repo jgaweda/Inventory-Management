@@ -163,7 +163,10 @@ def login():
             session['user_id'] = user['user_id']
             session['role'] = user['role']
             app_logger.info('Login successful: user=%s role=%s ip=%s', username, user['role'], request.remote_addr)
-            next_url = request.form.get('next') or url_for('dashboard')
+            next_url = request.form.get('next', '')
+            # Prevent open redirect — only allow relative paths
+            if not next_url or next_url.startswith('//') or '://' in next_url:
+                next_url = url_for('dashboard')
             return redirect(next_url)
         else:
             app_logger.warning('Login failed: user=%s ip=%s', username, request.remote_addr)
@@ -603,7 +606,8 @@ def export_csv():
     output = io.StringIO()
     fields = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
               'model_number', 'serial_number', 'connectivity', 'vendor_supplied',
-              'status', 'location', 'assigned_to', 'notes', 'created_at', 'updated_at']
+              'status', 'location', 'assigned_to', 'notes', 'codename', 'variant',
+              'created_at', 'updated_at']
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for d in devices:
