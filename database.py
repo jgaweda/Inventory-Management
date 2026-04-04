@@ -1666,13 +1666,20 @@ def get_product_reference_by_codename(codename):
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
                           print_technology=''):
-    """Add a single product reference entry."""
+    """Add a single product reference entry. Returns the new ref_id."""
     with db_transaction() as conn:
-        conn.execute('''
+        cursor = conn.execute('''
             INSERT INTO product_reference
                 (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology))
+        ref_id = cursor.lastrowid
+        # Auto-create a wiki page for the new product
+        conn.execute('''
+            INSERT OR IGNORE INTO product_wiki (ref_id, content, updated_by)
+            VALUES (?, '', '')
+        ''', (ref_id,))
+        return ref_id
 
 
 def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
