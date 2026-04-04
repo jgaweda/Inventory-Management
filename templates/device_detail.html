@@ -284,8 +284,7 @@ function printLabel() {
         '<!DOCTYPE html><html><head><title>Print Label</title>' +
         '<style>' +
         '@page { size: 3.5in 1.5in; margin: 0; }' +
-        '@media print { body { margin: 0; padding: 0; } }' +
-        'body { margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; }' +
+        'html, body { margin: 0; padding: 0; width: 3.5in; height: 1.5in; overflow: hidden; background: #fff; }' +
         'img { width: 3.5in; height: 1.5in; display: block; }' +
         '</style></head><body>' +
         '<img src="' + imgUrl + '" onload="setTimeout(function(){window.print();},300);">' +
