@@ -88,6 +88,10 @@
     </div>
     {% if current_user and current_user.role == 'admin' %}
     <div style="display: flex; gap: 8px; align-items: center;">
+        <button onclick="document.getElementById('importModal').style.display='flex'" class="btn btn-secondary btn-sm">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Import
+        </button>
         {% if refs %}
         <a href="{{ url_for('product_reference_export') }}" class="btn btn-secondary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -97,10 +101,6 @@
         <button onclick="addNewRow()" class="btn btn-primary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
             Add Product
-        </button>
-        <button onclick="document.getElementById('importModal').style.display='flex'" class="btn btn-secondary btn-sm">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            Import
         </button>
     </div>
     {% endif %}
