@@ -55,8 +55,12 @@
     }
     .codename-text {
         font-weight: 600; color: var(--text-primary); font-size: 13px;
-        padding: 2px 4px;
+        padding: 2px 4px; border-radius: 4px;
     }
+    .codename-text.editable {
+        cursor: text; border: 1px solid transparent; transition: border-color 0.15s;
+    }
+    .codename-text.editable:hover { border-color: var(--border-color); }
     .wiki-btn {
         display: inline-flex; align-items: center; justify-content: center;
         width: 24px; height: 24px; border-radius: 4px;
@@ -169,7 +173,7 @@
                 <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
-                            <span class="codename-text">{{ ref.codename }}</span>
+                            <span class="codename-text{% if current_user and current_user.role == 'admin' %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
                             <a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" class="wiki-btn" title="Wiki">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
                             </a>
@@ -293,6 +297,29 @@ document.getElementById('refTable').addEventListener('keydown', function(e) {
         e.preventDefault();
         e.target.blur();
     }
+    if (e.key === 'Escape' && e.target.classList.contains('cell-edit') && e.target.dataset.field === 'codename') {
+        e.target.value = e.target.dataset.original || '';
+        e.target.blur();
+    }
+});
+
+// --- Double-click to edit codename ---
+document.getElementById('refTable').addEventListener('dblclick', function(e) {
+    var span = e.target.closest('.codename-text.editable');
+    if (!span) return;
+    var row = span.closest('tr');
+    if (!row || row.dataset.id === 'new') return;
+    var current = span.textContent.trim();
+    var input = document.createElement('input');
+    input.className = 'cell-edit';
+    input.dataset.field = 'codename';
+    input.dataset.original = current;
+    input.value = current;
+    input.style.fontWeight = '600';
+    input.style.width = Math.max(current.length * 8.5, 80) + 'px';
+    span.replaceWith(input);
+    input.focus();
+    input.select();
 });
 
 function saveCell(el) {
@@ -311,10 +338,19 @@ function saveCell(el) {
     el.classList.add('saving');
     el.classList.remove('saved', 'error');
 
+    var isCodename = (field === 'codename');
+
+    // For codename edits, if unchanged just revert to span
+    if (isCodename && value === (el.dataset.original || '')) {
+        revertCodenameInput(el, value);
+        return;
+    }
+
     var body = {};
     body[field] = value;
 
     // Update data attributes for sorting/filtering
+    if (field === 'codename') row.dataset.codename = value;
     if (field === 'print_technology') row.dataset.type = value;
     if (field === 'model_name') row.dataset.model = value;
     if (field === 'wifi_gen') row.dataset.wifi = value;
@@ -331,14 +367,37 @@ function saveCell(el) {
     .then(function(r) {
         el.classList.remove('saving');
         if (r.ok) {
-            el.classList.add('saved');
-            setTimeout(function() { el.classList.remove('saved'); }, 1500);
+            if (isCodename) {
+                revertCodenameInput(el, value);
+            } else {
+                el.classList.add('saved');
+                setTimeout(function() { el.classList.remove('saved'); }, 1500);
+            }
         } else {
-            el.classList.add('error');
-            r.json().then(function(d) { if (d.error) alert(d.error); });
+            r.json().then(function(d) {
+                if (isCodename) {
+                    revertCodenameInput(el, el.dataset.original || value);
+                }
+                if (d.error) alert(d.error);
+            });
         }
     })
-    .catch(function() { el.classList.remove('saving'); el.classList.add('error'); });
+    .catch(function() {
+        el.classList.remove('saving');
+        if (isCodename) {
+            revertCodenameInput(el, el.dataset.original || value);
+        } else {
+            el.classList.add('error');
+        }
+    });
+}
+
+function revertCodenameInput(input, text) {
+    var span = document.createElement('span');
+    span.className = 'codename-text editable';
+    span.dataset.field = 'codename';
+    span.textContent = text;
+    input.replaceWith(span);
 }
 
 // --- Add New Row (at top) ---
