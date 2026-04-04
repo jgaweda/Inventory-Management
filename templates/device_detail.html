@@ -277,16 +277,21 @@
 
 <script>
 function printLabel() {
-    var iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = '{{ url_for("serve_label_pdf", device_id=device.device_id) }}';
-    document.body.appendChild(iframe);
-    iframe.onload = function() {
-        setTimeout(function() {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-        }, 500);
-    };
+    var w = window.open('', '_blank', 'width=500,height=250');
+    if (!w) { alert('Please allow pop-ups to print labels.'); return; }
+    var imgUrl = '{{ url_for("serve_label", device_id=device.device_id) }}';
+    w.document.write(
+        '<!DOCTYPE html><html><head><title>Print Label</title>' +
+        '<style>' +
+        '@page { size: 3.5in 1.5in; margin: 0; }' +
+        '@media print { body { margin: 0; padding: 0; } }' +
+        'body { margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: #fff; }' +
+        'img { width: 3.5in; height: 1.5in; display: block; }' +
+        '</style></head><body>' +
+        '<img src="' + imgUrl + '" onload="setTimeout(function(){window.print();},300);">' +
+        '</body></html>'
+    );
+    w.document.close();
 }
 
 (function() {

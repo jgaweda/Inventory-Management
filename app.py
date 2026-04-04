@@ -432,7 +432,7 @@ def serve_label(device_id):
 
 @app.route('/labels/<device_id>.pdf')
 def serve_label_pdf(device_id):
-    """Serve a label as a PDF matching 1.5x3.5 inch portrait label stock."""
+    """Serve a label as a PDF matching 3.5x1.5 inch landscape label stock."""
     device = db.get_device(device_id)
     if not device:
         return 'Device not found', 404
@@ -447,9 +447,9 @@ def serve_label_pdf(device_id):
     img_data = img_buffer.getvalue()
     img_w, img_h = img.size  # 1050 x 450
 
-    # Portrait page matching label stock: 1.5" wide x 3.5" tall
-    page_w = 108   # 1.5 * 72
-    page_h = 252   # 3.5 * 72
+    # Landscape page matching label stock: 3.5" wide x 1.5" tall
+    page_w = 252   # 3.5 * 72
+    page_h = 108   # 1.5 * 72
 
     xref_offsets = []
     pdf = io.BytesIO()
@@ -470,11 +470,8 @@ def serve_label_pdf(device_id):
     pdf.write(img_data)
     pdf.write(b'\nendstream\nendobj\n')
 
-    # Rotate landscape image 90° CCW via transformation matrix to fit portrait page.
-    # Matrix: [0 -page_w page_h 0 0 page_w] rotates and scales the unit square
-    # so the landscape image fills the portrait page.
-    # The image left edge maps to the top of the page.
-    content = f'q 0 -{page_w} {page_h} 0 0 {page_w} cm /Img Do Q'.encode()
+    # Simple scale — landscape image on landscape page, no rotation needed
+    content = f'q {page_w} 0 0 {page_h} 0 0 cm /Img Do Q'.encode()
     xref_offsets.append(pdf.tell())
     pdf.write(f'5 0 obj\n<< /Length {len(content)} >>\nstream\n'.encode())
     pdf.write(content)
