@@ -1,5 +1,5 @@
 inventory.db
-static/labels/*.png
+static/labels/
 logs/
 backup_schedule.json
 backup_config.json
