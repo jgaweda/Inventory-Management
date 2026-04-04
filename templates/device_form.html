@@ -225,7 +225,7 @@
             </div>
             <div style="position: relative;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Assigned To</label>
-                <input type="text" name="assigned_to" autocomplete="off" data-ac-field="assigned_to"
+                <input type="text" name="assigned_to" autocomplete="off"
                        value="{{ device.get('assigned_to', '') if device is mapping else device.assigned_to if device else '' }}" placeholder="Person name">
             </div>
             {% endif %}
