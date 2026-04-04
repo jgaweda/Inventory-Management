@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-windows:
-    runs-on: windows-2019    # Older runner for better Win7 compatibility
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
