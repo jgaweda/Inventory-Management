@@ -220,19 +220,38 @@
     <script>
     (function() {
         var area = document.getElementById('uploadArea');
+        var form = document.getElementById('uploadForm');
+
         ['dragenter', 'dragover'].forEach(function(evt) {
-            area.addEventListener(evt, function(e) { e.preventDefault(); area.classList.add('dragover'); });
+            area.addEventListener(evt, function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                area.classList.add('dragover');
+            });
         });
         ['dragleave', 'drop'].forEach(function(evt) {
-            area.addEventListener(evt, function(e) { e.preventDefault(); area.classList.remove('dragover'); });
+            area.addEventListener(evt, function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                area.classList.remove('dragover');
+            });
         });
+
         area.addEventListener('drop', function(e) {
             var files = e.dataTransfer.files;
-            if (files.length) {
-                document.getElementById('fileInput').files = files;
-                document.getElementById('uploadForm').submit();
-            }
+            if (!files.length) return;
+            var formData = new FormData();
+            formData.append('attachment', files[0]);
+            area.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Uploading...</p>';
+            fetch(form.action, { method: 'POST', body: formData })
+                .then(function() { window.location.reload(); })
+                .catch(function() { window.location.reload(); });
         });
+
+        // Also prevent default drag behavior on the whole document
+        // so the browser doesn't navigate to the dropped file
+        document.addEventListener('dragover', function(e) { e.preventDefault(); });
+        document.addEventListener('drop', function(e) { e.preventDefault(); });
     })();
     </script>
     {% endif %}
