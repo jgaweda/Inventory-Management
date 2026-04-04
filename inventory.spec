@@ -14,6 +14,9 @@ import sys
 block_cipher = None
 ROOT = os.path.dirname(os.path.abspath(SPEC))
 
+# Ensure static/ exists (may be empty in CI)
+os.makedirs(os.path.join(ROOT, 'static'), exist_ok=True)
+
 a = Analysis(
     [os.path.join(ROOT, 'app.py')],
     pathex=[ROOT],
