@@ -300,13 +300,9 @@
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             Dashboard
         </a>
-        <a href="{{ url_for('device_list') }}" class="nav-link {% if request.endpoint in ['device_list','device_detail','device_edit','device_add'] %}active{% endif %}">
+        <a href="{{ url_for('device_list') }}" class="nav-link {% if request.endpoint in ['device_list','device_detail','device_edit','device_add','scan_page'] %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
             Inventory
-        </a>
-        <a href="{{ url_for('scan_page') }}" class="nav-link {% if request.endpoint == 'scan_page' %}active{% endif %}">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M17 20h3M14 20h0M20 14v3M20 20h0"/></svg>
-            Scan
         </a>
 
         <a href="{{ url_for('product_reference_list') }}" class="nav-link {% if request.endpoint in ['product_reference_list','product_reference_add','product_reference_edit','product_wiki'] %}active{% endif %}">
