@@ -1518,6 +1518,41 @@ def product_reference_export():
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
 
 
+# ---------------------------------------------------------------------------
+# Product Wiki — community notes per product
+# ---------------------------------------------------------------------------
+
+@app.route('/wiki/<int:ref_id>')
+def product_wiki(ref_id):
+    """View/edit the wiki page for a product."""
+    refs = db.get_all_product_references()
+    ref = None
+    for r in refs:
+        if r['ref_id'] == ref_id:
+            ref = r
+            break
+    if not ref:
+        flash('Product not found.', 'error')
+        return redirect(url_for('product_reference_list'))
+    wiki = db.get_wiki_by_ref_id(ref_id)
+    content = wiki['content'] if wiki else ''
+    updated_by = wiki['updated_by'] if wiki else ''
+    updated_at = wiki['updated_at'] if wiki else ''
+    return render_template('product_wiki.html', ref=ref, content=content,
+                           updated_by=updated_by, updated_at=updated_at)
+
+
+@app.route('/wiki/<int:ref_id>/save', methods=['POST'])
+@login_required
+def product_wiki_save(ref_id):
+    """Save wiki content (any logged-in user)."""
+    content = request.form.get('content', '')
+    username = g.user['username']
+    db.save_wiki(ref_id, content, updated_by=username)
+    flash('Wiki saved.', 'success')
+    return redirect(url_for('product_wiki', ref_id=ref_id))
+
+
 @app.route('/api/devices/distinct/<field>')
 @login_required
 def api_distinct_values(field):

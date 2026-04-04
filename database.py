@@ -158,6 +158,19 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_prodref_codename ON product_reference(codename)')
 
+        # Product wiki table — community notes per product
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS product_wiki (
+                wiki_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ref_id INTEGER NOT NULL,
+                content TEXT DEFAULT '',
+                updated_by TEXT DEFAULT '',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ref_id) REFERENCES product_reference(ref_id)
+            )
+        ''')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_ref ON product_wiki(ref_id)')
+
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
@@ -1670,3 +1683,38 @@ def clear_all_product_references():
     """Delete all product reference entries."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM product_reference')
+
+
+# ---------------------------------------------------------------------------
+# Product Wiki
+# ---------------------------------------------------------------------------
+
+def get_wiki_by_ref_id(ref_id):
+    """Return wiki content for a product reference, or None."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM product_wiki WHERE ref_id = ?', (ref_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def save_wiki(ref_id, content, updated_by=''):
+    """Create or update wiki content for a product reference."""
+    with db_transaction() as conn:
+        existing = conn.execute(
+            'SELECT wiki_id FROM product_wiki WHERE ref_id = ?', (ref_id,)
+        ).fetchone()
+        if existing:
+            conn.execute('''
+                UPDATE product_wiki
+                SET content = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE ref_id = ?
+            ''', (content, updated_by, ref_id))
+        else:
+            conn.execute('''
+                INSERT INTO product_wiki (ref_id, content, updated_by)
+                VALUES (?, ?, ?)
+            ''', (ref_id, content, updated_by))

@@ -147,7 +147,12 @@
                 {% for ref in refs %}
                 <tr data-id="{{ ref.ref_id }}">
                     {% if current_user and current_user.role == 'admin' %}
-                    <td><input class="cell-edit codename" data-field="codename" value="{{ ref.codename }}"></td>
+                    <td style="position:relative;">
+                        <input class="cell-edit codename" data-field="codename" value="{{ ref.codename }}">
+                        <a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" title="Open wiki" style="position:absolute; right:6px; top:50%; transform:translateY(-50%); color:var(--text-muted); opacity:0.4; transition:opacity 0.15s;" onmouseenter="this.style.opacity='1';this.style.color='var(--accent-cyan)'" onmouseleave="this.style.opacity='0.4';this.style.color='var(--text-muted)'">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+                        </a>
+                    </td>
                     <td><input class="cell-edit" data-field="model_name" value="{{ ref.model_name or '' }}"></td>
                     <td>
                         <select class="cell-edit" data-field="print_technology">
@@ -162,7 +167,7 @@
                     <td><input class="cell-edit" data-field="chip_codename" value="{{ ref.chip_codename or '' }}"></td>
                     <td><input class="cell-edit" data-field="fw_codebase" value="{{ ref.fw_codebase or '' }}"></td>
                     {% else %}
-                    <td><span style="font-weight:600; color:var(--accent-cyan);">{{ ref.codename }}</span></td>
+                    <td><a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" style="font-weight:600; color:var(--accent-cyan); text-decoration:none;" title="Open wiki">{{ ref.codename }}</a></td>
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size:13px; text-align:center;">
                         {% if ref.print_technology %}
