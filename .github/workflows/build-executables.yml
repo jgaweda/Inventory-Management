@@ -2,11 +2,13 @@ name: Build Executables
 
 on:
   push:
-    tags:
-      - 'v*'          # Build on version tags (e.g. v1.0.0)
+    branches:
+      - ims-app
+    paths-ignore:
+      - 'VERSION'        # Don't re-trigger on version bump commits
   schedule:
-    - cron: '0 5 * * *'   # Run daily at midnight EST (5:00 UTC)
-  workflow_dispatch:       # Allow manual trigger from GitHub UI
+    - cron: '0 5 * * *'  # Run daily at midnight EST (5:00 UTC)
+  workflow_dispatch:      # Allow manual trigger from GitHub UI
 
 jobs:
   check-changes:
@@ -35,8 +37,39 @@ jobs:
             fi
           fi
 
-  build-windows:
+  bump-version:
     needs: check-changes
+    if: needs.check-changes.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ims-app
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bump patch version
+        id: bump
+        run: |
+          CURRENT=$(cat VERSION | tr -d '[:space:]')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "$NEW_VERSION" > VERSION
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped version: $CURRENT -> $NEW_VERSION"
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "Bump version to v${{ steps.bump.outputs.version }} [skip ci]"
+          git push origin ims-app
+
+  build-windows:
+    needs: [check-changes, bump-version]
     if: needs.check-changes.outputs.should_build == 'true'
     runs-on: windows-latest
     steps:
@@ -65,7 +98,7 @@ jobs:
           path: dist/InventorySystem/
 
   build-macos:
-    needs: check-changes
+    needs: [check-changes, bump-version]
     if: needs.check-changes.outputs.should_build == 'true'
     runs-on: macos-15
     steps:
@@ -98,8 +131,7 @@ jobs:
           path: dist/InventorySystem/
 
   release:
-    needs: [check-changes, build-windows, build-macos]
-    if: needs.check-changes.outputs.should_build == 'true'
+    needs: [bump-version, build-windows, build-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -125,48 +157,24 @@ jobs:
           cd InventorySystem-Windows && zip -r ../InventorySystem-Windows.zip . && cd ..
           cd InventorySystem-macOS && zip -r ../InventorySystem-macOS.zip . && cd ..
 
-      - name: Get version info
-        id: version
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          DATE=$(date -u +%Y-%m-%d)
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "date=$DATE" >> $GITHUB_OUTPUT
-          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-            echo "is_tag=true" >> $GITHUB_OUTPUT
-          else
-            echo "tag=latest" >> $GITHUB_OUTPUT
-            echo "is_tag=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Delete existing latest release
-        if: steps.version.outputs.is_tag == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ steps.version.outputs.is_tag }}" == "true" ]; then
-            gh release create "${{ steps.version.outputs.tag }}" \
-              InventorySystem-Windows.zip InventorySystem-macOS.zip \
-              --title "${{ steps.version.outputs.tag }}" \
-              --generate-notes
-          else
-            gh release create latest \
-              InventorySystem-Windows.zip InventorySystem-macOS.zip \
-              --title "Latest Build (${{ steps.version.outputs.date }})" \
-              --notes "Automated build from \`ims-app\` branch.
+          VERSION="v${{ needs.bump-version.outputs.version }}"
+          DATE=$(date -u +%Y-%m-%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
 
-          **Commit:** \`${{ steps.version.outputs.short_sha }}\` — ${{ steps.version.outputs.commit_msg }}
-          **Built:** ${{ steps.version.outputs.date }}
+          gh release create "$VERSION" \
+            InventorySystem-Windows.zip InventorySystem-macOS.zip \
+            --title "$VERSION" \
+            --notes "**Version:** $VERSION
+          **Built:** $DATE
+          **Commit:** \`$SHORT_SHA\` — $COMMIT_MSG
 
-          Download the zip for your platform, unzip, and run. See [README](../../blob/ims-app/README.md) for details." \
-              --prerelease
-          fi
+          ### Downloads
+          - **InventorySystem-macOS.zip** — macOS 12+ (Apple Silicon)
+          - **InventorySystem-Windows.zip** — Windows 7+
+
+          Unzip and run. See [README](../../blob/ims-app/README.md) for setup instructions."
