@@ -88,6 +88,47 @@ Auto-backups are pruned to the configured maximum. Manual backups (created via "
 - **Labels**: qrcode + python-barcode + Pillow
 - **Frontend**: HTML + Vanilla JS + Tailwind CSS (CDN)
 
+## Building Standalone Executables
+
+The project includes build scripts that use PyInstaller to create self-contained executables (no Python installation needed on the target machine).
+
+### macOS / Linux
+
+**Prerequisites:** Python 3.10+
+
+```bash
+chmod +x build_exe.sh
+./build_exe.sh
+```
+
+The script creates a virtual environment (`build_venv/`), installs all dependencies plus PyInstaller, and builds into `dist/InventorySystem/`. To run the built executable:
+
+```bash
+./dist/InventorySystem/InventorySystem
+```
+
+### Windows
+
+**Prerequisites:** Python 3.8.x (required for Windows 7 compatibility — [download here](https://www.python.org/downloads/release/python-3819/), use the "Windows x86-64 executable installer")
+
+```cmd
+build_exe.bat
+```
+
+The script creates a virtual environment, installs Windows 7–compatible dependency versions from `requirements_win7.txt`, and builds into `dist\InventorySystem\`. To run:
+
+```cmd
+dist\InventorySystem\InventorySystem.exe
+```
+
+### Distribution
+
+Zip the entire `dist/InventorySystem/` folder and share it. The recipient just unzips and runs the executable — no Python or pip required.
+
+### Automated Builds (GitHub Actions)
+
+The repository includes a GitHub Actions workflow (`.github/workflows/build-executables.yml`) that automatically builds executables for both macOS and Windows when a version tag is pushed or via manual dispatch.
+
 ## Cross-Platform Support
 
 The application runs on **macOS**, **Windows**, and **Linux** with no platform-specific code. Default port is 8080 (avoids macOS AirPlay Receiver conflict on port 5000).
