@@ -638,8 +638,8 @@ def _get_backup_config():
     saved = _load_backup_config()
     return {
         'backup_dir': saved.get('backup_dir', _DEFAULT_BACKUP_DIR),
-        'max_backups': saved.get('max_backups', 5),
-        'backup_interval_hours': saved.get('backup_interval_hours', 24),
+        'max_backups': saved.get('max_backups', 10),
+        'backup_interval_hours': saved.get('backup_interval_hours', 4),
         'prune_enabled': bool(saved.get('prune_enabled', False)),
         'prune_interval_hours': saved.get('prune_interval_hours', 24),
         'backup_enabled': bool(saved.get('backup_enabled', False)),
@@ -651,6 +651,26 @@ def _get_backup_config():
         'last_git_push': saved.get('last_git_push', ''),
         'last_backup': saved.get('last_backup', ''),
         'last_backup_hash': saved.get('last_backup_hash', ''),
+    }
+
+
+def get_default_backup_config():
+    """Return factory-default backup configuration values."""
+    return {
+        'backup_dir': _DEFAULT_BACKUP_DIR,
+        'max_backups': 10,
+        'backup_interval_hours': 4,
+        'prune_enabled': False,
+        'prune_interval_hours': 24,
+        'backup_enabled': False,
+        'git_enabled': False,
+        'git_repo': '',
+        'git_branch': 'backups',
+        'git_token': '',
+        'git_push_interval_hours': 24,
+        'last_git_push': '',
+        'last_backup': '',
+        'last_backup_hash': '',
     }
 
 
@@ -1073,8 +1093,8 @@ def push_backups_to_git():
             subprocess.run(['git', 'config', 'user.name', 'Inventory System'],
                            cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
 
-            # Create/update zip archive
-            zip_name = 'inventory_backups.zip'
+            # Create/update zip archive — stable name so git tracks diffs
+            zip_name = 'hp_connectivity_inventory_backup.zip'
             zip_path = os.path.join(tmpdir, zip_name)
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for bf in backup_files:
@@ -1336,9 +1356,12 @@ def list_git_backups():
                 raise ValueError(f'Branch "{git_branch}" not found on remote. Push backups first.')
             raise RuntimeError(f'Git clone failed: {stderr}')
 
-        zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        # Find the backup zip (support both old and new naming)
+        zip_path = os.path.join(tmpdir, 'hp_connectivity_inventory_backup.zip')
         if not os.path.isfile(zip_path):
-            raise ValueError('No inventory_backups.zip found on the git branch.')
+            zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        if not os.path.isfile(zip_path):
+            raise ValueError('No backup zip found on the git branch.')
 
         entries = []
         with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -1384,9 +1407,12 @@ def restore_from_git(filename):
             stderr = result.stderr.decode() if result.stderr else ''
             raise RuntimeError(f'Git clone failed: {stderr}')
 
-        zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        # Find the backup zip (support both old and new naming)
+        zip_path = os.path.join(tmpdir, 'hp_connectivity_inventory_backup.zip')
         if not os.path.isfile(zip_path):
-            raise ValueError('No inventory_backups.zip found on the git branch.')
+            zip_path = os.path.join(tmpdir, 'inventory_backups.zip')
+        if not os.path.isfile(zip_path):
+            raise ValueError('No backup zip found on the git branch.')
 
         # Extract the requested file
         with zipfile.ZipFile(zip_path, 'r') as zf:

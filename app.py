@@ -1112,6 +1112,29 @@ def backup_config():
     return redirect(url_for('backup_list'))
 
 
+@app.route('/backups/config/reset', methods=['POST'])
+@admin_required
+def backup_config_reset():
+    """Reset backup configuration to factory defaults (preserves git credentials)."""
+    current = db._get_backup_config()
+    defaults = db.get_default_backup_config()
+    # Preserve git credentials and repo settings — user shouldn't have to re-enter these
+    defaults['git_repo'] = current.get('git_repo', '')
+    defaults['git_branch'] = current.get('git_branch', 'backups')
+    defaults['git_token'] = current.get('git_token', '')
+    # Preserve timestamps
+    defaults['last_backup'] = current.get('last_backup', '')
+    defaults['last_git_push'] = current.get('last_git_push', '')
+    defaults['last_backup_hash'] = current.get('last_backup_hash', '')
+    db.save_backup_config(defaults)
+    _stop_backup_timer()
+    _stop_git_push_timer()
+    _stop_prune_timer()
+    app_logger.info('Backup config reset to defaults by=%s', current_username())
+    flash('Backup configuration reset to defaults.', 'success')
+    return redirect(url_for('backup_list'))
+
+
 @app.route('/backups/push', methods=['POST'])
 @admin_required
 def backup_push_git():
