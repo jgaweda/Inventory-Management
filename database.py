@@ -213,26 +213,38 @@ def generate_device_id():
     return uuid.uuid4().hex[:10]
 
 
+_B36_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+
+def _int_to_base36(n):
+    """Convert a positive integer to an uppercase base-36 string."""
+    if n == 0:
+        return '0'
+    result = []
+    while n:
+        n, rem = divmod(n, 36)
+        result.append(_B36_CHARS[rem])
+    return ''.join(reversed(result))
+
+
+def _base36_to_int(s):
+    """Convert a base-36 string back to an integer."""
+    return int(s, 36)
+
+
 def _next_barcode_value(conn):
-    """Generate the next sequential barcode number, guaranteed unique."""
-    row = conn.execute(
-        "SELECT barcode_value FROM devices ORDER BY CAST(barcode_value AS INTEGER) DESC LIMIT 1"
-    ).fetchone()
-    if row:
+    """Generate the next sequential alphanumeric barcode (base-36), guaranteed unique."""
+    rows = conn.execute("SELECT barcode_value FROM devices").fetchall()
+    max_num = 0
+    for r in rows:
+        val = r[0]
+        if not val or val.startswith('INV-'):
+            continue
         try:
-            next_num = int(row[0]) + 1
+            max_num = max(max_num, _base36_to_int(val))
         except (ValueError, TypeError):
-            # Fallback if existing values aren't numeric (legacy INV- format)
-            max_num = 0
-            for r in conn.execute("SELECT barcode_value FROM devices").fetchall():
-                try:
-                    max_num = max(max_num, int(r[0]))
-                except (ValueError, TypeError):
-                    continue
-            next_num = max_num + 1
-    else:
-        next_num = 1
-    return str(next_num)
+            continue
+    return _int_to_base36(max_num + 1)
 
 
 def _insert_device(conn, data, performed_by='system'):
