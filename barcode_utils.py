@@ -53,19 +53,19 @@ MONO_BOLD_FONTS = ["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
                    "Courier.ttc", "Menlo.ttc", "Courier New Bold.ttf"]
 
 
-def generate_qr_code(data, size=200):
+def generate_qr_code(data, size=250):
     """
     Generate a QR code image for the given data string.
     Returns a PIL Image resized to size x size pixels.
 
-    Uses ERROR_CORRECT_H (30% recovery) for maximum scannability on
-    printed labels that may get scuffed or dirty. border=4 meets the
+    Uses ERROR_CORRECT_M (15% recovery) for a good balance between
+    scannability and module size on printed labels. border=4 meets the
     QR spec minimum quiet zone. NEAREST interpolation preserves crisp
     module edges essential for reliable scanning.
     """
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=10,
         border=4,
     )
@@ -91,7 +91,7 @@ def generate_barcode_image(data, width=350, height=80):
         'font_size': 0,
         'text_distance': 0,
         'quiet_zone': 6.5,
-        'module_width': 0.65,
+        'module_width': 0.8,
         'module_height': 30,
         'dpi': 300,
     }).save(buffer, format='PNG')
@@ -127,10 +127,12 @@ def generate_barcode_image(data, width=350, height=80):
 def generate_label(device_id, barcode_value, device_name, save=True):
     """
     Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI, landscape).
-    - Left: QR code (fills height)
-    - Right top: Device name (centered above barcode)
-    - Right middle: Full-width Code 128 barcode
-    - Right bottom: Barcode ID value (centered, large mono font)
+
+    Layout (barcode-dominant):
+      Left ~270px : QR code (250px, centered vertically)
+      Right ~765px: Device name (centered above barcode)
+                    Full-width Code 128 barcode (dominant element)
+                    Barcode ID value (centered below barcode)
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
@@ -140,25 +142,25 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Left side: QR code (square, fills height) ---
-    qr_size = H - 2 * PAD  # 420px
+    # --- Left side: QR code (compact, centered vertically) ---
+    qr_size = 250
     qr_img = generate_qr_code(barcode_value, size=qr_size)
     qr_x = PAD
-    qr_y = PAD
+    qr_y = (H - qr_size) // 2
     label.paste(qr_img, (qr_x, qr_y))
 
     # --- Right side: name + barcode + ID text ---
     right_x = qr_x + qr_size + PAD
     right_w = W - right_x - PAD
 
-    # Barcode ID text font
-    font_id = _find_font(MONO_BOLD_FONTS, 44)
+    # Barcode ID text font (large, prominent)
+    font_id = _find_font(MONO_BOLD_FONTS, 48)
     id_bbox = draw.textbbox((0, 0), barcode_value, font=font_id)
     id_text_w = id_bbox[2] - id_bbox[0]
     id_h = id_bbox[3] - id_bbox[1]
 
     # Device name — dynamically size to fit right-side width
-    for size in range(44, 18, -2):
+    for size in range(42, 18, -2):
         font_name = _find_font(BOLD_FONTS, size)
         bbox = draw.textbbox((0, 0), device_name, font=font_name)
         if bbox[2] - bbox[0] <= right_w:
@@ -166,11 +168,11 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     name_text_w = bbox[2] - bbox[0]
     name_h = bbox[3] - bbox[1]
 
-    # Vertical layout
-    gap = 8
+    # Vertical layout: name — gap — barcode — gap — ID
+    gap = 10
     barcode_h = H - 2 * PAD - name_h - gap - gap - id_h
-    if barcode_h < 100:
-        barcode_h = 100
+    if barcode_h < 120:
+        barcode_h = 120
 
     block_h = name_h + gap + barcode_h + gap + id_h
     top_y = (H - block_h) // 2
@@ -184,7 +186,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     name_bearing = draw.textbbox((name_x, name_y), device_name, font=font_name)[0] - name_x
     draw.text((name_x - name_bearing, name_y), device_name, fill='black', font=font_name)
 
-    # Draw Code 128 barcode
+    # Draw Code 128 barcode (dominant element, full right-side width)
     try:
         barcode_img = generate_barcode_image(barcode_value, width=right_w, height=barcode_h)
         label.paste(barcode_img, (right_x, barcode_y))
