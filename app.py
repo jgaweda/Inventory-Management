@@ -150,26 +150,43 @@ def inject_globals():
 # Login / Logout
 # ---------------------------------------------------------------------------
 
+# Simple in-memory rate limiter for login
+_login_attempts = {}  # ip -> [timestamp, ...]
+_LOGIN_WINDOW = 300   # 5 minutes
+_LOGIN_MAX = 10       # max attempts per window
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if g.user:
         return redirect(url_for('dashboard'))
 
     if request.method == 'POST':
+        ip = request.remote_addr
+        now = datetime.now().timestamp()
+        # Clean old attempts and check rate
+        attempts = [t for t in _login_attempts.get(ip, []) if now - t < _LOGIN_WINDOW]
+        if len(attempts) >= _LOGIN_MAX:
+            app_logger.warning('Login rate limited: ip=%s attempts=%d', ip, len(attempts))
+            flash('Too many login attempts. Please wait a few minutes.', 'error')
+            return render_template('login.html', next=request.args.get('next', ''))
+
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         user = db.authenticate_user(username, password)
         if user:
+            _login_attempts.pop(ip, None)  # Clear on success
             session['user_id'] = user['user_id']
             session['role'] = user['role']
             app_logger.info('Login successful: user=%s role=%s ip=%s', username, user['role'], request.remote_addr)
             next_url = request.form.get('next', '')
-            # Prevent open redirect — only allow relative paths
             if not next_url or next_url.startswith('//') or '://' in next_url:
                 next_url = url_for('dashboard')
             return redirect(next_url)
         else:
-            app_logger.warning('Login failed: user=%s ip=%s', username, request.remote_addr)
+            attempts.append(now)
+            _login_attempts[ip] = attempts
+            app_logger.warning('Login failed: user=%s ip=%s attempt=%d/%d', username, ip, len(attempts), _LOGIN_MAX)
             flash('Invalid username or password.', 'error')
 
     return render_template('login.html', next=request.args.get('next', ''))
@@ -186,6 +203,16 @@ def logout():
 # ---------------------------------------------------------------------------
 # Dashboard (public)
 # ---------------------------------------------------------------------------
+
+@app.route('/health')
+def health():
+    """Health check endpoint for monitoring and CI smoke tests."""
+    try:
+        integrity = db.check_database_integrity()
+        return jsonify({'status': 'ok', 'db': integrity['result']})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
 
 @app.route('/')
 def dashboard():
@@ -252,12 +279,19 @@ def device_add():
                 return render_template('device_form.html', device=request.form, is_edit=False)
             name = f'{manufacturer} {model_number}'.strip()
 
+        serial_number = request.form.get('serial_number', '').strip()
+        if serial_number:
+            existing = db.get_device_by_serial(serial_number)
+            if existing:
+                flash(f'A device with serial number "{serial_number}" already exists: {existing["name"]}', 'error')
+                return render_template('device_form.html', device=request.form, is_edit=False)
+
         data = {
             'name': name,
             'category': category,
             'manufacturer': request.form.get('manufacturer', ''),
             'model_number': request.form.get('model_number', ''),
-            'serial_number': request.form.get('serial_number', ''),
+            'serial_number': serial_number,
             'connectivity': request.form.get('connectivity', ''),
             'vendor_supplied': 1 if request.form.get('vendor_supplied') else 0,
             'location': request.form.get('location', ''),
@@ -439,9 +473,10 @@ def serve_label_pdf(device_id):
     device = db.get_device(device_id)
     if not device:
         return 'Device not found', 404
-    # Always regenerate to ensure PDF matches current label
-    barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
+    # Regenerate only if label is missing or stale
     path = barcode_utils.get_label_path(device_id)
+    if not os.path.isfile(path) or os.path.getmtime(path) < datetime.fromisoformat(device['updated_at']).timestamp():
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
 
     # Landscape PNG (1050x450 = 3.5x1.5")
     img = Image.open(path)
@@ -707,7 +742,10 @@ def user_delete(user_id):
 @app.route('/logs')
 @admin_required
 def app_logs():
-    """View application log entries. Most recent first."""
+    """View application log entries with pagination. Most recent first."""
+    per_page = 200
+    page = max(1, request.args.get('page', 1, type=int))
+
     lines = []
     # Read rotated backup first (older), then current log (newer)
     for log_path in [LOG_FILE + '.1', LOG_FILE]:
@@ -718,31 +756,34 @@ def app_logs():
             pass
 
     # Parse into structured entries, most recent first
-    entries = []
+    all_entries = []
     for line in reversed(lines):
         line = line.strip()
         if not line:
             continue
-        # Format: "2026-04-02 12:00:00 | INFO    | message"
         parts = line.split(' | ', 2)
         if len(parts) == 3:
-            entries.append({
+            all_entries.append({
                 'timestamp': parts[0],
                 'level': parts[1].strip(),
                 'message': parts[2],
             })
         else:
-            entries.append({
+            all_entries.append({
                 'timestamp': '',
                 'level': '',
                 'message': line,
             })
 
-    # Limit to 500 most recent entries
-    entries = entries[:500]
+    total = len(all_entries)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    start = (page - 1) * per_page
+    entries = all_entries[start:start + per_page]
+
     log_config = _load_log_config()
     log_file_size = sum(os.path.getsize(p) for p in [LOG_FILE, LOG_FILE + '.1'] if os.path.exists(p))
-    return render_template('app_log.html', entries=entries, log_config=log_config, log_file_size=log_file_size)
+    return render_template('app_log.html', entries=entries, log_config=log_config,
+                           log_file_size=log_file_size, page=page, total_pages=total_pages)
 
 
 @app.route('/logs/clear', methods=['POST'])

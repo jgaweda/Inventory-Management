@@ -232,19 +232,45 @@ def _base36_to_int(s):
     return int(s, 36)
 
 
+_BARCODE_PREFIX = 'CNX-'
+
+
 def _next_barcode_value(conn):
-    """Generate the next sequential alphanumeric barcode (base-36), guaranteed unique."""
-    rows = conn.execute("SELECT barcode_value FROM devices").fetchall()
-    max_num = 0
-    for r in rows:
-        val = r[0]
-        if not val or val.startswith('INV-'):
-            continue
-        try:
-            max_num = max(max_num, _base36_to_int(val))
-        except (ValueError, TypeError):
-            continue
-    return _int_to_base36(max_num + 1)
+    """Generate the next sequential barcode like CNX-1, CNX-2, ..., CNX-A, CNX-10.
+
+    Uses a barcode_seq table as a monotonic counter to avoid race conditions
+    and full table scans. Falls back to scanning devices if the sequence
+    table doesn't exist yet (first run / migration).
+    """
+    # Ensure sequence table exists
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS barcode_seq (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            next_val INTEGER NOT NULL DEFAULT 1
+        )
+    ''')
+    row = conn.execute('SELECT next_val FROM barcode_seq WHERE id = 1').fetchone()
+    if row is None:
+        # Initialize from existing devices (migration from old scheme)
+        max_num = 0
+        for r in conn.execute("SELECT barcode_value FROM devices").fetchall():
+            val = r[0]
+            # Strip known prefixes
+            stripped = val
+            for prefix in (_BARCODE_PREFIX, 'INV-'):
+                if val.startswith(prefix):
+                    stripped = val[len(prefix):]
+                    break
+            try:
+                max_num = max(max_num, _base36_to_int(stripped))
+            except (ValueError, TypeError):
+                continue
+        next_val = max_num + 1
+        conn.execute('INSERT INTO barcode_seq (id, next_val) VALUES (1, ?)', (next_val + 1,))
+    else:
+        next_val = row[0]
+        conn.execute('UPDATE barcode_seq SET next_val = ? WHERE id = 1', (next_val + 1,))
+    return f'{_BARCODE_PREFIX}{_int_to_base36(next_val)}'
 
 
 def _insert_device(conn, data, performed_by='system'):
@@ -323,6 +349,16 @@ def get_device(device_id):
     """Get a single device by ID. Returns dict or None."""
     with db_transaction() as conn:
         row = conn.execute('SELECT * FROM devices WHERE device_id = ?', (device_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_device_by_serial(serial_number):
+    """Look up a device by serial number (case-insensitive). Returns dict or None."""
+    with db_transaction() as conn:
+        row = conn.execute(
+            'SELECT * FROM devices WHERE UPPER(serial_number) = UPPER(?) AND status != ?',
+            (serial_number, 'retired')
+        ).fetchone()
         return dict(row) if row else None
 
 
@@ -1337,7 +1373,7 @@ def _get_git_push_url():
     """Build the authenticated URL for git operations."""
     config = _get_backup_config()
     git_repo = config.get('git_repo', '').strip()
-    git_token = config.get('git_token', '').strip()
+    git_token = os.environ.get('GIT_BACKUP_TOKEN', '').strip() or config.get('git_token', '').strip()
     git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
     if git_repo:

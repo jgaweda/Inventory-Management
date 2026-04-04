@@ -360,5 +360,38 @@ function closeCloudRestoreDialog() {
 document.getElementById('cloudRestoreModal').addEventListener('click', function(e) {
     if (e.target === this) closeCloudRestoreDialog();
 });
+
+// --- Loading overlay for long operations ---
+(function() {
+    var overlay = document.createElement('div');
+    overlay.id = 'loadingOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;flex-direction:column;gap:16px;';
+    overlay.innerHTML = '<div style="color:white;font-size:16px;font-weight:600;" id="loadingMsg">Working...</div><div style="width:40px;height:40px;border:3px solid rgba(255,255,255,0.2);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite;"></div>';
+    var style = document.createElement('style');
+    style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+
+    function showLoading(msg) {
+        document.getElementById('loadingMsg').textContent = msg || 'Working...';
+        overlay.style.display = 'flex';
+    }
+
+    // Attach to all backup/restore/push forms
+    document.querySelectorAll('form[action*="backup"], form[action*="restore"], form[action*="push"]').forEach(function(form) {
+        form.addEventListener('submit', function() {
+            var btn = form.querySelector('button[type="submit"]');
+            var msg = 'Working...';
+            if (btn) {
+                var text = btn.textContent.trim();
+                if (text.indexOf('Backup') >= 0) msg = 'Creating backup...';
+                else if (text.indexOf('Restore') >= 0) msg = 'Restoring database...';
+                else if (text.indexOf('Push') >= 0) msg = 'Pushing to git...';
+                else if (text.indexOf('Reset') >= 0) msg = 'Resetting configuration...';
+            }
+            showLoading(msg);
+        });
+    });
+})();
 </script>
 {% endblock %}

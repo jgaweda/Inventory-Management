@@ -109,6 +109,20 @@
 
 <div class="card" style="cursor: default; padding: 0; overflow: hidden;">
     {% if entries %}
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border-color); font-size:13px; color:var(--text-muted);">
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        <div style="display:flex; gap:4px;">
+            {% if page > 1 %}
+            <a href="{{ url_for('app_logs', page=page-1) }}" class="btn btn-secondary btn-sm" style="padding:4px 12px;">Prev</a>
+            {% endif %}
+            {% if page < total_pages %}
+            <a href="{{ url_for('app_logs', page=page+1) }}" class="btn btn-secondary btn-sm" style="padding:4px 12px;">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     <div id="logEntries">
         {% for entry in entries %}
         <div class="log-entry" data-level="{{ entry.level }}" data-text="{{ entry.message|lower }}">

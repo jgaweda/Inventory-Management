@@ -130,7 +130,10 @@
 
 <!-- Scan History -->
 <div class="card" style="cursor: default;">
-    <div class="section-label">Scan History (This Session)</div>
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="section-label" style="margin-bottom:0;">Scan History (This Session)</div>
+        <button class="btn btn-secondary btn-sm" style="font-size:11px; padding:4px 10px;" id="clearHistory" onclick="clearScanHistory()" >Clear</button>
+    </div>
     <div id="scanHistory">
         <p style="color: var(--text-muted); font-size: 13px;" id="noScans">No scans yet this session.</p>
     </div>
@@ -375,6 +378,15 @@
         }
 
         historyDiv.insertBefore(entry, historyDiv.firstChild.nextSibling || null);
+    }
+
+    function clearScanHistory() {
+        const historyDiv = document.getElementById('scanHistory');
+        // Remove all entries but keep the "no scans" message
+        while (historyDiv.children.length > 1) {
+            historyDiv.removeChild(historyDiv.lastChild);
+        }
+        document.getElementById('noScans').style.display = 'block';
     }
 </script>
 {% endblock %}
