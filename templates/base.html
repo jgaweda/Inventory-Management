@@ -394,7 +394,7 @@
                     setTimeout(function() {
                         overlay.style.opacity = '0';
                         setTimeout(function() { overlay.style.display = 'none'; }, 800);
-                    }, 20000);
+                    }, 10000);
                 }
             });
         })();
@@ -405,7 +405,7 @@
         background:rgba(0,0,0,0.6); align-items:center; justify-content:center;
         transition: opacity 0.8s ease; cursor:pointer;"
         onclick="this.style.opacity='0'; var el=this; setTimeout(function(){el.style.display='none';},800);">
-        <div style="text-align:center; color:rgba(255,255,255,0.75); max-width:360px; padding:40px;
+        <div style="text-align:center; color:rgba(255,255,255,0.75); white-space:nowrap; padding:40px;
             font-family:'DM Sans',system-ui,sans-serif; pointer-events:none;">
             <div style="font-size:13px; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:24px; opacity:0.5;">
                 Inventory Management System
