@@ -42,6 +42,7 @@ LOG_DIR = os.path.join(DATA_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 LOG_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log_config.json')
+SERVER_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'server_config.json')
 
 
 def _load_log_config():
@@ -57,6 +58,19 @@ def _save_log_config(config):
     import json as _j
     with open(LOG_CONFIG_FILE, 'w') as f:
         _j.dump(config, f)
+
+
+def _load_server_config():
+    try:
+        with open(SERVER_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {'port': 8080, 'host': '0.0.0.0'}
+
+
+def _save_server_config(config):
+    with open(SERVER_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
 
 
 _log_config = _load_log_config()
@@ -858,7 +872,29 @@ def account():
         return redirect(url_for('account'))
 
     users = db.get_all_users() if g.user['role'] == 'admin' else []
-    return render_template('account.html', users=users)
+    server_config = _load_server_config()
+    return render_template('account.html', users=users, server_config=server_config)
+
+
+@app.route('/settings/server', methods=['POST'])
+@admin_required
+def save_server_config():
+    try:
+        port = int(request.form.get('port', 8080))
+        if port < 1 or port > 65535:
+            flash('Port must be between 1 and 65535.', 'error')
+            return redirect(url_for('account'))
+    except (ValueError, TypeError):
+        flash('Invalid port number.', 'error')
+        return redirect(url_for('account'))
+
+    config = _load_server_config()
+    config['port'] = port
+    _save_server_config(config)
+    app_logger.info('Server config updated: port=%d by user=%s', port, g.user['username'])
+    flash('Server settings saved. Restart the application for changes to take effect.', 'success')
+    return redirect(url_for('account'))
+
 
 # ---------------------------------------------------------------------------
 # Database backup (admin only)
@@ -1768,9 +1804,13 @@ def unhandled_exception(e):
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
+    server_cfg = _load_server_config()
+    default_port = server_cfg.get('port', 8080)
+    default_host = server_cfg.get('host', '0.0.0.0')
+
     parser = argparse.ArgumentParser(description='HP Connectivity Team Inventory System')
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8080, help='Port to listen on (default: 8080)')
+    parser.add_argument('--host', default=default_host, help=f'Host to bind to (default: {default_host})')
+    parser.add_argument('--port', type=int, default=default_port, help=f'Port to listen on (default: {default_port})')
     parser.add_argument('--dev', action='store_true', help='Run in development mode with debug enabled')
     args = parser.parse_args()
 

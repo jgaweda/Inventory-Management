@@ -1703,8 +1703,10 @@ def delete_product_reference(ref_id):
 
 
 def clear_all_product_references():
-    """Delete all product reference entries."""
+    """Delete all product reference entries and associated wiki data."""
     with db_transaction() as conn:
+        conn.execute('DELETE FROM wiki_attachments')
+        conn.execute('DELETE FROM product_wiki')
         conn.execute('DELETE FROM product_reference')
 
 

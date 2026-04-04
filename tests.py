@@ -642,5 +642,57 @@ class TestCSVImport(BaseTestCase):
         self.assertIn('NewProduct', codenames)
 
 
+class TestServerSettings(BaseTestCase):
+    """Tests for admin server port settings."""
+
+    def _login_viewer(self):
+        db.create_user('viewer1', 'pass1234', role='viewer', display_name='Viewer')
+        return self.client.post('/login', data={
+            'username': 'viewer1', 'password': 'pass1234',
+        }, follow_redirects=True)
+
+    def tearDown(self):
+        super().tearDown()
+        from app import SERVER_CONFIG_FILE
+        if os.path.exists(SERVER_CONFIG_FILE):
+            os.remove(SERVER_CONFIG_FILE)
+
+    def test_server_settings_visible_to_admin(self):
+        self.login_admin()
+        resp = self.client.get('/account')
+        self.assertIn(b'Server Settings', resp.data)
+
+    def test_server_settings_hidden_from_viewer(self):
+        self._login_viewer()
+        resp = self.client.get('/account')
+        self.assertNotIn(b'Server Settings', resp.data)
+
+    def test_save_port_as_admin(self):
+        self.login_admin()
+        resp = self.client.post('/settings/server',
+                                data={'port': '9090'},
+                                follow_redirects=True)
+        self.assertIn(b'Restart the application', resp.data)
+        import json
+        from app import SERVER_CONFIG_FILE
+        with open(SERVER_CONFIG_FILE) as f:
+            cfg = json.load(f)
+        self.assertEqual(cfg['port'], 9090)
+
+    def test_save_invalid_port(self):
+        self.login_admin()
+        resp = self.client.post('/settings/server',
+                                data={'port': '99999'},
+                                follow_redirects=True)
+        self.assertIn(b'Port must be between', resp.data)
+
+    def test_viewer_cannot_save_port(self):
+        self._login_viewer()
+        resp = self.client.post('/settings/server',
+                                data={'port': '9090'},
+                                follow_redirects=True)
+        self.assertNotIn(b'Restart the application', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()
