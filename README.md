@@ -17,10 +17,11 @@ Pre-built executables are available on the [**Releases page**](../../releases/la
 
 1. Download `InventorySystem-macOS.zip` from [Releases](../../releases/latest)
 2. Unzip the file
-3. If macOS blocks the app, open Terminal and run:
+3. **Required:** Open Terminal and run this to remove the macOS quarantine flag:
    ```bash
    xattr -cr ~/Downloads/InventorySystem-macOS/
    ```
+   *(macOS blocks all apps downloaded outside the App Store — this is normal)*
 4. Double-click `InventorySystem` or run from Terminal:
    ```bash
    ./InventorySystem
