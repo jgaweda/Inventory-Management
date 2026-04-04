@@ -49,13 +49,21 @@
         100% { background: transparent; }
     }
 
-    /* Codename link */
-    .codename-link {
-        font-weight: 600; color: var(--accent-cyan); text-decoration: none;
-        padding: 6px 8px; display: block; border-radius: 4px;
-        transition: background 0.15s;
+    /* Codename cell */
+    .codename-cell {
+        display: flex; align-items: center; gap: 4px; padding: 4px 4px;
     }
-    .codename-link:hover { background: rgba(6,182,212,0.08); }
+    .codename-text {
+        font-weight: 600; color: var(--text-primary); font-size: 13px;
+        padding: 2px 4px;
+    }
+    .wiki-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 24px; height: 24px; border-radius: 4px;
+        color: var(--text-muted); text-decoration: none;
+        transition: background 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .wiki-btn:hover { background: rgba(6,182,212,0.12); color: var(--accent-cyan); }
 
     /* Inventory column */
     .inv-count { text-align: center; font-size: 12px; padding: 6px 8px; }
@@ -159,7 +167,14 @@
             <tbody id="refBody">
                 {% for ref in refs %}
                 <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
-                    <td><a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" class="codename-link">{{ ref.codename }}</a></td>
+                    <td>
+                        <div class="codename-cell">
+                            <span class="codename-text">{{ ref.codename }}</span>
+                            <a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" class="wiki-btn" title="Wiki">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+                            </a>
+                        </div>
+                    </td>
                     {% if current_user and current_user.role == 'admin' %}
                     <td><input class="cell-edit" data-field="model_name" value="{{ ref.model_name or '' }}"></td>
                     <td>
@@ -333,7 +348,7 @@ function addNewRow() {
     tr.dataset.id = 'new';
     tr.className = 'new-row';
     tr.innerHTML =
-        '<td><input class="cell-edit" data-field="codename" placeholder="Codename..." value="" style="font-weight:600; color:var(--accent-cyan);"></td>' +
+        '<td><input class="cell-edit" data-field="codename" placeholder="Codename..." value="" style="font-weight:600;"></td>' +
         '<td><input class="cell-edit" data-field="model_name" placeholder="Model name..." value=""></td>' +
         '<td><select class="cell-edit" data-field="print_technology"><option value="">--</option><option value="Ink">Ink</option><option value="Laser">Laser</option></select></td>' +
         '<td><input class="cell-edit" data-field="wifi_gen" value="" style="width:60px;" placeholder="6E"></td>' +
