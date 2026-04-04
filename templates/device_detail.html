@@ -277,20 +277,7 @@
 
 <script>
 function printLabel() {
-    var w = window.open('', '_blank', 'width=500,height=250');
-    if (!w) { alert('Please allow pop-ups to print labels.'); return; }
-    var imgUrl = '{{ url_for("serve_label", device_id=device.device_id) }}';
-    w.document.write(
-        '<!DOCTYPE html><html><head><title>Print Label</title>' +
-        '<style>' +
-        '@page { size: 3.5in 1.5in; margin: 0; }' +
-        'html, body { margin: 0; padding: 0; width: 3.5in; height: 1.5in; overflow: hidden; background: #fff; display: flex; align-items: center; justify-content: center; }' +
-        'img { width: 96%; height: 96%; display: block; object-fit: contain; }' +
-        '</style></head><body>' +
-        '<img src="' + imgUrl + '" onload="setTimeout(function(){window.print();},300);">' +
-        '</body></html>'
-    );
-    w.document.close();
+    window.open('{{ url_for("serve_label_pdf", device_id=device.device_id) }}', '_blank');
 }
 
 (function() {
