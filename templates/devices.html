@@ -14,9 +14,9 @@
         {% endif %}
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">
-        <a href="{{ url_for('scan_page') }}" class="btn btn-secondary">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-            Device Lookup
+        <a href="{{ url_for('export_csv', q=q, category=selected_category, status=selected_status, connectivity=selected_connectivity, location=selected_location) }}" class="btn btn-secondary">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Export CSV
         </a>
         {% if current_user and current_user.role == 'admin' %}
         <a href="{{ url_for('device_add') }}" class="btn btn-primary">
@@ -69,13 +69,6 @@
 </form>
 
 <!-- Device list -->
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-        <a id="exportCsvLink" href="{{ url_for('export_csv', q=q, category=selected_category, status=selected_status, connectivity=selected_connectivity, location=selected_location) }}" class="btn btn-secondary btn-sm">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            Export CSV
-        </a>
-    </div>
-
     <div class="card" style="padding: 0; cursor: default;">
         <div class="table-wrap">
         <table>
