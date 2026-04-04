@@ -193,13 +193,12 @@
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Serial Number</label>
                 <input type="text" name="serial_number" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
             </div>
-            <div style="display: flex; align-items: center; padding-top: 24px;">
-                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: var(--text-primary);">
-                    <input type="checkbox" name="vendor_supplied" value="1"
-                        {% if (device.get('vendor_supplied', 0) if device is mapping else device.vendor_supplied if device else 0)|int %}checked{% endif %}
-                        style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
-                    Vendor Supplied (HP Partner Program)
-                </label>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Ownership</label>
+                <select name="vendor_supplied">
+                    <option value="0" {% if not (device.get('vendor_supplied', 0) if device is mapping else device.vendor_supplied if device else 0)|int %}selected{% endif %}>HP Owned</option>
+                    <option value="1" {% if (device.get('vendor_supplied', 0) if device is mapping else device.vendor_supplied if device else 0)|int %}selected{% endif %}>Vendor Supplied</option>
+                </select>
             </div>
         </div>
     </div>

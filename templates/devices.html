@@ -92,9 +92,9 @@
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.connectivity }}</td>
                     <td style="font-size: 12px;">
                         {% if device.vendor_supplied %}
-                        <span style="background: rgba(139,92,246,0.12); color: #a78bfa; padding: 2px 8px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">Vendor</span>
+                        <span style="background: rgba(139,92,246,0.12); color: #a78bfa; padding: 2px 8px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">Vendor Supplied</span>
                         {% else %}
-                        <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 2px 8px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">HP</span>
+                        <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 2px 8px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">HP Owned</span>
                         {% endif %}
                     </td>
                     <td><span class="badge badge-{{ device.status }}">{{ device.status }}</span></td>
