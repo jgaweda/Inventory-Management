@@ -1319,6 +1319,33 @@ def product_reference_edit(ref_id):
     return render_template('product_reference_form.html', ref=ref)
 
 
+@app.route('/api/reference/<int:ref_id>', methods=['PATCH'])
+@login_required
+def api_reference_update(ref_id):
+    """Inline edit API — update a single field on a product reference."""
+    if g.user['role'] != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    ref = db.get_product_reference(ref_id)
+    if not ref:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data'}), 400
+    allowed = {'codename', 'model_name', 'wifi_gen', 'year', 'chip_manufacturer',
+               'chip_codename', 'fw_codebase', 'print_technology'}
+    updates = {k: v.strip() for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({'error': 'No valid fields'}), 400
+    # Merge with existing values
+    merged = {k: ref[k] for k in allowed}
+    merged.update(updates)
+    if not merged.get('codename'):
+        return jsonify({'error': 'Codename is required'}), 400
+    db.update_product_reference(ref_id=ref_id, **merged)
+    app_logger.info('Product reference inline edit: ref_id=%d fields=%s by=%s', ref_id, list(updates.keys()), current_username())
+    return jsonify({'ok': True})
+
+
 @app.route('/reference/<int:ref_id>/delete', methods=['POST'])
 @login_required
 def product_reference_delete(ref_id):

@@ -1,6 +1,85 @@
 {% extends "base.html" %}
 {% block title %}Product Reference{% endblock %}
 
+{% block extra_head %}
+<style>
+    .ref-table { border-collapse: collapse; width: 100%; }
+    .ref-table th {
+        text-align: left; font-size: 11px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        color: var(--text-muted); padding: 10px 8px;
+        border-bottom: 2px solid var(--border-color);
+        position: sticky; top: 0; background: var(--bg-card); z-index: 2;
+    }
+    .ref-table td {
+        padding: 2px 4px; border-bottom: 1px solid var(--border-color);
+        vertical-align: middle;
+    }
+    .ref-table tr:hover td { background: var(--bg-card-hover); }
+
+    /* Editable cells */
+    .ref-table .cell-edit {
+        width: 100%; background: transparent; color: var(--text-primary);
+        border: 1px solid transparent; border-radius: 4px;
+        padding: 6px 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .ref-table .cell-edit:hover { border-color: var(--border-color); }
+    .ref-table .cell-edit:focus {
+        outline: none; border-color: var(--accent-blue);
+        background: var(--bg-primary);
+        box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+    }
+    .ref-table select.cell-edit {
+        cursor: pointer; appearance: auto;
+    }
+    .ref-table .cell-edit.saving {
+        opacity: 0.5;
+    }
+    .ref-table .cell-edit.saved {
+        border-color: var(--accent-green);
+        animation: flash-save 1s ease;
+    }
+    .ref-table .cell-edit.error {
+        border-color: var(--accent-red);
+    }
+    @keyframes flash-save {
+        0% { background: rgba(16,185,129,0.15); }
+        100% { background: transparent; }
+    }
+
+    /* Codename column */
+    .ref-table .cell-edit.codename {
+        font-weight: 600; color: var(--accent-cyan);
+    }
+
+    /* Inventory column */
+    .inv-count { text-align: center; font-size: 12px; padding: 6px 8px; }
+
+    /* Delete button */
+    .del-btn {
+        background: none; border: none; color: var(--text-muted); cursor: pointer;
+        padding: 4px 8px; font-size: 16px; border-radius: 4px; opacity: 0.4;
+        transition: opacity 0.15s, color 0.15s;
+    }
+    .del-btn:hover { opacity: 1; color: var(--accent-red); }
+
+    /* New row */
+    .ref-table .new-row td { border-bottom: none; }
+    .ref-table .new-row .cell-edit {
+        border-color: var(--border-color); border-style: dashed;
+    }
+    .add-row-btn {
+        background: none; border: 1px dashed var(--border-color); color: var(--text-muted);
+        cursor: pointer; padding: 6px 16px; border-radius: 6px; font-size: 13px;
+        transition: all 0.15s; margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .add-row-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+
+    .table-scroll { overflow-x: auto; max-height: calc(100vh - 200px); overflow-y: auto; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <div>
@@ -19,16 +98,12 @@
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import
         </button>
-        <a href="{{ url_for('product_reference_add') }}" class="btn btn-primary btn-sm">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-            Add Product
-        </a>
     </div>
     {% endif %}
 </div>
 
-<!-- Search with autocomplete -->
-<div style="margin-bottom: 20px; position: relative; max-width: 400px;">
+<!-- Search -->
+<div style="margin-bottom: 16px; position: relative; max-width: 400px;">
     <form method="GET" id="searchForm" style="display: flex; gap: 8px;">
         <div style="flex: 1; position: relative;">
             <input type="text" name="q" id="refSearch" value="{{ search }}" placeholder="Search codename, model, chipset..."
@@ -44,10 +119,10 @@
     </form>
 </div>
 
-<!-- Reference Table -->
+<!-- Editable Spreadsheet -->
 <div class="card" style="padding: 0; overflow: hidden; cursor: default;">
-    <div class="table-wrap">
-        <table>
+    <div class="table-scroll">
+        <table class="ref-table" id="refTable">
             <thead>
                 <tr>
                     <th>Codename</th>
@@ -55,56 +130,65 @@
                     <th>Type</th>
                     <th>Wi-Fi Gen</th>
                     <th>Year</th>
-                    <th>Chipset Manufacturer</th>
+                    <th>Chipset Mfr</th>
                     <th>Chipset Codename</th>
                     <th>FW Codebase</th>
-                    <th style="text-align: center;">Inventory</th>
+                    <th style="text-align: center;">Inv</th>
                     {% if current_user and current_user.role == 'admin' %}
-                    <th style="width: 100px;">Actions</th>
+                    <th style="width: 40px;"></th>
                     {% endif %}
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="refBody">
                 {% for ref in refs %}
-                <tr style="cursor: pointer;" onclick="window.location='{{ url_for('device_list', codename=ref.codename) }}';" title="View inventory for {{ ref.codename }}">
-                    <td style="font-weight: 600;">
-                        <span style="color: var(--accent-cyan);">{{ ref.codename }}</span>
+                <tr data-id="{{ ref.ref_id }}">
+                    {% if current_user and current_user.role == 'admin' %}
+                    <td><input class="cell-edit codename" data-field="codename" value="{{ ref.codename }}"></td>
+                    <td><input class="cell-edit" data-field="model_name" value="{{ ref.model_name or '' }}"></td>
+                    <td>
+                        <select class="cell-edit" data-field="print_technology">
+                            <option value="">--</option>
+                            <option value="Ink" {{ 'selected' if ref.print_technology == 'Ink' }}>Ink</option>
+                            <option value="Laser" {{ 'selected' if ref.print_technology == 'Laser' }}>Laser</option>
+                        </select>
                     </td>
-                    <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.model_name or '—' }}</td>
-                    <td style="font-size: 13px; text-align: center;">
+                    <td><input class="cell-edit" data-field="wifi_gen" value="{{ ref.wifi_gen or '' }}" style="width:60px;"></td>
+                    <td><input class="cell-edit" data-field="year" value="{{ ref.year or '' }}" style="width:60px;"></td>
+                    <td><input class="cell-edit" data-field="chip_manufacturer" value="{{ ref.chip_manufacturer or '' }}"></td>
+                    <td><input class="cell-edit" data-field="chip_codename" value="{{ ref.chip_codename or '' }}"></td>
+                    <td><input class="cell-edit" data-field="fw_codebase" value="{{ ref.fw_codebase or '' }}"></td>
+                    {% else %}
+                    <td><span style="font-weight:600; color:var(--accent-cyan);">{{ ref.codename }}</span></td>
+                    <td style="font-size:13px; color:var(--text-secondary);">{{ ref.model_name or '—' }}</td>
+                    <td style="font-size:13px; text-align:center;">
                         {% if ref.print_technology %}
-                        <span style="background: {% if ref.print_technology == 'Laser' %}rgba(139,92,246,0.12){% else %}rgba(59,130,246,0.12){% endif %}; color: {% if ref.print_technology == 'Laser' %}#a78bfa{% else %}#3b82f6{% endif %}; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">{{ ref.print_technology }}</span>
+                        <span style="background:{% if ref.print_technology == 'Laser' %}rgba(139,92,246,0.12){% else %}rgba(59,130,246,0.12){% endif %}; color:{% if ref.print_technology == 'Laser' %}#a78bfa{% else %}#3b82f6{% endif %}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">{{ ref.print_technology }}</span>
                         {% else %}—{% endif %}
                     </td>
-                    <td class="font-mono" style="font-size: 13px; text-align: center;">
-                        {% if ref.wifi_gen %}
-                        <span style="background: rgba(59,130,246,0.12); color: var(--accent-blue); padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">{{ ref.wifi_gen }}</span>
-                        {% else %}—{% endif %}
-                    </td>
-                    <td class="font-mono" style="font-size: 13px; color: var(--text-muted);">{{ ref.year or '—' }}</td>
-                    <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
-                    <td class="font-mono" style="font-size: 13px;">{{ ref.chip_codename or '—' }}</td>
-                    <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
-                    <td style="text-align: center; font-size: 12px;">
+                    <td class="font-mono" style="font-size:13px; text-align:center;">{{ ref.wifi_gen or '—' }}</td>
+                    <td class="font-mono" style="font-size:13px; color:var(--text-muted);">{{ ref.year or '—' }}</td>
+                    <td style="font-size:13px; color:var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
+                    <td class="font-mono" style="font-size:13px;">{{ ref.chip_codename or '—' }}</td>
+                    <td style="font-size:13px; color:var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
+                    {% endif %}
+                    <td class="inv-count">
                         {% set counts = inv_counts.get(ref.codename, {}) %}
                         {% set total = counts.get('total', 0) %}
                         {% if total > 0 %}
-                        <span style="font-weight: 600; color: var(--text-primary);">{{ total }}</span>
-                        <span style="color: var(--text-muted); margin-left: 2px;">(</span><span style="color: var(--accent-green);">{{ counts.get('available', 0) }}</span>
-                        <span style="color: var(--text-muted);">/</span><span style="color: var(--accent-amber);">{{ counts.get('checked_out', 0) }}</span><span style="color: var(--text-muted);">)</span>
+                        <a href="{{ url_for('device_list', codename=ref.codename) }}" style="text-decoration:none;">
+                            <span style="font-weight:600; color:var(--text-primary);">{{ total }}</span>
+                            <span style="color:var(--text-muted);">(</span><span style="color:var(--accent-green);">{{ counts.get('available', 0) }}</span><span style="color:var(--text-muted);">/</span><span style="color:var(--accent-amber);">{{ counts.get('checked_out', 0) }}</span><span style="color:var(--text-muted);">)</span>
+                        </a>
                         {% else %}
-                        <span style="color: var(--text-muted);">0</span>
+                        <span style="color:var(--text-muted);">0</span>
                         {% endif %}
                     </td>
                     {% if current_user and current_user.role == 'admin' %}
-                    <td>
-                        <div style="display: flex; gap: 4px;" onclick="event.stopPropagation();">
-                            <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="btn btn-secondary btn-sm" style="padding: 4px 10px; font-size: 11px;">Edit</a>
-                            <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
-                                  onsubmit="return confirm('Delete {{ ref.codename }}?\n\nThis cannot be undone.')">
-                                <button type="submit" class="btn btn-danger btn-sm" style="padding: 4px 10px; font-size: 11px;">Del</button>
-                            </form>
-                        </div>
+                    <td style="text-align:center;">
+                        <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
+                              onsubmit="return confirm('Delete {{ ref.codename }}?')" style="margin:0;">
+                            <button type="submit" class="del-btn" title="Delete">&times;</button>
+                        </form>
                     </td>
                     {% endif %}
                 </tr>
@@ -116,13 +200,15 @@
     <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 40px;">
         No products yet.
         {% if current_user and current_user.role == 'admin' %}
-        Add a product to populate the catalog.
+        Click + Add Row below to get started.
         {% endif %}
     </p>
     {% endif %}
 </div>
 
 {% if current_user and current_user.role == 'admin' %}
+<button class="add-row-btn" onclick="addNewRow()">+ Add Row</button>
+
 <!-- Import Modal -->
 <div id="importModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
     <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:24px; width:100%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
@@ -157,8 +243,122 @@
         </form>
     </div>
 </div>
+
+<script>
+// --- Inline Edit (auto-save on blur/change) ---
+document.getElementById('refTable').addEventListener('focusout', function(e) {
+    var el = e.target;
+    if (!el.classList.contains('cell-edit')) return;
+    saveCell(el);
+});
+document.getElementById('refTable').addEventListener('change', function(e) {
+    var el = e.target;
+    if (el.tagName === 'SELECT' && el.classList.contains('cell-edit')) {
+        saveCell(el);
+    }
+});
+// Save on Enter key, move to next row same column
+document.getElementById('refTable').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.target.classList.contains('cell-edit')) {
+        e.preventDefault();
+        e.target.blur();
+    }
+    // Tab is handled natively by browser
+});
+
+function saveCell(el) {
+    var row = el.closest('tr');
+    var refId = row.dataset.id;
+    var field = el.dataset.field;
+    var value = el.value;
+
+    // New row — needs to be created via POST
+    if (refId === 'new') {
+        // Only submit if codename is filled
+        var codename = row.querySelector('[data-field="codename"]').value.trim();
+        if (!codename) return;
+        submitNewRow(row);
+        return;
+    }
+
+    el.classList.add('saving');
+    el.classList.remove('saved', 'error');
+
+    var body = {};
+    body[field] = value;
+
+    fetch('/api/reference/' + refId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+    .then(function(r) {
+        el.classList.remove('saving');
+        if (r.ok) {
+            el.classList.add('saved');
+            setTimeout(function() { el.classList.remove('saved'); }, 1500);
+        } else {
+            el.classList.add('error');
+            r.json().then(function(d) {
+                if (d.error) alert(d.error);
+            });
+        }
+    })
+    .catch(function() {
+        el.classList.remove('saving');
+        el.classList.add('error');
+    });
+}
+
+// --- Add New Row ---
+function addNewRow() {
+    var tbody = document.getElementById('refBody');
+    var tr = document.createElement('tr');
+    tr.dataset.id = 'new';
+    tr.className = 'new-row';
+    tr.innerHTML =
+        '<td><input class="cell-edit codename" data-field="codename" placeholder="Codename..." value=""></td>' +
+        '<td><input class="cell-edit" data-field="model_name" placeholder="Model name..." value=""></td>' +
+        '<td><select class="cell-edit" data-field="print_technology"><option value="">--</option><option value="Ink">Ink</option><option value="Laser">Laser</option></select></td>' +
+        '<td><input class="cell-edit" data-field="wifi_gen" value="" style="width:60px;" placeholder="6E"></td>' +
+        '<td><input class="cell-edit" data-field="year" value="" style="width:60px;" placeholder="2025"></td>' +
+        '<td><input class="cell-edit" data-field="chip_manufacturer" value="" placeholder="Manufacturer..."></td>' +
+        '<td><input class="cell-edit" data-field="chip_codename" value="" placeholder="Chipset..."></td>' +
+        '<td><input class="cell-edit" data-field="fw_codebase" value="" placeholder="FW..."></td>' +
+        '<td class="inv-count"><span style="color:var(--text-muted);">0</span></td>' +
+        '<td style="text-align:center;"><button class="del-btn" title="Remove" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+    tbody.appendChild(tr);
+    tr.querySelector('[data-field="codename"]').focus();
+}
+
+function submitNewRow(row) {
+    var data = {};
+    row.querySelectorAll('.cell-edit').forEach(function(el) {
+        data[el.dataset.field] = el.value.trim();
+    });
+    if (!data.codename) return;
+
+    var inputs = row.querySelectorAll('.cell-edit');
+    inputs.forEach(function(el) { el.classList.add('saving'); });
+
+    fetch('{{ url_for("product_reference_add") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(data).toString(),
+        redirect: 'manual',
+    })
+    .then(function() {
+        // Reload to get the new ref_id and proper row
+        window.location.reload();
+    })
+    .catch(function() {
+        inputs.forEach(function(el) { el.classList.remove('saving'); el.classList.add('error'); });
+    });
+}
+</script>
 {% endif %}
 
+<!-- Search Autocomplete (viewers and admins) -->
 <script>
 (function() {
     var input = document.getElementById('refSearch');
