@@ -4,13 +4,45 @@ on:
   push:
     tags:
       - 'v*'          # Build on version tags (e.g. v1.0.0)
-  workflow_dispatch:    # Allow manual trigger from GitHub UI
+  schedule:
+    - cron: '0 5 * * *'   # Run daily at midnight EST (5:00 UTC)
+  workflow_dispatch:       # Allow manual trigger from GitHub UI
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ims-app
+          fetch-depth: 0
+      - name: Check for commits in the last 24 hours
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "Non-scheduled trigger — building"
+          else
+            RECENT=$(git log --since="24 hours ago" --oneline | head -1)
+            if [ -n "$RECENT" ]; then
+              echo "should_build=true" >> $GITHUB_OUTPUT
+              echo "Found recent commits — building"
+            else
+              echo "should_build=false" >> $GITHUB_OUTPUT
+              echo "No commits in last 24h — skipping build"
+            fi
+          fi
+
   build-windows:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ims-app
 
       - name: Set up Python 3.8 (Windows 7 compatible)
         uses: actions/setup-python@v5
@@ -33,9 +65,13 @@ jobs:
           path: dist/InventorySystem/
 
   build-macos:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ims-app
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -62,12 +98,16 @@ jobs:
           path: dist/InventorySystem/
 
   release:
-    needs: [build-windows, build-macos]
+    needs: [check-changes, build-windows, build-macos]
+    if: needs.check-changes.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ims-app
+
       - name: Download Windows build
         uses: actions/download-artifact@v4
         with:
@@ -85,10 +125,48 @@ jobs:
           cd InventorySystem-Windows && zip -r ../InventorySystem-Windows.zip . && cd ..
           cd InventorySystem-macOS && zip -r ../InventorySystem-macOS.zip . && cd ..
 
+      - name: Get version info
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Delete existing latest release
+        if: steps.version.outputs.is_tag == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            InventorySystem-Windows.zip
-            InventorySystem-macOS.zip
-          generate_release_notes: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.version.outputs.is_tag }}" == "true" ]; then
+            gh release create "${{ steps.version.outputs.tag }}" \
+              InventorySystem-Windows.zip InventorySystem-macOS.zip \
+              --title "${{ steps.version.outputs.tag }}" \
+              --generate-notes
+          else
+            gh release create latest \
+              InventorySystem-Windows.zip InventorySystem-macOS.zip \
+              --title "Latest Build (${{ steps.version.outputs.date }})" \
+              --notes "Automated build from \`ims-app\` branch.
+
+          **Commit:** \`${{ steps.version.outputs.short_sha }}\` — ${{ steps.version.outputs.commit_msg }}
+          **Built:** ${{ steps.version.outputs.date }}
+
+          Download the zip for your platform, unzip, and run. See [README](../../blob/ims-app/README.md) for details." \
+              --prerelease
+          fi
