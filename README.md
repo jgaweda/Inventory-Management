@@ -48,20 +48,37 @@ Open **http://localhost:8080** in your browser. The database is created automati
 
 ## Features
 
+### Inventory Management
 - **Device tracking** -- Add, edit, search, and retire hardware devices
-- **Full-text search** -- Search across all device fields (name, category, serial number, location, etc.)
-- **Barcode labels** -- Auto-generated QR codes and Code 128 barcodes for each device
-- **Label printing** -- Print individual labels sized for DYMO LabelWriter 450 (3.5" x 1.5")
-- **Barcode scanning** -- USB barcode scanner support with auto-detection + fullscreen camera QR scanning
+- **Full-text search** -- Search across all device fields (name, category, serial, location, etc.)
 - **Check-out/in** -- Track who has which device with full audit trail
-- **CSV import/export** -- Bulk import from CSV; export with current search filters applied
+- **Duplicate detection** -- Serial number uniqueness enforced across active devices
+- **Ownership tracking** -- Mark devices as HP Owned or Vendor Supplied
+- **CSV import/export** -- Bulk import from CSV/XLSX; export with current search filters applied
+
+### Labels & Scanning
+- **Barcode labels** -- Auto-generated QR codes and Code 128 barcodes with CNX- prefix (base-36 sequential)
+- **Professional labels** -- 3.5" x 1.5" labels at 300 DPI with barcode-dominant layout, device name, and ID
+- **Label printing** -- PDF and PNG output sized for DYMO LabelWriter 450
+- **Barcode scanning** -- USB barcode scanner support with auto-detection + fullscreen camera QR/barcode scanning
+
+### Product Reference & Wiki
+- **Product catalog** -- Inline-editable spreadsheet of printer/device specs (codename, model, chipset, Wi-Fi gen, etc.)
+- **Product wiki** -- Community notepad per product for testing nuances, known issues, and configuration tips
+- **Wiki attachments** -- Admin file upload (images, PDFs, docs, spreadsheets, logs); all users can download
+- **Image preview** -- Uploaded images display as inline thumbnails on the wiki page
+- **Import/Export** -- Bulk import product references from CSV or XLSX; export to CSV
+
+### System
+- **Dashboard** -- At-a-glance stats, category breakdowns, recent activity
 - **Database backups** -- Configurable auto-backup with skip-if-unchanged, smart retention policy
 - **Git backup push** -- Zip and push backups to a dedicated git branch with Personal Access Token auth
 - **Restore** -- Restore from local backups or directly from git with one click
-- **Dashboard** -- At-a-glance stats, category breakdowns, recent activity
-- **Application log** -- Filterable log viewer with category chips
+- **Application log** -- Paginated, filterable log viewer
 - **User management** -- Role-based access (admin/viewer); public read-only routes for the network
 - **Dark / light theme** -- Toggle in the sidebar; preference saved per browser
+- **Health endpoint** -- `GET /health` returns JSON with database integrity status
+- **Rate limiting** -- Login brute-force protection (10 attempts per 5 minutes per IP)
 
 ## Tech Stack
 
@@ -69,7 +86,7 @@ Open **http://localhost:8080** in your browser. The database is created automati
 - **WSGI Server**: Waitress (production, cross-platform)
 - **Database**: SQLite3 (WAL mode, single file)
 - **Labels**: qrcode + python-barcode + Pillow
-- **Frontend**: HTML + Vanilla JS + Tailwind CSS (CDN)
+- **Frontend**: HTML + Vanilla JS + CSS custom properties (dark/light theme)
 
 ## Running from Source (Development)
 
@@ -84,6 +101,14 @@ pip install -r requirements.txt
 ```
 
 Runs on `127.0.0.1:8080` with Flask debug mode and auto-reload.
+
+## Running Tests
+
+```bash
+python3 -m unittest tests -v
+```
+
+64 tests covering barcode generation, device CRUD, label rendering, wiki attachments, authentication, backup/restore, CSV import, and API endpoints.
 
 ## Building Executables
 
@@ -106,14 +131,7 @@ Zip the `dist/InventorySystem/` folder to distribute.
 
 ### Automated builds (GitHub Actions)
 
-The repository automatically builds macOS and Windows executables when a version tag is pushed:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-This creates a **GitHub Release** with downloadable zip files for both platforms. Builds can also be triggered manually from the Actions tab.
+Nightly builds run automatically and create versioned GitHub Releases with downloadable zip files for both platforms. The version number auto-increments on each build. Builds can also be triggered manually from the Actions tab.
 
 ## Cross-Platform Support
 

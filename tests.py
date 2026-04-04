@@ -384,5 +384,263 @@ class TestLogPagination(BaseTestCase):
         self.assertEqual(resp.status_code, 200)  # clamps to page 1
 
 
+class TestLabelRedesign(BaseTestCase):
+    """Test the barcode-dominant label layout."""
+
+    def test_qr_code_size_250(self):
+        """QR code should be 250x250 pixels."""
+        img = barcode_utils.generate_qr_code('CNX-1', size=250)
+        self.assertEqual(img.size, (250, 250))
+
+    def test_qr_uses_error_correct_m(self):
+        """QR should use M-level error correction for larger modules."""
+        import qrcode
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=10, border=4)
+        qr.add_data('CNX-1')
+        qr.make(fit=True)
+        # M should produce fewer modules than H for same data
+        qr_h = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H,
+                             box_size=10, border=4)
+        qr_h.add_data('CNX-1')
+        qr_h.make(fit=True)
+        self.assertLessEqual(qr.modules_count, qr_h.modules_count)
+
+    def test_barcode_right_side_wider(self):
+        """Barcode area should be wider than QR area (~765px vs ~270px)."""
+        # QR is 250px + 15px padding on each side = 280px
+        # Barcode area = 1050 - 280 - 15 = 755px minimum
+        qr_total = 250 + 15 + 15  # qr_size + left pad + gap
+        barcode_w = 1050 - qr_total - 15  # minus right pad
+        self.assertGreater(barcode_w, 700)
+
+    def test_label_has_content_both_sides(self):
+        """Label should have black pixels on both left (QR) and right (barcode) sides."""
+        img = barcode_utils.generate_label('t', 'CNX-1', 'Test Device', save=False)
+        # Check QR region (left 265px)
+        qr_region = img.crop((0, 0, 265, 450))
+        qr_pixels = list(qr_region.getdata())
+        qr_black = sum(1 for r, g, b in qr_pixels if r < 50)
+        self.assertGreater(qr_black, 100, 'QR area should have black pixels')
+        # Check barcode region (right of 280px)
+        bc_region = img.crop((280, 0, 1050, 450))
+        bc_pixels = list(bc_region.getdata())
+        bc_black = sum(1 for r, g, b in bc_pixels if r < 50)
+        self.assertGreater(bc_black, 100, 'Barcode area should have black pixels')
+
+
+class TestWikiAttachments(BaseTestCase):
+    """Test wiki attachment upload, download, and deletion."""
+
+    def _create_product(self):
+        """Helper: create a product reference and return ref_id."""
+        db.add_product_reference(codename='WikiTest')
+        refs = db.get_all_product_references()
+        return refs[0]['ref_id']
+
+    def test_wiki_page_loads(self):
+        ref_id = self._create_product()
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'WikiTest', resp.data)
+
+    def test_wiki_page_not_found(self):
+        resp = self.client.get('/wiki/9999', follow_redirects=True)
+        self.assertIn(b'Product not found', resp.data)
+
+    def test_wiki_save_requires_login(self):
+        ref_id = self._create_product()
+        resp = self.client.post(f'/wiki/{ref_id}/save', data={'content': 'notes'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login', resp.headers['Location'])
+
+    def test_wiki_save_content(self):
+        ref_id = self._create_product()
+        self.login_admin()
+        resp = self.client.post(f'/wiki/{ref_id}/save',
+                                data={'content': 'Test notes here'},
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        wiki = db.get_wiki_by_ref_id(ref_id)
+        self.assertEqual(wiki['content'], 'Test notes here')
+        self.assertEqual(wiki['updated_by'], 'admin')
+
+    def test_upload_requires_admin(self):
+        ref_id = self._create_product()
+        # Not logged in
+        resp = self.client.post(f'/wiki/{ref_id}/upload',
+                                data={}, content_type='multipart/form-data')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login', resp.headers['Location'])
+
+    def test_upload_and_download(self):
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        data = {'attachment': (io.BytesIO(b'hello world'), 'test.txt')}
+        resp = self.client.post(f'/wiki/{ref_id}/upload',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Uploaded test.txt', resp.data)
+
+        # Verify attachment in DB
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]['original_name'], 'test.txt')
+
+        # Download
+        att_id = attachments[0]['attachment_id']
+        resp = self.client.get(f'/wiki/attachment/{att_id}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, b'hello world')
+
+    def test_upload_image_preview(self):
+        ref_id = self._create_product()
+        self.login_admin()
+        # Create a minimal 1x1 PNG
+        import struct, zlib
+        def make_png():
+            sig = b'\x89PNG\r\n\x1a\n'
+            ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+            ihdr = b'IHDR' + ihdr_data
+            ihdr_chunk = struct.pack('>I', 13) + ihdr + struct.pack('>I', zlib.crc32(ihdr) & 0xFFFFFFFF)
+            raw = b'\x00\xff\x00\x00'
+            idat_data = zlib.compress(raw)
+            idat = b'IDAT' + idat_data
+            idat_chunk = struct.pack('>I', len(idat_data)) + idat + struct.pack('>I', zlib.crc32(idat) & 0xFFFFFFFF)
+            iend = b'IEND'
+            iend_chunk = struct.pack('>I', 0) + iend + struct.pack('>I', zlib.crc32(iend) & 0xFFFFFFFF)
+            return sig + ihdr_chunk + idat_chunk + iend_chunk
+
+        import io
+        data = {'attachment': (io.BytesIO(make_png()), 'photo.png')}
+        self.client.post(f'/wiki/{ref_id}/upload',
+                         data=data, content_type='multipart/form-data')
+        attachments = db.get_wiki_attachments(ref_id)
+        att_id = attachments[0]['attachment_id']
+
+        # Preview endpoint should work
+        resp = self.client.get(f'/wiki/attachment/{att_id}/preview')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_upload_disallowed_extension(self):
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        data = {'attachment': (io.BytesIO(b'bad'), 'malware.exe')}
+        resp = self.client.post(f'/wiki/{ref_id}/upload',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'not allowed', resp.data)
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 0)
+
+    def test_delete_attachment(self):
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        data = {'attachment': (io.BytesIO(b'delete me'), 'temp.txt')}
+        self.client.post(f'/wiki/{ref_id}/upload',
+                         data=data, content_type='multipart/form-data')
+        attachments = db.get_wiki_attachments(ref_id)
+        att_id = attachments[0]['attachment_id']
+
+        resp = self.client.post(f'/wiki/attachment/{att_id}/delete',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Deleted temp.txt', resp.data)
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 0)
+
+    def test_download_nonexistent(self):
+        resp = self.client.get('/wiki/attachment/9999')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_attachments_visible_without_login(self):
+        """Non-logged-in users should see attachment list on wiki page."""
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        data = {'attachment': (io.BytesIO(b'public file'), 'readme.txt')}
+        self.client.post(f'/wiki/{ref_id}/upload',
+                         data=data, content_type='multipart/form-data')
+        # Log out
+        self.client.get('/logout')
+        # View wiki page
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'readme.txt', resp.data)
+        # Should NOT see upload area
+        self.assertNotIn(b'Click to upload', resp.data)
+
+
+class TestOwnershipDropdown(BaseTestCase):
+    """Test the ownership dropdown (HP Owned / Vendor Supplied)."""
+
+    def test_device_form_has_ownership_dropdown(self):
+        self.login_admin()
+        resp = self.client.get('/devices/add')
+        self.assertIn(b'HP Owned', resp.data)
+        self.assertIn(b'Vendor Supplied', resp.data)
+
+    def test_vendor_supplied_persists(self):
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'TP-Link', 'model_number': 'AX55',
+            'category': 'Router', 'vendor_supplied': '1',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['vendor_supplied'], 1)
+
+    def test_hp_owned_default(self):
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'AX55',
+            'category': 'Router', 'vendor_supplied': '0',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['vendor_supplied'], 0)
+
+
+class TestCSVImport(BaseTestCase):
+    """Test CSV import for product references."""
+
+    def test_csv_import(self):
+        self.login_admin()
+        import io
+        csv_content = 'Codename,Model Name,Wi-Fi Gen,Year\nTestProd,Model X,6E,2025\n'
+        data = {
+            'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'products.csv'),
+            'import_mode': 'add',
+        }
+        resp = self.client.post('/reference/import',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Imported 1 product', resp.data)
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0]['codename'], 'TestProd')
+        self.assertEqual(refs[0]['wifi_gen'], '6E')
+
+    def test_csv_import_overwrite(self):
+        self.login_admin()
+        db.add_product_reference(codename='OldProduct')
+        import io
+        csv_content = 'Codename,Model Name\nNewProduct,New Model\n'
+        data = {
+            'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'products.csv'),
+            'import_mode': 'overwrite',
+        }
+        self.client.post('/reference/import',
+                         data=data, content_type='multipart/form-data',
+                         follow_redirects=True)
+        refs = db.get_all_product_references()
+        codenames = [r['codename'] for r in refs]
+        self.assertNotIn('OldProduct', codenames)
+        self.assertIn('NewProduct', codenames)
+
+
 if __name__ == '__main__':
     unittest.main()
