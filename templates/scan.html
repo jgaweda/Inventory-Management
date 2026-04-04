@@ -7,6 +7,72 @@
     @media (max-width: 768px) {
         .scan-grid { grid-template-columns: 1fr !important; }
     }
+    /* Fullscreen camera overlay */
+    #cameraOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: #000;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    #cameraOverlay.active {
+        display: flex;
+    }
+    #cameraOverlay #qr-reader {
+        width: 100%;
+        max-width: 600px;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    #cameraOverlay #qr-reader video {
+        width: 100% !important;
+        height: auto !important;
+        object-fit: cover;
+    }
+    #cameraOverlay .camera-top-bar {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        z-index: 10;
+    }
+    #cameraOverlay .camera-top-bar span {
+        color: rgba(255,255,255,0.8);
+        font-size: 14px;
+        font-weight: 600;
+    }
+    #cameraOverlay .camera-close-btn {
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.25);
+        color: white;
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        font-size: 20px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    #cameraOverlay .camera-close-btn:hover {
+        background: rgba(255,255,255,0.25);
+    }
+    #cameraOverlay .camera-bottom {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        padding: 24px;
+        background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        z-index: 10;
+    }
 </style>
 {% endblock %}
 
@@ -43,12 +109,22 @@
                 Enable Camera
             </button>
             <div id="cameraError" style="margin-top: 12px; display: none; padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: var(--accent-red); font-size: 13px;"></div>
-            <div id="qr-reader" style="margin-top: 12px; border-radius: 8px; overflow: hidden; width: 100%;"></div>
-            <div id="cameraResult" style="margin-top: 12px; display: none;"></div>
-            <button id="scanAnother" class="btn btn-secondary" style="width: 100%; justify-content: center; margin-top: 12px; display: none;" onclick="resumeCamera()">
-                Scan Another
-            </button>
         </div>
+    </div>
+</div>
+
+<!-- Fullscreen camera overlay -->
+<div id="cameraOverlay">
+    <div class="camera-top-bar">
+        <span>Scanning...</span>
+        <button class="camera-close-btn" onclick="stopCameraScanner()" title="Close">&times;</button>
+    </div>
+    <div id="qr-reader"></div>
+    <div class="camera-bottom">
+        <div id="cameraResult" style="display: none; width: 100%; max-width: 600px;"></div>
+        <button id="scanAnother" class="btn btn-primary" style="display: none; justify-content: center; min-width: 200px;" onclick="resumeCamera()">
+            Scan Another
+        </button>
     </div>
 </div>
 
@@ -156,8 +232,13 @@
     function startCameraScanner() {
         var startBtn = document.getElementById('startCamera');
         var errorEl = document.getElementById('cameraError');
+        var overlay = document.getElementById('cameraOverlay');
         startBtn.style.display = 'none';
         errorEl.style.display = 'none';
+
+        // Show fullscreen overlay
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
 
         // Specify supported formats: QR codes and common barcodes
         var formatsToSupport = [
@@ -185,6 +266,8 @@
             onCameraScan,
             function() {} // Called on every frame without a detection — ignore
         ).catch(function(err) {
+            overlay.classList.remove('active');
+            document.body.style.overflow = '';
             startBtn.style.display = 'flex';
             errorEl.style.display = 'block';
             var msg = String(err);
@@ -200,6 +283,20 @@
                 errorEl.textContent = 'Could not start camera: ' + msg;
             }
         });
+    }
+
+    function stopCameraScanner() {
+        var overlay = document.getElementById('cameraOverlay');
+        if (html5QrCode) {
+            html5QrCode.stop().then(function() {
+                html5QrCode.clear();
+            }).catch(function() {});
+        }
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+        document.getElementById('startCamera').style.display = 'flex';
+        document.getElementById('cameraResult').style.display = 'none';
+        document.getElementById('scanAnother').style.display = 'none';
     }
 
     function onCameraScan(decodedText, decodedResult) {
