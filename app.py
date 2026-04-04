@@ -243,16 +243,12 @@ def dashboard():
 def device_list():
     q = request.args.get('q', '')
     codename = request.args.get('codename', '')
-    devices = db.search_devices(
-        query=q,
-        category=request.args.get('category', ''),
-        status=request.args.get('status', ''),
-        connectivity=request.args.get('connectivity', ''),
-        location=request.args.get('location', ''),
-        codename=codename,
-    )
-    if q:
-        app_logger.info('Device search: query="%s" results=%d ip=%s', q, len(devices), request.remote_addr)
+    # When linked from product reference with a codename filter, use server-side filter
+    # Otherwise load all devices for instant client-side filtering
+    if codename:
+        devices = db.search_devices(codename=codename)
+    else:
+        devices = db.search_devices()
     return render_template('devices.html', devices=devices,
                            q=q,
                            selected_category=request.args.get('category', ''),

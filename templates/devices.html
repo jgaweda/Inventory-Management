@@ -28,19 +28,18 @@
 </div>
 
 <!-- Search and Filters -->
-<form method="GET" action="{{ url_for('device_list') }}" class="card" style="margin-bottom: 24px; cursor: default;">
+<div class="card" style="margin-bottom: 24px; cursor: default;">
     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
         <div style="flex: 1; position: relative;">
             <svg style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.4;" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-            <input type="text" name="q" value="{{ q }}" placeholder="Search devices..." style="padding-left: 36px;">
+            <input type="text" id="searchInput" placeholder="Search devices..." style="padding-left: 36px;" value="{{ q }}">
         </div>
-        <button type="submit" class="btn btn-primary btn-sm">Search</button>
         <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('filters').style.display = document.getElementById('filters').style.display === 'none' ? 'grid' : 'none'">Filters</button>
     </div>
     <div id="filters" class="filter-grid" style="display: {% if selected_category or selected_status or selected_connectivity or selected_location %}grid{% else %}none{% endif %}; grid-template-columns: repeat(4, 1fr); gap: 12px;">
         <div>
             <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Category</label>
-            <select name="category">
+            <select id="filterCategory">
                 <option value="">All Categories</option>
                 {% for cat in categories %}
                 <option value="{{ cat.name }}" {% if selected_category == cat.name %}selected{% endif %}>{{ cat.name }}</option>
@@ -49,7 +48,7 @@
         </div>
         <div>
             <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Status</label>
-            <select name="status">
+            <select id="filterStatus">
                 <option value="">All Statuses</option>
                 <option value="available" {% if selected_status == 'available' %}selected{% endif %}>Available</option>
                 <option value="checked_out" {% if selected_status == 'checked_out' %}selected{% endif %}>Checked Out</option>
@@ -59,14 +58,14 @@
         </div>
         <div>
             <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Connectivity Type/Version</label>
-            <input type="text" name="connectivity" value="{{ selected_connectivity }}" placeholder="e.g. Wi-Fi 6E">
+            <input type="text" id="filterConnectivity" value="{{ selected_connectivity }}" placeholder="e.g. Wi-Fi 6E">
         </div>
         <div>
             <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 4px;">Location</label>
-            <input type="text" name="location" value="{{ selected_location }}" placeholder="e.g. Lab A">
+            <input type="text" id="filterLocation" value="{{ selected_location }}" placeholder="e.g. Lab A">
         </div>
     </div>
-</form>
+</div>
 
 <!-- Device list -->
     <div class="card" style="padding: 0; cursor: default;">
@@ -86,7 +85,16 @@
             </thead>
             <tbody>
                 {% for device in devices %}
-                <tr style="cursor: pointer;" onclick="if(!event.target.closest('input'))window.location='{{ url_for('device_detail', device_id=device.device_id) }}'">
+                <tr style="cursor: pointer;"
+                    data-name="{{ device.name|lower }}"
+                    data-category="{{ device.category|lower }}"
+                    data-connectivity="{{ device.connectivity|lower }}"
+                    data-status="{{ device.status|lower }}"
+                    data-location="{{ (device.location or '')|lower }}"
+                    data-assigned="{{ (device.assigned_to or '')|lower }}"
+                    data-barcode="{{ (device.barcode_value or '')|lower }}"
+                    data-source="{{ 'vendor supplied' if device.vendor_supplied else 'hp owned' }}"
+                    onclick="if(!event.target.closest('input'))window.location='{{ url_for('device_detail', device_id=device.device_id) }}'">
                     <td style="font-weight: 600;">{{ device.name }}</td>
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.category }}</td>
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.connectivity }}</td>
@@ -115,4 +123,56 @@
         </div>
         {% endif %}
     </div>
+
+<script>
+(function() {
+    var searchInput = document.getElementById('searchInput');
+    var filterCategory = document.getElementById('filterCategory');
+    var filterStatus = document.getElementById('filterStatus');
+    var filterConnectivity = document.getElementById('filterConnectivity');
+    var filterLocation = document.getElementById('filterLocation');
+    var tbody = document.querySelector('table tbody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+    function applyFilters() {
+        var q = searchInput.value.toLowerCase().trim();
+        var cat = filterCategory.value.toLowerCase();
+        var status = filterStatus.value.toLowerCase();
+        var conn = filterConnectivity.value.toLowerCase().trim();
+        var loc = filterLocation.value.toLowerCase().trim();
+
+        rows.forEach(function(row) {
+            var show = true;
+
+            if (q) {
+                var haystack = (row.getAttribute('data-name') || '') + ' ' +
+                    (row.getAttribute('data-category') || '') + ' ' +
+                    (row.getAttribute('data-connectivity') || '') + ' ' +
+                    (row.getAttribute('data-status') || '') + ' ' +
+                    (row.getAttribute('data-location') || '') + ' ' +
+                    (row.getAttribute('data-assigned') || '') + ' ' +
+                    (row.getAttribute('data-barcode') || '') + ' ' +
+                    (row.getAttribute('data-source') || '');
+                if (haystack.indexOf(q) === -1) show = false;
+            }
+
+            if (cat && row.getAttribute('data-category') !== cat) show = false;
+            if (status && row.getAttribute('data-status') !== status) show = false;
+            if (conn && (row.getAttribute('data-connectivity') || '').indexOf(conn) === -1) show = false;
+            if (loc && (row.getAttribute('data-location') || '').indexOf(loc) === -1) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    searchInput.addEventListener('input', applyFilters);
+    filterCategory.addEventListener('change', applyFilters);
+    filterStatus.addEventListener('change', applyFilters);
+    filterConnectivity.addEventListener('input', applyFilters);
+    filterLocation.addEventListener('input', applyFilters);
+
+    applyFilters();
+})();
+</script>
 {% endblock %}
