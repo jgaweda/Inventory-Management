@@ -1573,17 +1573,16 @@ if __name__ == '__main__':
 
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
-    w = 48  # inner width between ║ chars
-    print(f"""
-    ╔{'═' * w}╗
-    ║{'HP Connectivity Team Inventory System':^{w}}║
-    ║{'':^{w}}║
-    ║{f'  Running at: {url}':<{w}}║
-    ║{f'  Mode: {mode}':<{w}}║
-    ║{'':^{w}}║
-    ║{'  Press Ctrl+C to stop':<{w}}║
-    ╚{'═' * w}╝
-    """)
+    print()
+    print('  +------------------------------------------------+')
+    print('  |   HP Connectivity Team Inventory System         |')
+    print('  |                                                 |')
+    print(f'  |   Running at: {url:<33}|')
+    print(f'  |   Mode: {mode:<39}|')
+    print('  |                                                 |')
+    print('  |   Press Ctrl+C to stop                          |')
+    print('  +------------------------------------------------+')
+    print()
 
     if args.dev:
         app.run(host=args.host, port=args.port, debug=True)
