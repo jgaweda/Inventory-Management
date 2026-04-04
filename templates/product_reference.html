@@ -69,9 +69,6 @@
                 <tr style="cursor: pointer;" onclick="window.location='{{ url_for('device_list', codename=ref.codename) }}';" title="View inventory for {{ ref.codename }}">
                     <td style="font-weight: 600;">
                         <span style="color: var(--accent-cyan);">{{ ref.codename }}</span>
-                        {% if ref.variant %}
-                        <span style="font-size: 10px; font-weight: 600; color: var(--text-muted); background: var(--bg-primary); padding: 1px 6px; border-radius: 3px; margin-left: 4px; text-transform: uppercase; letter-spacing: 0.03em;">{{ ref.variant }}</span>
-                        {% endif %}
                     </td>
                     <td style="font-size: 13px; color: var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size: 13px; text-align: center;">

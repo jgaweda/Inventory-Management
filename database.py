@@ -1545,28 +1545,28 @@ def get_product_reference_by_codename(codename):
 
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
-                          print_technology='', variant=''):
+                          print_technology=''):
     """Add a single product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             INSERT INTO product_reference
-                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant))
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology))
 
 
 def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
                              chip_manufacturer='', chip_codename='', fw_codebase='',
-                             print_technology='', variant=''):
+                             print_technology=''):
     """Update an existing product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             UPDATE product_reference
             SET codename = ?, model_name = ?, wifi_gen = ?, year = ?,
                 chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
-                print_technology = ?, variant = ?, updated_at = CURRENT_TIMESTAMP
+                print_technology = ?, updated_at = CURRENT_TIMESTAMP
             WHERE ref_id = ?
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant, ref_id))
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, ref_id))
 
 
 def delete_product_reference(ref_id):

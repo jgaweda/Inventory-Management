@@ -1253,7 +1253,6 @@ def product_reference_add():
             chip_codename=request.form.get('chip_codename', '').strip(),
             fw_codebase=request.form.get('fw_codebase', '').strip(),
             print_technology=request.form.get('print_technology', '').strip(),
-            variant=request.form.get('variant', '').strip(),
         )
         flash(f'Product reference "{codename}" added.', 'success')
         return redirect(url_for('product_reference_list'))
@@ -1289,7 +1288,6 @@ def product_reference_edit(ref_id):
             chip_codename=request.form.get('chip_codename', '').strip(),
             fw_codebase=request.form.get('fw_codebase', '').strip(),
             print_technology=request.form.get('print_technology', '').strip(),
-            variant=request.form.get('variant', '').strip(),
         )
         flash(f'Product reference "{codename}" updated.', 'success')
         return redirect(url_for('product_reference_list'))
@@ -1321,7 +1319,6 @@ HEADER_MAP = {
     'chip codename': 'chip_codename',
     'fw codebase': 'fw_codebase',
     'print technology': 'print_technology',
-    'variant': 'variant',
 }
 
 
@@ -1419,10 +1416,10 @@ def product_reference_export():
     refs = db.get_all_product_references()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Codename', 'Variant', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
+    writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
                      'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase'])
     for r in refs:
-        writer.writerow([r['codename'], r['variant'], r['model_name'], r['print_technology'],
+        writer.writerow([r['codename'], r['model_name'], r['print_technology'],
                          r['wifi_gen'], r['year'], r['chip_manufacturer'],
                          r['chip_codename'], r['fw_codebase']])
     csv_bytes = output.getvalue().encode('utf-8-sig')
@@ -1453,7 +1450,6 @@ def api_reference_search():
         'chip_codename': r['chip_codename'],
         'fw_codebase': r['fw_codebase'],
         'print_technology': r['print_technology'],
-        'variant': r['variant'],
     } for r in refs])
 
 
