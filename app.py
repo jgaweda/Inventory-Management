@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import traceback
+import uuid
 from PIL import Image
 from functools import wraps
 from datetime import datetime, timezone
@@ -1522,6 +1523,15 @@ def product_reference_export():
 # Product Wiki — community notes per product
 # ---------------------------------------------------------------------------
 
+WIKI_UPLOADS_DIR = os.path.join(DATA_DIR, 'wiki_uploads')
+ALLOWED_EXTENSIONS = {
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp',
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt',
+    'zip', 'tar', 'gz', 'pptx', 'log',
+}
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
+
+
 @app.route('/wiki/<int:ref_id>')
 def product_wiki(ref_id):
     """View/edit the wiki page for a product."""
@@ -1538,8 +1548,10 @@ def product_wiki(ref_id):
     content = wiki['content'] if wiki else ''
     updated_by = wiki['updated_by'] if wiki else ''
     updated_at = wiki['updated_at'] if wiki else ''
+    attachments = db.get_wiki_attachments(ref_id)
     return render_template('product_wiki.html', ref=ref, content=content,
-                           updated_by=updated_by, updated_at=updated_at)
+                           updated_by=updated_by, updated_at=updated_at,
+                           attachments=attachments)
 
 
 @app.route('/wiki/<int:ref_id>/save', methods=['POST'])
@@ -1551,6 +1563,95 @@ def product_wiki_save(ref_id):
     db.save_wiki(ref_id, content, updated_by=username)
     flash('Wiki saved.', 'success')
     return redirect(url_for('product_wiki', ref_id=ref_id))
+
+
+@app.route('/wiki/<int:ref_id>/upload', methods=['POST'])
+@login_required
+def wiki_upload(ref_id):
+    """Upload an attachment to a product wiki (admin only)."""
+    if g.user['role'] != 'admin':
+        flash('Admin access required to upload files.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+
+    file = request.files.get('attachment')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+
+    original_name = file.filename
+    ext = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else ''
+    if ext not in ALLOWED_EXTENSIONS:
+        flash(f'File type .{ext} is not allowed.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+
+    # Read file and check size
+    data = file.read()
+    if len(data) > MAX_UPLOAD_SIZE:
+        flash('File exceeds 25 MB limit.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+
+    # Save to disk with unique filename
+    upload_dir = os.path.join(WIKI_UPLOADS_DIR, str(ref_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    safe_name = f'{uuid.uuid4().hex}.{ext}'
+    filepath = os.path.join(upload_dir, safe_name)
+    with open(filepath, 'wb') as f:
+        f.write(data)
+
+    db.add_wiki_attachment(
+        ref_id=ref_id,
+        filename=safe_name,
+        original_name=original_name,
+        content_type=file.content_type or '',
+        size_bytes=len(data),
+        uploaded_by=g.user['username'],
+    )
+    flash(f'Uploaded {original_name}.', 'success')
+    return redirect(url_for('product_wiki', ref_id=ref_id))
+
+
+@app.route('/wiki/attachment/<int:attachment_id>')
+def wiki_download(attachment_id):
+    """Download a wiki attachment (public)."""
+    att = db.get_wiki_attachment(attachment_id)
+    if not att:
+        return 'Attachment not found', 404
+    filepath = os.path.join(WIKI_UPLOADS_DIR, str(att['ref_id']), att['filename'])
+    if not os.path.isfile(filepath):
+        return 'File not found on disk', 404
+    return send_file(filepath, download_name=att['original_name'], as_attachment=True)
+
+
+@app.route('/wiki/attachment/<int:attachment_id>/preview')
+def wiki_attachment_preview(attachment_id):
+    """Serve an attachment inline for image preview (public)."""
+    att = db.get_wiki_attachment(attachment_id)
+    if not att:
+        return 'Attachment not found', 404
+    filepath = os.path.join(WIKI_UPLOADS_DIR, str(att['ref_id']), att['filename'])
+    if not os.path.isfile(filepath):
+        return 'File not found on disk', 404
+    return send_file(filepath, mimetype=att['content_type'])
+
+
+@app.route('/wiki/attachment/<int:attachment_id>/delete', methods=['POST'])
+@login_required
+def wiki_delete_attachment(attachment_id):
+    """Delete a wiki attachment (admin only)."""
+    if g.user['role'] != 'admin':
+        flash('Admin access required.', 'error')
+        return redirect(url_for('product_reference_list'))
+    att = db.get_wiki_attachment(attachment_id)
+    if not att:
+        flash('Attachment not found.', 'error')
+        return redirect(url_for('product_reference_list'))
+    # Delete file from disk
+    filepath = os.path.join(WIKI_UPLOADS_DIR, str(att['ref_id']), att['filename'])
+    if os.path.isfile(filepath):
+        os.remove(filepath)
+    db.delete_wiki_attachment(attachment_id)
+    flash(f'Deleted {att["original_name"]}.', 'success')
+    return redirect(url_for('product_wiki', ref_id=att['ref_id']))
 
 
 @app.route('/api/devices/distinct/<field>')

@@ -171,6 +171,22 @@ def init_db():
         ''')
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_ref ON product_wiki(ref_id)')
 
+        # Wiki attachments table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS wiki_attachments (
+                attachment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ref_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                content_type TEXT DEFAULT '',
+                size_bytes INTEGER DEFAULT 0,
+                uploaded_by TEXT DEFAULT '',
+                uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ref_id) REFERENCES product_reference(ref_id)
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wiki_attach_ref ON wiki_attachments(ref_id)')
+
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
@@ -1718,3 +1734,44 @@ def save_wiki(ref_id, content, updated_by=''):
                 INSERT INTO product_wiki (ref_id, content, updated_by)
                 VALUES (?, ?, ?)
             ''', (ref_id, content, updated_by))
+
+
+def get_wiki_attachments(ref_id):
+    """Return all attachments for a product wiki."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            'SELECT * FROM wiki_attachments WHERE ref_id = ? ORDER BY uploaded_at DESC',
+            (ref_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_wiki_attachment(ref_id, filename, original_name, content_type, size_bytes, uploaded_by):
+    """Record a new wiki attachment."""
+    with db_transaction() as conn:
+        conn.execute('''
+            INSERT INTO wiki_attachments
+                (ref_id, filename, original_name, content_type, size_bytes, uploaded_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (ref_id, filename, original_name, content_type, size_bytes, uploaded_by))
+
+
+def get_wiki_attachment(attachment_id):
+    """Return a single attachment by ID."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_wiki_attachment(attachment_id):
+    """Delete an attachment record."""
+    with db_transaction() as conn:
+        conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))

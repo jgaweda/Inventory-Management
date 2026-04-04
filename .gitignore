@@ -5,6 +5,7 @@ backup_schedule.json
 backup_config.json
 log_config.json
 backups/
+wiki_uploads/
 __pycache__/
 *.pyc
 *.pyo
