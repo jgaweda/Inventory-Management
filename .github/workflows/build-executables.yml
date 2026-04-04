@@ -51,6 +51,10 @@ jobs:
       - name: Build executable
         run: pyinstaller --clean inventory.spec
 
+      - name: Ad-hoc code sign (prevents Gatekeeper quarantine errors)
+        run: |
+          find dist/InventorySystem/ -type f \( -name "*.so" -o -name "*.dylib" -o -perm +111 \) -exec codesign --force --sign - {} \;
+
       - name: Upload macOS build
         uses: actions/upload-artifact@v4
         with:
