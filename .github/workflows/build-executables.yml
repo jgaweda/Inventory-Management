@@ -100,7 +100,7 @@ jobs:
   build-macos:
     needs: [check-changes, bump-version]
     if: needs.check-changes.outputs.should_build == 'true'
-    runs-on: macos-15
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:
