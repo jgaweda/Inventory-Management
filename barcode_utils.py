@@ -57,24 +57,33 @@ def generate_qr_code(data, size=200):
     """
     Generate a QR code image for the given data string.
     Returns a PIL Image resized to size x size pixels.
+
+    Uses ERROR_CORRECT_H (30% recovery) for maximum scannability on
+    printed labels that may get scuffed or dirty. border=4 meets the
+    QR spec minimum quiet zone. NEAREST interpolation preserves crisp
+    module edges essential for reliable scanning.
     """
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=6,
-        border=2,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=4,
     )
     qr.add_data(data)
     qr.make(fit=True)
     img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
-    return img.resize((size, size), Image.LANCZOS)
+    return img.resize((size, size), Image.NEAREST)
 
 
 def generate_barcode_image(data, width=350, height=80):
     """
     Generate a Code 128 barcode image (no human-readable text below).
-    Returns a PIL Image resized to width x height.
-    Uses NEAREST interpolation to keep bars crisp for scanning.
+    Returns a PIL Image cropped and resized to width x height.
+
+    Renders at 2x target width with wide modules, then downscales with
+    NEAREST for clean bar quantization. Wider module_width and taller
+    bars improve scan reliability across handheld and phone scanners.
+    quiet_zone=6.5 meets Code 128 spec (10× module width).
     """
     writer = ImageWriter()
     code = Code128(data, writer=writer)
@@ -82,14 +91,24 @@ def generate_barcode_image(data, width=350, height=80):
     code.render(writer_options={
         'font_size': 0,
         'text_distance': 0,
-        'quiet_zone': 2,
-        'module_width': 0.4,
-        'module_height': 20,
+        'quiet_zone': 6.5,
+        'module_width': 0.5,
+        'module_height': 25,
+        'dpi': 300,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
     img = Image.open(buffer).convert('RGB')
-    # Use NEAREST to keep barcode bars sharp (no anti-aliasing blur)
+
+    # Crop off any excess whitespace above/below bars for tight vertical fit
+    # Find the bounding box of the black content
+    gray = img.convert('L')
+    bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
+    if bbox:
+        # Keep full width (quiet zones are critical), crop vertical only
+        img = img.crop((0, max(0, bbox[1] - 4), img.width, min(img.height, bbox[3] + 4)))
+
+    # Resize to target — NEAREST preserves bar edges
     return img.resize((width, height), Image.NEAREST)
 
 
