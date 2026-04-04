@@ -78,12 +78,11 @@ def generate_qr_code(data, size=200):
 def generate_barcode_image(data, width=350, height=80):
     """
     Generate a Code 128 barcode image (no human-readable text below).
-    Returns a PIL Image cropped and resized to width x height.
+    Returns a PIL Image sized to width x height.
 
-    Renders at 2x target width with wide modules, then downscales with
-    NEAREST for clean bar quantization. Wider module_width and taller
-    bars improve scan reliability across handheld and phone scanners.
-    quiet_zone=6.5 meets Code 128 spec (10× module width).
+    Renders at high DPI with wide modules for short alphanumeric codes,
+    then scales to fit the target width while preserving bar proportions.
+    quiet_zone=6.5mm meets Code 128 spec (10x module width).
     """
     writer = ImageWriter()
     code = Code128(data, writer=writer)
@@ -92,24 +91,37 @@ def generate_barcode_image(data, width=350, height=80):
         'font_size': 0,
         'text_distance': 0,
         'quiet_zone': 6.5,
-        'module_width': 0.5,
-        'module_height': 25,
+        'module_width': 0.65,
+        'module_height': 30,
         'dpi': 300,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
     img = Image.open(buffer).convert('RGB')
 
-    # Crop off any excess whitespace above/below bars for tight vertical fit
-    # Find the bounding box of the black content
+    # Crop vertical whitespace above/below bars
     gray = img.convert('L')
     bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
     if bbox:
-        # Keep full width (quiet zones are critical), crop vertical only
         img = img.crop((0, max(0, bbox[1] - 4), img.width, min(img.height, bbox[3] + 4)))
 
-    # Resize to target — NEAREST preserves bar edges
-    return img.resize((width, height), Image.NEAREST)
+    # Scale to fit target width, preserving aspect ratio, then pad/crop to exact height
+    scale = width / img.width
+    scaled_h = int(img.height * scale)
+    img = img.resize((width, scaled_h), Image.NEAREST)
+
+    # Center vertically in the target height
+    result = Image.new('RGB', (width, height), 'white')
+    y_offset = (height - scaled_h) // 2
+    if y_offset >= 0:
+        result.paste(img, (0, y_offset))
+    else:
+        # Barcode taller than target — crop from center
+        crop_top = (-y_offset)
+        img = img.crop((0, crop_top, width, crop_top + height))
+        result.paste(img, (0, 0))
+
+    return result
 
 
 def generate_label(device_id, barcode_value, device_name, save=True):
