@@ -30,7 +30,7 @@
         color: var(--text-primary); white-space: pre-wrap; word-wrap: break-word;
     }
     .wiki-content:empty::before {
-        content: 'No notes yet. Log in to start documenting this product.';
+        content: 'No notes have been added for this product yet.';
         color: var(--text-muted); font-style: italic;
     }
 
@@ -114,7 +114,9 @@
     {% endif %}
 </div>
 
+{% if current_user %}
 <p class="format-hint">
     All logged-in users can edit this wiki. Changes are saved and visible to the entire team.
 </p>
+{% endif %}
 {% endblock %}
