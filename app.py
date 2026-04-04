@@ -1465,12 +1465,11 @@ def product_reference_import():
             wb.close()
         else:
             import csv, io
-            stream = io.TextIOWrapper(file.stream, encoding='utf-8-sig')
+            raw = file.read()
+            text = raw.decode('utf-8-sig')
             # Auto-detect delimiter
-            sample = stream.read(2048)
-            stream.seek(0)
-            delimiter = '\t' if '\t' in sample else ','
-            reader = csv.reader(stream, delimiter=delimiter)
+            delimiter = '\t' if '\t' in text[:2048] else ','
+            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
             raw_headers = next(reader)
             headers = [HEADER_MAP.get(h.strip().lower()) for h in raw_headers]
 
