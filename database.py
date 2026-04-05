@@ -746,6 +746,63 @@ def delete_user(user_id):
         conn.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
 
 
+def reset_admin_password(new_password='admin'):
+    """Emergency admin password reset. Resets the first admin user's password.
+    If no admin user exists, creates one with username 'admin'.
+    Returns (username, was_created) tuple."""
+    with db_transaction() as conn:
+        admin = conn.execute(
+            "SELECT user_id, username FROM users WHERE role = 'admin' ORDER BY user_id LIMIT 1"
+        ).fetchone()
+        if admin:
+            pw_hash, salt = _hash_password(new_password)
+            conn.execute(
+                'UPDATE users SET password_hash = ?, salt = ? WHERE user_id = ?',
+                (pw_hash, salt, admin['user_id'])
+            )
+            _audit_logger.warning('Admin password reset via CLI for user: %s', admin['username'])
+            return (admin['username'], False)
+        else:
+            pw_hash, salt = _hash_password(new_password)
+            conn.execute(
+                "INSERT INTO users (username, password_hash, salt, role, display_name) "
+                "VALUES (?, ?, ?, 'admin', 'Administrator')",
+                ('admin', pw_hash, salt)
+            )
+            _audit_logger.warning('Emergency admin user created via CLI')
+            return ('admin', True)
+
+
+def export_database_to_sql(output_path):
+    """Export entire database to a SQL dump file for emergency recovery."""
+    conn = get_connection()
+    try:
+        with open(output_path, 'w') as f:
+            for line in conn.iterdump():
+                f.write(line + '\n')
+        return True
+    except Exception as e:
+        _audit_logger.error('Database SQL export failed: %s', e)
+        return False
+    finally:
+        conn.close()
+
+
+def emergency_backup(dest_path=None):
+    """Create an emergency backup copy of the database file.
+    Returns the path of the backup file."""
+    if dest_path is None:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_dir = _get_backup_dir()
+        os.makedirs(backup_dir, exist_ok=True)
+        dest_path = os.path.join(backup_dir, f'emergency_{timestamp}.db')
+
+    checkpoint_wal()
+    shutil.copy2(DB_PATH, dest_path)
+    _audit_logger.info('Emergency backup created: %s', dest_path)
+    return dest_path
+
+
 # ---------------------------------------------------------------------------
 # Database backup
 # ---------------------------------------------------------------------------
