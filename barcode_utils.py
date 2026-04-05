@@ -66,12 +66,12 @@ def generate_qr_code(data, size=250):
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=1,
-        border=4,
+        border=2,
     )
     qr.add_data(data)
     qr.make(fit=True)
     # Calculate modules: matrix size + 2*border
-    modules = qr.modules_count + 2 * 4
+    modules = qr.modules_count + 2 * 2
     # Find largest box_size that divides evenly into target size
     box_size = size // modules
     if box_size < 1:
@@ -99,52 +99,40 @@ def generate_barcode_image(data, width=350, height=80):
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image sized to width x height.
 
-    Iterates module_width to find the widest setting whose rendered
-    barcode fits the target width, so bars are as thick as possible and
-    evenly distributed across the full width. Quiet zones are set to the
-    Code 128 minimum (10x module width). NEAREST resize preserves crisp
-    bar edges.
+    Renders with minimal quiet zone (2mm), crops to tight bounding box,
+    then scales to fill the exact target. This maximizes bar thickness
+    and minimizes whitespace. The label layout provides additional quiet
+    zone via the gap between the QR code and label edge.
     """
-    best_img = None
-    best_w = 0
+    writer = ImageWriter()
+    code = Code128(data, writer=writer)
+    buffer = io.BytesIO()
+    code.render(writer_options={
+        'font_size': 0,
+        'text_distance': 0,
+        'quiet_zone': 2.0,       # minimal — label edges provide the rest
+        'module_width': 0.5,     # render small, then scale up
+        'module_height': 30,
+        'dpi': 300,
+    }).save(buffer, format='PNG')
+    buffer.seek(0)
 
-    # Try increasing module widths to find the best fit
-    for mw_tenth in range(5, 25):  # 0.5mm to 2.4mm in 0.1mm steps
-        mw = mw_tenth / 10.0
-        writer = ImageWriter()
-        code = Code128(data, writer=writer)
-        buffer = io.BytesIO()
-        code.render(writer_options={
-            'font_size': 0,
-            'text_distance': 0,
-            'quiet_zone': mw * 10,  # Code 128 spec: 10x narrow bar
-            'module_width': mw,
-            'module_height': 30,
-            'dpi': 300,
-        }).save(buffer, format='PNG')
-        buffer.seek(0)
+    img = Image.open(buffer).convert('RGB')
 
-        img = Image.open(buffer).convert('RGB')
-        # Crop to just the bars + quiet zone
-        gray = img.convert('L')
-        bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
-        if bbox:
-            # Keep horizontal quiet zones, crop vertical whitespace
-            img = img.crop((0, bbox[1], img.width, bbox[3]))
+    # Crop to tight bounding box around the actual bars, then add back
+    # a small quiet zone (10px each side). This ensures bars fill most
+    # of the target width rather than having oversized quiet zones.
+    gray = img.convert('L')
+    bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
+    if bbox:
+        qz = 10  # minimal quiet zone in pixels
+        x0 = max(0, bbox[0] - qz)
+        x1 = min(img.width, bbox[2] + qz)
+        img = img.crop((x0, bbox[1], x1, bbox[3]))
 
-        if img.width <= width:
-            best_img = img
-            best_w = img.width
-        else:
-            break  # Too wide — use the previous best
-
-    if best_img is None:
-        # Fallback to minimum module width
-        best_img = img
-
-    # Scale: stretch width to fill target exactly, stretch height to fill
-    best_img = best_img.resize((width, height), Image.NEAREST)
-    return best_img
+    # Scale to fill target exactly — NEAREST preserves crisp bar edges
+    img = img.resize((width, height), Image.NEAREST)
+    return img
 
 
 def _fit_font(draw, text, font_names, max_width, max_size, min_size=20):
@@ -177,66 +165,62 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     """
     Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI, landscape).
 
-    Layout (full-bleed, three-band):
-      Left  : QR code scaled to full label height
-      Right : Three stacked bands filling the entire area:
-              TOP    — device name (white background, full width)
-              MIDDLE — Code 128 barcode (fills all remaining height)
-              BOTTOM — barcode ID (white background, full width)
+    Layout (minimal whitespace, three horizontal bands):
+      TOP    — device name (full label width, centered)
+      MIDDLE — QR code (left) + Code 128 barcode (right), same height
+      BOTTOM — barcode ID (full label width, centered)
 
-    Barcode bars run exactly between the text bands — no bars extend
-    above the name or below the ID. The label is visually full with
-    no wasted whitespace.
+    Text bands span the full label width so no horizontal space is wasted.
+    QR and barcode share the middle band at equal height. Whitespace is
+    minimized everywhere.
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    EDGE = 8          # minimal edge margin
-    QR_GAP = 10       # gap between QR and barcode
-    TEXT_PAD_Y = 8    # vertical padding inside text bands
+    EDGE = 6          # minimal edge margin
+    TEXT_PAD_Y = 5    # vertical padding inside text bands
+    QR_GAP = 8        # gap between QR and barcode
 
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Left: QR code, full height ---
-    qr_size = H - 2 * EDGE
-    qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (EDGE, EDGE))
-
-    # --- Right side geometry ---
-    bc_x = EDGE + qr_size + QR_GAP
-    bc_w = W - bc_x - EDGE
-
-    # --- Measure text bands first to calculate barcode height ---
+    # --- Measure text bands (full label width) ---
+    usable_w = W - 2 * EDGE
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, bc_w - 20, 38, min_size=20)
+        draw, device_name, BOLD_FONTS, usable_w - 20, 36, min_size=20)
     font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, bc_w - 20, 44, min_size=24)
+        draw, barcode_value, MONO_BOLD_FONTS, usable_w - 20, 42, min_size=24)
 
     top_band_h = name_th + 2 * TEXT_PAD_Y
     bot_band_h = id_th + 2 * TEXT_PAD_Y
-    bc_h = H - 2 * EDGE - top_band_h - bot_band_h
+    mid_h = H - 2 * EDGE - top_band_h - bot_band_h
 
-    # --- TOP band: device name (white, full width) ---
+    # --- TOP band: device name (full width, centered) ---
     top_y = EDGE
-    name_x = bc_x + (bc_w - name_tw) // 2
+    name_x = EDGE + (usable_w - name_tw) // 2
     name_y = top_y + TEXT_PAD_Y
     bearing = draw.textbbox((name_x, name_y), display_name, font=font_name)[0] - name_x
     draw.text((name_x - bearing, name_y), display_name, fill='black', font=font_name)
 
-    # --- MIDDLE band: barcode (fills between text bands) ---
-    barcode_y = top_y + top_band_h
+    # --- MIDDLE band: QR (left) + barcode (right), same height ---
+    mid_y = top_y + top_band_h
+    qr_size = mid_h  # QR matches barcode height
+    qr_img = generate_qr_code(barcode_value, size=qr_size)
+    label.paste(qr_img, (EDGE, mid_y))
+
+    bc_x = EDGE + qr_size + QR_GAP
+    bc_w = W - bc_x - EDGE
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h)
-        label.paste(barcode_img, (bc_x, barcode_y))
+        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=mid_h)
+        label.paste(barcode_img, (bc_x, mid_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
-        draw.text((bc_x + 20, barcode_y + 20), barcode_value, fill='black', font=font_fb)
+        draw.text((bc_x + 20, mid_y + 20), barcode_value, fill='black', font=font_fb)
 
-    # --- BOTTOM band: barcode ID (white, full width) ---
-    bot_y = barcode_y + bc_h
-    id_x = bc_x + (bc_w - id_tw) // 2
+    # --- BOTTOM band: barcode ID (full width, centered) ---
+    bot_y = mid_y + mid_h
+    id_x = EDGE + (usable_w - id_tw) // 2
     id_y = bot_y + TEXT_PAD_Y
     draw.text((id_x, id_y), display_id, fill='black', font=font_id)
 
