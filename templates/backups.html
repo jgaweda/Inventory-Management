@@ -81,7 +81,8 @@
             </div>
             {% endif %}
             {% if config.backup_enabled %}
-            {% set backup_ok = backup_health.healthy or not backup_health.issues|select('match', '.*[Bb]ackup.*')|list %}
+            {% set backup_issues = [] %}{% for issue in backup_health.issues %}{% if 'ackup' in issue and 'loud' not in issue %}{% if backup_issues.append(issue) %}{% endif %}{% endif %}{% endfor %}
+            {% set backup_ok = backup_health.healthy or not backup_issues %}
             <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
                 {% if not backup_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
                 {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
