@@ -144,17 +144,22 @@ def admin_required(f):
 
 
 def editor_required(f):
-    """Decorator: require editor or admin role. Viewers get an error flash."""
+    """Decorator: require editor or admin role. Viewers and power_users get an error flash."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if not g.user:
             flash('Please log in to continue.', 'warning')
             return redirect(url_for('login', next=request.path))
-        if g.user['role'] == 'viewer':
+        if g.user['role'] not in ('admin', 'editor'):
             flash('You do not have permission to perform this action.', 'error')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated
+
+
+def _can_manage_references():
+    """Check if the current user can manage product references (admin or power_user)."""
+    return g.user and g.user['role'] in ('admin', 'power_user')
 
 
 def current_username():
@@ -1558,8 +1563,8 @@ def product_reference_list():
 @app.route('/reference/add', methods=['GET', 'POST'])
 @login_required
 def product_reference_add():
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
         return redirect(url_for('product_reference_list'))
 
     if request.method == 'POST':
@@ -1587,8 +1592,8 @@ def product_reference_add():
 @app.route('/reference/<int:ref_id>/edit', methods=['GET', 'POST'])
 @login_required
 def product_reference_edit(ref_id):
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
         return redirect(url_for('product_reference_list'))
 
     ref = db.get_product_reference(ref_id)
@@ -1623,8 +1628,8 @@ def product_reference_edit(ref_id):
 @login_required
 def api_reference_update(ref_id):
     """Inline edit API — update a single field on a product reference."""
-    if g.user['role'] != 'admin':
-        return jsonify({'error': 'Admin access required'}), 403
+    if not _can_manage_references():
+        return jsonify({'error': 'Permission denied'}), 403
     ref = db.get_product_reference(ref_id)
     if not ref:
         return jsonify({'error': 'Not found'}), 404
@@ -1649,8 +1654,8 @@ def api_reference_update(ref_id):
 @app.route('/reference/<int:ref_id>/delete', methods=['POST'])
 @login_required
 def product_reference_delete(ref_id):
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
         return redirect(url_for('product_reference_list'))
     db.delete_product_reference(ref_id)
     flash('Product reference deleted.', 'success')
@@ -1677,8 +1682,8 @@ HEADER_MAP = {
 @login_required
 def product_reference_import():
     """Import product references from an uploaded .xlsx or .csv file."""
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
         return redirect(url_for('product_reference_list'))
 
     file = request.files.get('import_file')
@@ -1759,8 +1764,8 @@ def product_reference_import():
 @login_required
 def product_reference_export():
     """Export all product references as a .csv download."""
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
         return redirect(url_for('product_reference_list'))
     import csv, io
     refs = db.get_all_product_references()

@@ -39,8 +39,9 @@
         <div style="margin-bottom: 16px;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Role</label>
             <select name="role">
-                <option value="admin" {% if user and (user.get('role', '') if user is mapping else user.role) == 'admin' %}selected{% endif %}>Admin — Full access</option>
+                <option value="admin" {% if user and (user.get('role', '') if user is mapping else user.role) == 'admin' %}selected{% endif %}>Admin �� Full access</option>
                 <option value="editor" {% if user and (user.get('role', '') if user is mapping else user.role) == 'editor' %}selected{% endif %}>Editor — Add, edit, checkout devices</option>
+                <option value="power_user" {% if user and (user.get('role', '') if user is mapping else user.role) == 'power_user' %}selected{% endif %}>Power User — Manage product references</option>
                 <option value="viewer" {% if user and (user.get('role', '') if user is mapping else user.role) == 'viewer' %}selected{% endif %}>Viewer — Read-only</option>
             </select>
         </div>

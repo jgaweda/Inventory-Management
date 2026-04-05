@@ -1200,6 +1200,119 @@ class TestClientSideFiltering(BaseTestCase):
         self.assertIn(b'TestPrinter', resp.data)
 
 
+class TestPowerUserRole(BaseTestCase):
+    """Test power_user role — can manage product references but not devices/users."""
+
+    def _create_power_user(self):
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'pu1', 'password': 'test',
+            'display_name': 'Power User 1', 'role': 'power_user',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={
+            'username': 'pu1', 'password': 'test',
+        })
+
+    def test_power_user_can_add_reference(self):
+        """Power user can add a product reference."""
+        self._create_power_user()
+        resp = self.client.post('/reference/add', data={
+            'codename': 'PUTestRef',
+            'model_name': 'Test Model',
+            'print_technology': 'Ink',
+        }, follow_redirects=True)
+        self.assertIn(b'PUTestRef', resp.data)
+        self.assertIn(b'added', resp.data)
+
+    def test_power_user_can_edit_reference(self):
+        """Power user can edit a product reference."""
+        self._create_power_user()
+        db.add_product_reference(codename='EditMe')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.post(f'/reference/{ref_id}/edit', data={
+            'codename': 'EditMe',
+            'model_name': 'Updated Model',
+            'wifi_gen': 'Wi-Fi 6',
+            'year': '2024',
+            'chip_manufacturer': '',
+            'chip_codename': '',
+            'fw_codebase': '',
+            'print_technology': 'Laser',
+        }, follow_redirects=True)
+        self.assertIn(b'updated', resp.data)
+
+    def test_power_user_can_inline_edit(self):
+        """Power user can inline-edit a product reference field."""
+        self._create_power_user()
+        db.add_product_reference(codename='InlineTest')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.patch(f'/api/reference/{ref_id}',
+                                 json={'model_name': 'New Model'},
+                                 content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_power_user_can_delete_reference(self):
+        """Power user can delete a product reference."""
+        self._create_power_user()
+        db.add_product_reference(codename='DeleteMe')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.post(f'/reference/{ref_id}/delete',
+                                follow_redirects=True)
+        self.assertIn(b'deleted', resp.data)
+
+    def test_power_user_cannot_add_device(self):
+        """Power user cannot add devices (not an editor)."""
+        self._create_power_user()
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'category': 'Router',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_power_user_cannot_manage_users(self):
+        """Power user cannot access user management."""
+        self._create_power_user()
+        resp = self.client.get('/users', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_power_user_sees_reference_controls(self):
+        """Power user should see import/add buttons on product reference page."""
+        self._create_power_user()
+        db.add_product_reference(codename='VisTest')
+        resp = self.client.get('/reference')
+        self.assertIn(b'Import', resp.data)
+        self.assertIn(b'Add Product', resp.data)
+
+    def test_viewer_cannot_manage_references(self):
+        """Viewer cannot add product references."""
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'v1', 'password': 'test', 'role': 'viewer',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'v1', 'password': 'test'})
+        resp = self.client.post('/reference/add', data={
+            'codename': 'ShouldFail',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_editor_cannot_manage_references(self):
+        """Editor cannot manage product references (only power_user and admin can)."""
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'ed1', 'password': 'test', 'role': 'editor',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'ed1', 'password': 'test'})
+        resp = self.client.post('/reference/add', data={
+            'codename': 'EditorShouldFail',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
 class TestEdgeCase(BaseTestCase):
     """Edge case and error handling tests."""
 

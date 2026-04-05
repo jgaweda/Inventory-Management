@@ -131,7 +131,7 @@ def init_db():
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer'
-                    CHECK(role IN ('admin','editor','viewer')),
+                    CHECK(role IN ('admin','editor','power_user','viewer')),
                 display_name TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_login DATETIME
@@ -231,7 +231,7 @@ def init_db():
         role_check = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
         ).fetchone()
-        if role_check and 'editor' not in role_check[0]:
+        if role_check and 'power_user' not in role_check[0]:
             conn.execute('ALTER TABLE users RENAME TO _users_old')
             conn.execute('''
                 CREATE TABLE users (
@@ -240,7 +240,7 @@ def init_db():
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     role TEXT NOT NULL DEFAULT 'viewer'
-                        CHECK(role IN ('admin','editor','viewer')),
+                        CHECK(role IN ('admin','editor','power_user','viewer')),
                     display_name TEXT DEFAULT '',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_login DATETIME
@@ -1738,8 +1738,10 @@ def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year=
 
 
 def delete_product_reference(ref_id):
-    """Delete a product reference entry."""
+    """Delete a product reference entry and its associated wiki/attachments."""
     with db_transaction() as conn:
+        conn.execute('DELETE FROM wiki_attachments WHERE ref_id = ?', (ref_id,))
+        conn.execute('DELETE FROM product_wiki WHERE ref_id = ?', (ref_id,))
         conn.execute('DELETE FROM product_reference WHERE ref_id = ?', (ref_id,))
 
 
