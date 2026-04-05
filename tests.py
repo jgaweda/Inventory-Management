@@ -2923,5 +2923,144 @@ class TestBackwardsCompatibility(BaseTestCase):
         self.assertIn(b'HP Owned', resp.data)
 
 
+class TestProductReferenceSeed(BaseTestCase):
+    """Test automatic product reference seeding from seed_data/."""
+
+    def setUp(self):
+        super().setUp()
+        # Clean up any seed_data from prior tests
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        if os.path.isdir(seed_dir):
+            shutil.rmtree(seed_dir)
+
+    def _create_seed_csv(self, seed_dir, rows):
+        """Helper: write a seed CSV file."""
+        os.makedirs(seed_dir, exist_ok=True)
+        csv_path = os.path.join(seed_dir, 'product_reference.csv')
+        import csv
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Codename', 'Model Name', 'Wi-Fi Gen', 'Year',
+                             'Print Technology'])
+            for row in rows:
+                writer.writerow(row)
+        return csv_path
+
+    def _create_seed_zip(self, seed_dir, images):
+        """Helper: create a printer_images.zip with given {name: bytes} entries."""
+        import zipfile
+        zip_path = os.path.join(seed_dir, 'printer_images.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for name, data in images.items():
+                zf.writestr(name, data)
+        return zip_path
+
+    def test_seed_csv_imports_on_empty_table(self):
+        """Seed CSV is imported when product_reference table is empty."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'HP OJ Pro 9120', '6E', '2025', 'Ink'],
+            ['Tesla', 'HP LJ Pro 400', '6', '2024', 'Laser'],
+        ])
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        codenames = [r['codename'] for r in refs]
+        self.assertIn('Marconi', codenames)
+        self.assertIn('Tesla', codenames)
+        self.assertEqual(len(refs), 2)
+        marconi = [r for r in refs if r['codename'] == 'Marconi'][0]
+        self.assertEqual(marconi['model_name'], 'HP OJ Pro 9120')
+        self.assertEqual(marconi['wifi_gen'], '6E')
+        self.assertEqual(marconi['print_technology'], 'Ink')
+
+    def test_seed_skips_when_refs_exist(self):
+        """Seeding is skipped when product_reference table already has data."""
+        db.add_product_reference(codename='Existing')
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['NewProduct', 'Model X', '7', '2026', 'Ink'],
+        ])
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        codenames = [r['codename'] for r in refs]
+        self.assertIn('Existing', codenames)
+        self.assertNotIn('NewProduct', codenames)
+
+    def test_seed_skips_when_no_csv(self):
+        """Seeding does nothing when no CSV file exists."""
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()  # should not raise
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 0)
+
+    def test_seed_images_matched_by_model_name(self):
+        """Wiki images from zip are matched to refs by model name."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'HP OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        # Create a fake PNG (just needs to exist, not be a valid image)
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'HP OJ Pro 9120.png': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 1)
+        ref_id = refs[0]['ref_id']
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]['original_name'], 'HP OJ Pro 9120.png')
+        self.assertTrue(attachments[0]['content_type'].startswith('image/'))
+        # Verify file exists on disk
+        from runtime_dirs import DATA_DIR
+        file_path = os.path.join(DATA_DIR, 'wiki_uploads', str(ref_id), attachments[0]['filename'])
+        self.assertTrue(os.path.isfile(file_path))
+
+    def test_seed_images_matched_by_codename(self):
+        """Wiki images can also match by codename."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'HP OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'Marconi.png': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]['original_name'], 'Marconi.png')
+
+    def test_seed_unmatched_images_ignored(self):
+        """Images that don't match any product reference are skipped."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'HP OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'Unknown Printer.png': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

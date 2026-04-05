@@ -18,7 +18,7 @@ import subprocess
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from runtime_dirs import DATA_DIR
+from runtime_dirs import BUNDLE_DIR, DATA_DIR
 
 # Path to the SQLite database file (writable data directory)
 DB_PATH = os.path.join(DATA_DIR, 'inventory.db')
@@ -331,6 +331,149 @@ def init_db():
             INSERT OR REPLACE INTO schema_info (key, value, updated_at)
             VALUES ('app_version', ?, CURRENT_TIMESTAMP)
         ''', (_app_ver,))
+
+    # Seed product references from CSV + images on first startup
+    _seed_product_references()
+
+
+def _seed_product_references():
+    """
+    Seed product references and wiki images from seed_data/ on first startup.
+
+    Expected files in seed_data/:
+      - product_reference.csv  (CSV with product reference columns)
+      - printer_images.zip     (zip of printer images, filenames match model names)
+
+    Only runs when the product_reference table is empty.
+    """
+    import csv as _csv
+    import zipfile
+    import mimetypes
+
+    conn = get_connection()
+    try:
+        ref_count = conn.execute('SELECT COUNT(*) FROM product_reference').fetchone()[0]
+    finally:
+        conn.close()
+
+    if ref_count > 0:
+        return  # Already seeded or user has added their own data
+
+    seed_dir = os.path.join(BUNDLE_DIR, 'seed_data')
+    csv_path = os.path.join(seed_dir, 'product_reference.csv')
+
+    if not os.path.isfile(csv_path):
+        return  # No seed CSV present
+
+    _audit_logger.info('Seeding product references from %s', csv_path)
+
+    # --- Phase 1: Import CSV into product_reference ---
+    try:
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
+            reader = _csv.DictReader(f)
+            # Normalize header names to lowercase for flexible matching
+            if reader.fieldnames is None:
+                _audit_logger.warning('Seed CSV has no headers, skipping')
+                return
+
+            imported = 0
+            for row in reader:
+                # Normalize keys to lowercase
+                norm = {k.strip().lower(): v.strip() for k, v in row.items() if k}
+                codename = norm.get('codename', '').strip()
+                if not codename:
+                    continue
+                add_product_reference(
+                    codename=codename,
+                    model_name=norm.get('model name', norm.get('model_name', '')),
+                    wifi_gen=norm.get('wi-fi gen', norm.get('wifi gen', norm.get('wifi_gen', ''))),
+                    year=norm.get('year', ''),
+                    chip_manufacturer=norm.get('wireless chip set manufacturer',
+                                     norm.get('chip manufacturer', norm.get('chip_manufacturer', ''))),
+                    chip_codename=norm.get('wireless chipset codename',
+                                  norm.get('chip codename', norm.get('chip_codename', ''))),
+                    fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
+                    print_technology=norm.get('print technology', norm.get('print_technology', '')),
+                    variant=norm.get('variant', ''),
+                )
+                imported += 1
+
+            _audit_logger.info('Seeded %d product references from CSV', imported)
+    except Exception as e:
+        _audit_logger.error('Failed to seed product references from CSV: %s\n%s', e, traceback.format_exc())
+        return
+
+    # --- Phase 2: Seed wiki images from zip ---
+    zip_path = os.path.join(seed_dir, 'printer_images.zip')
+    if not os.path.isfile(zip_path):
+        _audit_logger.info('No printer_images.zip found, skipping image seeding')
+        return
+
+    wiki_uploads_dir = os.path.join(DATA_DIR, 'wiki_uploads')
+
+    # Build lookup: model_name (lowercase) -> ref_id
+    conn = get_connection()
+    try:
+        refs = conn.execute('SELECT ref_id, codename, model_name FROM product_reference').fetchall()
+    finally:
+        conn.close()
+
+    model_to_ref = {}
+    codename_to_ref = {}
+    for r in refs:
+        if r['model_name']:
+            model_to_ref[r['model_name'].lower().strip()] = r['ref_id']
+        if r['codename']:
+            codename_to_ref[r['codename'].lower().strip()] = r['ref_id']
+
+    try:
+        images_seeded = 0
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            for entry in zf.namelist():
+                # Skip directories and hidden files
+                if entry.endswith('/') or '/.' in entry or entry.startswith('.'):
+                    continue
+
+                # Get just the filename without path and extension
+                basename = os.path.basename(entry)
+                name_without_ext, ext = os.path.splitext(basename)
+                ext = ext.lower()
+                if ext not in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'):
+                    continue
+
+                # Match to product reference by model name or codename
+                lookup_key = name_without_ext.lower().strip()
+                ref_id = model_to_ref.get(lookup_key) or codename_to_ref.get(lookup_key)
+
+                if not ref_id:
+                    _audit_logger.debug('Seed image "%s" did not match any product reference', basename)
+                    continue
+
+                # Save the image to wiki_uploads/{ref_id}/
+                ref_upload_dir = os.path.join(wiki_uploads_dir, str(ref_id))
+                os.makedirs(ref_upload_dir, exist_ok=True)
+
+                safe_filename = uuid.uuid4().hex + ext
+                dest_path = os.path.join(ref_upload_dir, safe_filename)
+
+                img_data = zf.read(entry)
+                with open(dest_path, 'wb') as out:
+                    out.write(img_data)
+
+                content_type = mimetypes.guess_type(basename)[0] or 'image/png'
+                add_wiki_attachment(
+                    ref_id=ref_id,
+                    filename=safe_filename,
+                    original_name=basename,
+                    content_type=content_type,
+                    size_bytes=len(img_data),
+                    uploaded_by='system',
+                )
+                images_seeded += 1
+
+        _audit_logger.info('Seeded %d wiki images from printer_images.zip', images_seeded)
+    except Exception as e:
+        _audit_logger.error('Failed to seed wiki images: %s\n%s', e, traceback.format_exc())
 
 
 def generate_device_id():
