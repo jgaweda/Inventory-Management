@@ -28,7 +28,7 @@
                 </div>
                 <div>
                     <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Year</label>
-                    <input type="text" name="year" value="{{ ref.year if ref else '' }}" placeholder="e.g. 2024">
+                    <input type="text" name="year" value="{{ ref.year if ref else current_year }}" placeholder="e.g. 2024">
                 </div>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">

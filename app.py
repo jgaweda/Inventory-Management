@@ -1652,7 +1652,7 @@ def product_reference_add():
         codename = request.form.get('codename', '').strip()
         if not codename:
             flash('Codename is required.', 'error')
-            return render_template('product_reference_form.html', ref=None)
+            return render_template('product_reference_form.html', ref=None, current_year=str(datetime.now().year))
 
         db.add_product_reference(
             codename=codename,
@@ -1667,7 +1667,7 @@ def product_reference_add():
         flash(f'Product reference "{codename}" added.', 'success')
         return redirect(url_for('product_reference_list'))
 
-    return render_template('product_reference_form.html', ref=None)
+    return render_template('product_reference_form.html', ref=None, current_year=str(datetime.now().year))
 
 
 @app.route('/reference/<int:ref_id>/edit', methods=['GET', 'POST'])
