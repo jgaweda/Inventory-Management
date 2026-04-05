@@ -39,7 +39,7 @@ Pre-built executables are available on the [**Releases page**](../../releases/la
 
 ```bash
 pip3 install -r requirements.txt
-./start.sh
+./scripts/start.sh
 ```
 
 Open **http://localhost:8080** in your browser. The database is created automatically on first run.
@@ -97,7 +97,7 @@ python3 -m venv venv
 source venv/bin/activate          # macOS/Linux
 # venv\Scripts\activate           # Windows
 pip install -r requirements.txt
-./start-dev.sh                    # or start-dev.bat on Windows
+./scripts/start-dev.sh            # or scripts\start-dev.bat on Windows
 ```
 
 Runs on `127.0.0.1:8080` with Flask debug mode and auto-reload.
@@ -105,10 +105,12 @@ Runs on `127.0.0.1:8080` with Flask debug mode and auto-reload.
 ## Running Tests
 
 ```bash
-python3 -m unittest tests -v
+python3 -m unittest discover -s tests -v    # all tests
+python3 -m unittest tests.test_devices -v   # just device tests
+python3 -m unittest tests.test_backup -v    # just backup tests
 ```
 
-64 tests covering barcode generation, device CRUD, label rendering, wiki attachments, authentication, backup/restore, CSV import, and API endpoints.
+318 tests organized by feature: devices, auth, references, wiki, backups, and general.
 
 ## Building Executables
 
@@ -116,14 +118,14 @@ python3 -m unittest tests -v
 
 **macOS / Linux** (requires Python 3.10+):
 ```bash
-chmod +x build_exe.sh
-./build_exe.sh
+chmod +x scripts/build_exe.sh
+./scripts/build_exe.sh
 # Output: dist/InventorySystem/InventorySystem
 ```
 
 **Windows** (requires [Python 3.8](https://www.python.org/downloads/release/python-3819/) for Win7 compatibility):
 ```cmd
-build_exe.bat
+scripts\build_exe.bat
 :: Output: dist\InventorySystem\InventorySystem.exe
 ```
 

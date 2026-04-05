@@ -1672,6 +1672,14 @@ def push_backups_to_git():
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                 for bf in backup_files:
                     zf.write(os.path.join(backup_dir, bf), bf)
+                # Include wiki_uploads/ so attachments are backed up with the DB
+                wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
+                if os.path.isdir(wiki_dir):
+                    for dirpath, _dirnames, filenames in os.walk(wiki_dir):
+                        for fname in filenames:
+                            full_path = os.path.join(dirpath, fname)
+                            arcname = os.path.relpath(full_path, DATA_DIR)
+                            zf.write(full_path, arcname)
             zip_size = os.path.getsize(zip_path)
 
             subprocess.run(['git', 'add', zip_name],

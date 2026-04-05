@@ -1,0 +1,495 @@
+from tests import BaseTestCase, db, json, os, shutil, _test_dir, patch
+
+
+class TestDeviceCRUD(BaseTestCase):
+    """Test device create, read, update, and lookup."""
+
+    def test_add_and_get_device(self):
+        device_id = db.add_device({'name': 'HP LaserJet', 'category': 'Printer'})
+        device = db.get_device(device_id)
+        self.assertIsNotNone(device)
+        self.assertEqual(device['name'], 'HP LaserJet')
+        self.assertEqual(device['category'], 'Printer')
+
+    def test_update_device(self):
+        device_id = db.add_device({'name': 'Old Name'})
+        db.update_device(device_id, {'name': 'New Name'})
+        device = db.get_device(device_id)
+        self.assertEqual(device['name'], 'New Name')
+
+    def test_get_device_by_barcode(self):
+        device_id = db.add_device({'name': 'Scanner Test'})
+        device = db.get_device(device_id)
+        found = db.get_device_by_barcode(device['barcode_value'])
+        self.assertIsNotNone(found)
+        self.assertEqual(found['device_id'], device_id)
+
+    def test_get_device_by_barcode_case_insensitive(self):
+        device_id = db.add_device({'name': 'Case Test'})
+        device = db.get_device(device_id)
+        found = db.get_device_by_barcode(device['barcode_value'].lower())
+        self.assertIsNotNone(found)
+
+    def test_get_device_not_found(self):
+        self.assertIsNone(db.get_device('nonexistent'))
+
+    def test_get_device_by_barcode_not_found(self):
+        self.assertIsNone(db.get_device_by_barcode('DOESNOTEXIST'))
+
+
+class TestDuplicateSerialDetection(BaseTestCase):
+    """Test duplicate serial number detection."""
+
+    def test_get_device_by_serial(self):
+        db.add_device({'name': 'Printer A', 'serial_number': 'SN12345'})
+        found = db.get_device_by_serial('SN12345')
+        self.assertIsNotNone(found)
+        self.assertEqual(found['name'], 'Printer A')
+
+    def test_get_device_by_serial_case_insensitive(self):
+        db.add_device({'name': 'Printer B', 'serial_number': 'ABC123'})
+        found = db.get_device_by_serial('abc123')
+        self.assertIsNotNone(found)
+
+    def test_retired_device_serial_not_found(self):
+        device_id = db.add_device({'name': 'Printer C', 'serial_number': 'RET001'})
+        db.retire_device(device_id)
+        found = db.get_device_by_serial('RET001')
+        self.assertIsNone(found)
+
+    def test_duplicate_serial_blocked_in_ui(self):
+        self.login_admin()
+        # Add first device
+        self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'LJ100',
+            'category': 'Router', 'serial_number': 'UNIQUE001',
+        }, follow_redirects=True)
+        # Try adding duplicate
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'LJ200',
+            'category': 'Router', 'serial_number': 'UNIQUE001',
+        }, follow_redirects=True)
+        self.assertIn(b'already exists', resp.data)
+
+
+class TestDeviceEditRoute(BaseTestCase):
+    """Test /devices/<id>/edit GET and POST."""
+
+    def test_edit_form_loads(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP TestRouter', 'category': 'Router/AP', 'manufacturer': 'HP', 'model_number': 'TestRouter'})
+        resp = self.client.get(f'/devices/{did}/edit')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Edit Device', resp.data)
+
+    def test_edit_updates_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP OldRouter', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'Cisco', 'model_number': 'AX9000',
+            'category': 'Router/AP', 'location': 'Lab B',
+        }, follow_redirects=True)
+        self.assertIn(b'updated successfully', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['manufacturer'], 'Cisco')
+        self.assertEqual(device['location'], 'Lab B')
+
+    def test_edit_nonexistent_device(self):
+        self.login_admin()
+        resp = self.client.get('/devices/nonexistent999/edit', follow_redirects=True)
+        self.assertIn(b'Device not found', resp.data)
+
+    def test_edit_requires_manufacturer_for_non_printer(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP Router', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': '', 'category': 'Router/AP',
+        }, follow_redirects=True)
+        self.assertIn(b'Manufacturer is required', resp.data)
+
+    def test_edit_printer_requires_codename(self):
+        self.login_admin()
+        did = db.add_device({'name': 'TestPrn (HP LJ)', 'category': 'Printer',
+                             'manufacturer': 'HP', 'codename': 'TestPrn'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'category': 'Printer', 'codename': '',
+        }, follow_redirects=True)
+        self.assertIn(b'Codename is required', resp.data)
+
+    def test_edit_viewer_blocked(self):
+        """Viewer cannot edit devices."""
+        db.create_user('viewer1', 'pass1234', role='custom')
+        did = db.add_device({'name': 'Locked Device'})
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'category': 'Router/AP',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
+class TestCheckoutCheckinFlow(BaseTestCase):
+    """Test the full checkout/checkin lifecycle via web routes."""
+
+    def test_checkout_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Checkout Router'})
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'John Doe',
+        }, follow_redirects=True)
+        self.assertIn(b'checked out to John Doe', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+        self.assertEqual(device['assigned_to'], 'John Doe')
+
+    def test_checkin_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Checkin Router'})
+        db.checkout_device(did, 'Jane Doe', performed_by='admin')
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        self.assertIn(b'checked in', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+        self.assertEqual(device['assigned_to'], '')
+
+    def test_checkout_empty_assignee_rejected(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Empty Assign'})
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': '',
+        }, follow_redirects=True)
+        self.assertIn(b'enter who', resp.data.lower())
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+
+    def test_checkout_creates_audit_log(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Audit Router'})
+        self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'Auditor',
+        }, follow_redirects=True)
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('checked_out', actions)
+
+    def test_checkin_creates_audit_log(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Log Router'})
+        db.checkout_device(did, 'Someone', performed_by='admin')
+        self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('returned', actions)
+
+
+class TestDeviceCheckoutFlow(BaseTestCase):
+    """Functional tests for checkout/checkin workflow."""
+
+    def test_checkout_and_checkin(self):
+        """Full checkout -> checkin flow."""
+        self.login_admin()
+        did = db.add_device({'name': 'Checkout Test Dev'})
+        # Checkout
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'John Doe'
+        }, follow_redirects=True)
+        self.assertIn(b'checked out', resp.data.lower())
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+        self.assertEqual(device['assigned_to'], 'John Doe')
+        # Checkin
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+        self.assertEqual(device['assigned_to'], '')
+
+    def test_checkout_history_shown(self):
+        """Device detail should show checkout history."""
+        self.login_admin()
+        did = db.add_device({'name': 'History Test Dev'})
+        self.client.post(f'/devices/{did}/checkout', data={'assigned_to': 'Jane'},
+                         follow_redirects=True)
+        self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Checkout History', resp.data)
+
+
+class TestDeviceLifecycleFull(BaseTestCase):
+    """Test complete device lifecycle: add -> edit -> checkout -> checkin -> retire."""
+
+    def test_full_lifecycle(self):
+        self.login_admin()
+        # 1. Add
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'LaserJet 600',
+            'category': 'Router/AP', 'location': 'Lab A',
+        }, follow_redirects=True)
+        self.assertIn(b'added successfully', resp.data)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        did = devices[0]['device_id']
+
+        # 2. Edit
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'model_number': 'LaserJet 601',
+            'category': 'Router/AP', 'location': 'Lab B',
+        }, follow_redirects=True)
+        self.assertIn(b'updated successfully', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['location'], 'Lab B')
+
+        # 3. Checkout
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'Josh G',
+        }, follow_redirects=True)
+        self.assertIn(b'checked out', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+
+        # 4. Checkin
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        self.assertIn(b'checked in', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+
+        # 5. Add note
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Ready for retirement',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+
+        # 6. Retire
+        resp = self.client.post(f'/devices/{did}/retire', follow_redirects=True)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'retired')
+
+        # 7. Verify full audit trail
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('added', actions)
+        self.assertIn('updated', actions)
+        self.assertIn('checked_out', actions)
+        self.assertIn('returned', actions)
+        self.assertIn('retired', actions)
+
+    def test_device_detail_shows_history(self):
+        """Device detail page should show audit history."""
+        self.login_admin()
+        did = db.add_device({'name': 'History Device'})
+        db.checkout_device(did, 'TestUser', performed_by='admin')
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'History Device', resp.data)
+
+
+class TestDeviceNotes(BaseTestCase):
+    """Test public device notes feature."""
+
+    def _create_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Note Test Device'})
+        self.client.get('/logout')
+        return did
+
+    def test_notes_section_visible(self):
+        """Device detail should show Notes section and add form."""
+        did = self._create_device()
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Notes', resp.data)
+        self.assertIn(b'note_content', resp.data)
+
+    def test_anonymous_add_note(self):
+        """Anyone can add a note without logging in."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Anonymous test note',
+            'author_name': 'Tester Bob',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+        self.assertIn(b'Anonymous test note', resp.data)
+        self.assertIn(b'Tester Bob', resp.data)
+
+    def test_anonymous_default_name(self):
+        """Omitting author_name defaults to 'Anonymous'."""
+        did = self._create_device()
+        self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'No name note',
+            'author_name': '',
+        })
+        notes = db.get_device_notes(did)
+        self.assertEqual(notes[0]['author'], 'Anonymous')
+
+    def test_logged_in_user_note(self):
+        """Logged-in user's display name is used as author."""
+        did = self._create_device()
+        self.login_admin()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Admin note here',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+        self.assertIn(b'Admin note here', resp.data)
+
+    def test_empty_note_rejected(self):
+        """Empty notes should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '',
+        }, follow_redirects=True)
+        self.assertIn(b'cannot be empty', resp.data)
+
+    def test_whitespace_only_note_rejected(self):
+        """Whitespace-only notes should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '   \n  ',
+        }, follow_redirects=True)
+        self.assertIn(b'cannot be empty', resp.data)
+
+    def test_too_long_note_rejected(self):
+        """Notes over 2000 chars should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'x' * 2001,
+        }, follow_redirects=True)
+        self.assertIn(b'too long', resp.data)
+
+    def test_note_on_nonexistent_device(self):
+        """Adding a note to a nonexistent device should fail gracefully."""
+        resp = self.client.post('/devices/fake123/notes', data={
+            'note_content': 'Orphan note',
+        }, follow_redirects=True)
+        self.assertIn(b'Device not found', resp.data)
+
+    def test_admin_can_delete_note(self):
+        """Admin can delete any note."""
+        did = self._create_device()
+        note_id = db.add_device_note(did, 'Bob', 'Delete me')
+        self.login_admin()
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        self.assertIn(b'Note deleted', resp.data)
+        self.assertEqual(len(db.get_device_notes(did)), 0)
+
+    def test_non_admin_cannot_delete_note(self):
+        """Non-admin users cannot delete notes."""
+        did = self._create_device()
+        note_id = db.add_device_note(did, 'Bob', 'Keep me')
+        # Not logged in — should redirect
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        self.assertNotIn(b'Note deleted', resp.data)
+        self.assertEqual(len(db.get_device_notes(did)), 1)
+
+    def test_multiple_notes_ordered(self):
+        """Multiple notes should all be returned."""
+        did = self._create_device()
+        db.add_device_note(did, 'Alice', 'First note')
+        db.add_device_note(did, 'Bob', 'Second note')
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 2)
+        authors = {n['author'] for n in notes}
+        self.assertIn('Alice', authors)
+        self.assertIn('Bob', authors)
+
+
+class TestDeviceNotesEdgeCases(BaseTestCase):
+    """Test device notes edge cases."""
+
+    def test_note_on_nonexistent_device(self):
+        resp = self.client.post('/devices/nonexistent/notes', data={
+            'note_content': 'Test',
+        }, follow_redirects=True)
+        self.assertIn(b'not found', resp.data.lower())
+
+    def test_delete_nonexistent_note(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Test Device'})
+        resp = self.client.post(f'/devices/{did}/notes/99999/delete',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_empty_note_rejected(self):
+        did = db.add_device({'name': 'Test Device'})
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '',
+        }, follow_redirects=True)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 0)
+
+    def test_very_long_note(self):
+        did = db.add_device({'name': 'Long Note Test'})
+        long_content = 'A' * 10000
+        db.add_device_note(did, 'Tester', long_content)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(len(notes[0]['content']), 10000)
+
+    def test_non_admin_cannot_delete_note(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Note Delete Test'})
+        db.add_device_note(did, 'Someone', 'A note')
+        notes = db.get_device_notes(did)
+        note_id = notes[0]['note_id']
+        self.client.post('/users/add', data={
+            'username': 'viewer1', 'password': 'test', 'role': 'custom',
+            'permissions': ['wiki'],
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'test'})
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+
+
+class TestGetAllDevices(BaseTestCase):
+    """Test get_all_devices include_retired flag."""
+
+    def test_excludes_retired_by_default(self):
+        db.add_device({'name': 'Active'})
+        did2 = db.add_device({'name': 'Gone'})
+        db.retire_device(did2)
+        devices = db.get_all_devices()
+        names = [d['name'] for d in devices]
+        self.assertIn('Active', names)
+        self.assertNotIn('Gone', names)
+
+    def test_includes_retired_when_requested(self):
+        db.add_device({'name': 'Active'})
+        did2 = db.add_device({'name': 'Gone'})
+        db.retire_device(did2)
+        devices = db.get_all_devices(include_retired=True)
+        names = [d['name'] for d in devices]
+        self.assertIn('Active', names)
+        self.assertIn('Gone', names)
+
+
+class TestOwnershipDropdown(BaseTestCase):
+    """Test the ownership dropdown (HP Owned / Vendor Supplied)."""
+
+    def test_device_form_has_ownership_dropdown(self):
+        self.login_admin()
+        resp = self.client.get('/devices/add')
+        self.assertIn(b'HP Owned', resp.data)
+        self.assertIn(b'Vendor Supplied', resp.data)
+
+    def test_vendor_supplied_persists(self):
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'TP-Link', 'model_number': 'AX55',
+            'category': 'Router', 'vendor_supplied': '1',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['vendor_supplied'], 1)
+
+    def test_hp_owned_default(self):
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'AX55',
+            'category': 'Router', 'vendor_supplied': '0',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['vendor_supplied'], 0)

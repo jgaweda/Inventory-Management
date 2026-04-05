@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Build macOS executable for the Inventory Management System.
-# Run from the project root: ./build_exe.sh
+# Run from the project root: ./scripts/build_exe.sh
 set -e
 
 echo "=== Building Inventory System (macOS) ==="
 
-# Ensure we're in the right directory
-cd "$(dirname "$0")"
+# Resolve project root (parent of scripts/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_DIR"
 
 # Create/activate venv if needed
 if [ ! -d "build_venv" ]; then
@@ -19,7 +21,7 @@ pip install --upgrade pip
 pip install -r requirements.txt pyinstaller
 
 # Build
-pyinstaller --clean inventory.spec
+pyinstaller --clean scripts/inventory.spec
 
 echo ""
 echo "=== Build complete ==="

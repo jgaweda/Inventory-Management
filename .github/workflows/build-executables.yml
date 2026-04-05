@@ -89,7 +89,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build executable
-        run: pyinstaller --clean inventory.spec
+        run: pyinstaller --clean scripts/inventory.spec
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
@@ -118,7 +118,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build executable
-        run: pyinstaller --clean inventory.spec
+        run: pyinstaller --clean scripts/inventory.spec
 
       - name: Ad-hoc code sign (prevents Gatekeeper quarantine errors)
         run: |
