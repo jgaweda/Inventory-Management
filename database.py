@@ -421,7 +421,7 @@ def _seed_product_references():
 
     def _normalize_for_match(name):
         """Normalize a product name for matching: lowercase, expand
-        abbreviations, replace separators with underscores."""
+        abbreviations, strip noise words, replace separators."""
         s = name.lower().strip()
         s = re.sub(r'^hp\s+', '', s)
         s = re.sub(r'\s*series\s*$', '', s)
@@ -430,6 +430,8 @@ def _seed_product_references():
         words = s.split()
         s = ' '.join(_abbrevs.get(w, w) for w in words)
         s = re.sub(r'[\s/,\-]+', '_', s)
+        # Strip noise words (e.g. "gt" in "deskjet_gt_5820")
+        s = re.sub(r'_gt_', '_', s)
         s = re.sub(r'_+', '_', s)
         return s.strip('_')
 
@@ -476,13 +478,16 @@ def _seed_product_references():
             return norm_to_ref[img_norm]
 
         # 2. Strip trailing year suffix (e.g. _2017) and retry
-        img_no_year = re.sub(r'_\d{4}$', '', img_norm)
+        # Strip trailing year suffix (2010-2029 only, not model numbers like 5000)
+        img_no_year = re.sub(r'_20(?:[12]\d)$', '', img_norm)
         if img_no_year != img_norm and img_no_year in norm_to_ref:
             return norm_to_ref[img_no_year]
 
-        # 3. Substring containment
+        # 3. Substring containment (check both with and without year suffix)
         for rk, rid in norm_to_ref.items():
             if len(rk) >= 4 and (rk in img_norm or img_norm in rk):
+                return rid
+            if img_no_year != img_norm and len(rk) >= 4 and (rk in img_no_year or img_no_year in rk):
                 return rid
 
         # 4. Token-based fuzzy match with wildcard support
