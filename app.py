@@ -1013,6 +1013,27 @@ def clear_logs():
     return redirect(url_for('app_logs'))
 
 
+@app.route('/logs/export')
+@permission_required('logs')
+def export_logs():
+    """Export the application log as a downloadable .log file."""
+    lines = []
+    for log_path in [LOG_FILE + '.1', LOG_FILE]:
+        try:
+            with open(log_path, 'r') as f:
+                lines.extend(f.readlines())
+        except FileNotFoundError:
+            pass
+
+    content = ''.join(lines)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return Response(
+        content,
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename=app_log_{timestamp}.log'}
+    )
+
+
 @app.route('/logs/config', methods=['POST'])
 @permission_required('logs')
 def update_log_config():
