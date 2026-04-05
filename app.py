@@ -17,7 +17,7 @@ import traceback
 import uuid
 from PIL import Image
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 
 from flask import (
@@ -1142,17 +1142,52 @@ def save_server_config():
 
 import threading
 
-_backup_timer = None      # Timer for recurring local backups
-_git_push_timer = None    # Timer for recurring git pushes
-_prune_timer = None       # Timer for recurring backup pruning
-_verify_timer = None      # Timer for periodic backup verification
-_next_backup_time = None  # datetime of next scheduled backup
-_next_git_push_time = None  # datetime of next scheduled git push
-_next_prune_time = None   # datetime of next scheduled prune
+# ---------------------------------------------------------------------------
+# Persistent backup scheduler — single thread that wakes every 60 seconds
+# and checks what tasks are due. Replaces fragile threading.Timer chains that
+# silently died when a daemon thread was killed or an exception escaped.
+# ---------------------------------------------------------------------------
+
+_scheduler_thread = None
+_scheduler_stop = threading.Event()
+
+# Next-run timestamps (None = disabled). Protected by _scheduler_lock.
+_scheduler_lock = threading.Lock()
+_next_backup_time = None
+_next_git_push_time = None
+_next_prune_time = None
+_next_verify_time = None
 
 
-def _run_scheduled_backup():
-    """Execute a scheduled backup and re-arm the timer."""
+def _scheduler_loop():
+    """Persistent loop: wake every 60s, run any overdue tasks."""
+    while not _scheduler_stop.is_set():
+        now = datetime.now()
+
+        with _scheduler_lock:
+            run_backup = _next_backup_time is not None and now >= _next_backup_time
+            run_git = _next_git_push_time is not None and now >= _next_git_push_time
+            run_prune = _next_prune_time is not None and now >= _next_prune_time
+            run_verify = _next_verify_time is not None and now >= _next_verify_time
+
+        if run_backup:
+            _exec_scheduled_backup()
+        if run_git:
+            _exec_scheduled_git_push()
+        if run_prune:
+            _exec_scheduled_prune()
+        if run_verify:
+            _exec_scheduled_verify()
+
+        # Sleep in 5-second chunks so stop events are responsive
+        for _ in range(12):
+            if _scheduler_stop.is_set():
+                break
+            _scheduler_stop.wait(5)
+
+
+def _exec_scheduled_backup():
+    """Run backup and reschedule from latest config."""
     try:
         result = db.backup_database(performed_by='scheduled')
         if result.get('skipped'):
@@ -1166,10 +1201,12 @@ def _run_scheduled_backup():
     config = db._get_backup_config()
     if config.get('backup_enabled'):
         _start_backup_timer(config['backup_interval_hours'])
+    else:
+        _stop_backup_timer()
 
 
-def _run_scheduled_git_push():
-    """Execute a scheduled git push and re-arm the timer."""
+def _exec_scheduled_git_push():
+    """Run git push and reschedule from latest config."""
     try:
         result = db.push_backups_to_git()
         if result.get('skipped'):
@@ -1179,58 +1216,15 @@ def _run_scheduled_git_push():
                             result['files_pushed'], result['pushed_to'])
     except Exception as e:
         app_logger.error('Scheduled git push failed: %s\nTraceback:\n%s', e, traceback.format_exc())
-    # Re-arm from latest config
     config = db._get_backup_config()
     if config.get('git_enabled'):
         _start_git_push_timer(config['git_push_interval_hours'])
+    else:
+        _stop_git_push_timer()
 
 
-def _start_backup_timer(interval_hours):
-    """Start (or restart) the recurring backup timer."""
-    global _backup_timer, _next_backup_time
-    _stop_backup_timer()
-    seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
-    from datetime import timedelta
-    _next_backup_time = datetime.now() + timedelta(seconds=seconds)
-    _backup_timer = threading.Timer(seconds, _run_scheduled_backup)
-    _backup_timer.daemon = True
-    _backup_timer.start()
-    app_logger.info('Backup scheduler armed: next backup in %s hours', interval_hours)
-
-
-def _stop_backup_timer():
-    """Cancel any pending scheduled backup."""
-    global _backup_timer, _next_backup_time
-    if _backup_timer is not None:
-        _backup_timer.cancel()
-        _backup_timer = None
-    _next_backup_time = None
-
-
-def _start_git_push_timer(interval_hours):
-    """Start (or restart) the recurring git push timer."""
-    global _git_push_timer, _next_git_push_time
-    _stop_git_push_timer()
-    seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
-    from datetime import timedelta
-    _next_git_push_time = datetime.now() + timedelta(seconds=seconds)
-    _git_push_timer = threading.Timer(seconds, _run_scheduled_git_push)
-    _git_push_timer.daemon = True
-    _git_push_timer.start()
-    app_logger.info('Git push scheduler armed: next push in %s hours', interval_hours)
-
-
-def _stop_git_push_timer():
-    """Cancel any pending scheduled git push."""
-    global _git_push_timer, _next_git_push_time
-    if _git_push_timer is not None:
-        _git_push_timer.cancel()
-        _git_push_timer = None
-    _next_git_push_time = None
-
-
-def _run_scheduled_prune():
-    """Execute a scheduled prune and re-arm the timer."""
+def _exec_scheduled_prune():
+    """Run prune and reschedule from latest config."""
     try:
         config = db._get_backup_config()
         pruned = db._smart_prune_backups(config['max_backups'])
@@ -1241,33 +1235,12 @@ def _run_scheduled_prune():
     config = db._get_backup_config()
     if config.get('prune_enabled'):
         _start_prune_timer(config['prune_interval_hours'])
+    else:
+        _stop_prune_timer()
 
 
-def _start_prune_timer(interval_hours):
-    """Start (or restart) the recurring prune timer."""
-    global _prune_timer, _next_prune_time
-    _stop_prune_timer()
-    seconds = max(interval_hours * 3600, 300)
-    from datetime import timedelta
-    _next_prune_time = datetime.now() + timedelta(seconds=seconds)
-    _prune_timer = threading.Timer(seconds, _run_scheduled_prune)
-    _prune_timer.daemon = True
-    _prune_timer.start()
-    app_logger.info('Prune scheduler armed: next prune in %s hours', interval_hours)
-
-
-def _stop_prune_timer():
-    """Cancel any pending scheduled prune."""
-    global _prune_timer, _next_prune_time
-    if _prune_timer is not None:
-        _prune_timer.cancel()
-        _prune_timer = None
-    _next_prune_time = None
-
-
-def _run_backup_verification():
-    """Periodically verify the most recent backup is still intact."""
-    global _verify_timer
+def _exec_scheduled_verify():
+    """Run backup verification and reschedule."""
     try:
         result = db.verify_latest_backup()
         if result['ok']:
@@ -1278,12 +1251,71 @@ def _run_backup_verification():
     except Exception as e:
         app_logger.error('Backup verification error: %s\nTraceback:\n%s', e, traceback.format_exc())
     # Re-arm: verify every 24 hours
-    _verify_timer = threading.Timer(86400, _run_backup_verification)
-    _verify_timer.daemon = True
-    _verify_timer.start()
+    with _scheduler_lock:
+        global _next_verify_time
+        _next_verify_time = datetime.now() + timedelta(hours=24)
 
 
-# Restore timers on startup
+def _start_backup_timer(interval_hours):
+    """Schedule the next backup after interval_hours from now."""
+    global _next_backup_time
+    seconds = max(interval_hours * 3600, 300)  # Minimum 5 minutes
+    with _scheduler_lock:
+        _next_backup_time = datetime.now() + timedelta(seconds=seconds)
+    app_logger.info('Backup scheduler armed: next backup in %s hours', interval_hours)
+
+
+def _stop_backup_timer():
+    """Disable scheduled backups."""
+    global _next_backup_time
+    with _scheduler_lock:
+        _next_backup_time = None
+
+
+def _start_git_push_timer(interval_hours):
+    """Schedule the next git push after interval_hours from now."""
+    global _next_git_push_time
+    seconds = max(interval_hours * 3600, 300)
+    with _scheduler_lock:
+        _next_git_push_time = datetime.now() + timedelta(seconds=seconds)
+    app_logger.info('Git push scheduler armed: next push in %s hours', interval_hours)
+
+
+def _stop_git_push_timer():
+    """Disable scheduled git pushes."""
+    global _next_git_push_time
+    with _scheduler_lock:
+        _next_git_push_time = None
+
+
+def _start_prune_timer(interval_hours):
+    """Schedule the next prune after interval_hours from now."""
+    global _next_prune_time
+    seconds = max(interval_hours * 3600, 300)
+    with _scheduler_lock:
+        _next_prune_time = datetime.now() + timedelta(seconds=seconds)
+    app_logger.info('Prune scheduler armed: next prune in %s hours', interval_hours)
+
+
+def _stop_prune_timer():
+    """Disable scheduled prunes."""
+    global _next_prune_time
+    with _scheduler_lock:
+        _next_prune_time = None
+
+
+def _ensure_scheduler_running():
+    """Start the scheduler thread if it isn't already alive."""
+    global _scheduler_thread
+    if _scheduler_thread is not None and _scheduler_thread.is_alive():
+        return
+    _scheduler_stop.clear()
+    _scheduler_thread = threading.Thread(target=_scheduler_loop, name='backup-scheduler', daemon=True)
+    _scheduler_thread.start()
+    app_logger.info('Backup scheduler thread started')
+
+
+# Restore schedules on startup
 _startup_config = db._get_backup_config()
 if _startup_config.get('backup_enabled'):
     _start_backup_timer(_startup_config['backup_interval_hours'])
@@ -1292,24 +1324,28 @@ if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
 if _startup_config.get('prune_enabled'):
     _start_prune_timer(_startup_config['prune_interval_hours'])
 
-# Start backup verification timer (runs every 24 hours)
-_verify_timer = threading.Timer(86400, _run_backup_verification)
-_verify_timer.daemon = True
-_verify_timer.start()
+# Verification runs every 24 hours regardless of config
+_next_verify_time = datetime.now() + timedelta(hours=24)
+
+# Start the single persistent scheduler thread
+_ensure_scheduler_running()
 
 
 @app.route('/backups')
 @permission_required('backups')
 def backup_list():
     """View backup management page."""
+    _ensure_scheduler_running()  # Self-heal if scheduler died
     backups = db.list_backups()
     config = db._get_backup_config()
-    next_backup = _next_backup_time.strftime('%Y-%m-%d %H:%M:%S') if _next_backup_time else None
-    next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
-    next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
+    with _scheduler_lock:
+        next_backup = _next_backup_time.strftime('%Y-%m-%d %H:%M:%S') if _next_backup_time else None
+        next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
+        next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
+    scheduler_alive = _scheduler_thread is not None and _scheduler_thread.is_alive()
     return render_template('backups.html', backups=backups, config=config,
                            next_backup_time=next_backup, next_git_push_time=next_push,
-                           next_prune_time=next_prune)
+                           next_prune_time=next_prune, scheduler_alive=scheduler_alive)
 
 
 @app.route('/backups/create', methods=['POST'])
@@ -1425,6 +1461,9 @@ def backup_config():
                         config['prune_interval_hours'], current_username())
     else:
         _stop_prune_timer()
+
+    # Ensure the scheduler thread is alive (recovers if it died)
+    _ensure_scheduler_running()
 
     app_logger.info('Backup config updated by=%s', current_username())
     flash('Backup configuration saved.', 'success')

@@ -147,6 +147,11 @@
     </div>
 
     <!-- Active status indicators -->
+    {% if not scheduler_alive and (config.backup_enabled or config.prune_enabled or config.git_enabled) %}
+    <div style="margin-top: 12px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
+        Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
+    </div>
+    {% endif %}
     {% if config.backup_enabled or config.prune_enabled or config.git_enabled %}
     <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
         {% if config.backup_enabled %}
