@@ -187,6 +187,19 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_wiki_attach_ref ON wiki_attachments(ref_id)')
 
+        # Device notes table — anyone can add notes to a device
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS device_notes (
+                note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT 'Anonymous',
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(device_id)
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_device_notes_device ON device_notes(device_id)')
+
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
@@ -1812,3 +1825,36 @@ def delete_wiki_attachment(attachment_id):
     """Delete an attachment record."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))
+
+
+# ---------------------------------------------------------------------------
+# Device Notes — anyone can add notes to a device
+# ---------------------------------------------------------------------------
+
+def get_device_notes(device_id):
+    """Return all notes for a device, newest first."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            'SELECT * FROM device_notes WHERE device_id = ? ORDER BY created_at DESC',
+            (device_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_device_note(device_id, author, content):
+    """Add a note to a device. Returns the note_id."""
+    with db_transaction() as conn:
+        cursor = conn.execute(
+            'INSERT INTO device_notes (device_id, author, content) VALUES (?, ?, ?)',
+            (device_id, author, content)
+        )
+        return cursor.lastrowid
+
+
+def delete_device_note(note_id):
+    """Delete a device note by ID."""
+    with db_transaction() as conn:
+        conn.execute('DELETE FROM device_notes WHERE note_id = ?', (note_id,))

@@ -364,7 +364,48 @@ def device_detail(device_id):
             if refs:
                 prod_ref = refs[0]
 
-    return render_template('device_detail.html', device=device, audit=audit, prod_ref=prod_ref)
+    device_notes = db.get_device_notes(device_id)
+    return render_template('device_detail.html', device=device, audit=audit,
+                           prod_ref=prod_ref, device_notes=device_notes)
+
+# ---------------------------------------------------------------------------
+# Device notes (public — anyone can add)
+# ---------------------------------------------------------------------------
+
+@app.route('/devices/<device_id>/notes', methods=['POST'])
+def add_device_note(device_id):
+    """Add a note to a device. Anyone can add notes."""
+    device = db.get_device(device_id)
+    if not device:
+        flash('Device not found.', 'error')
+        return redirect(url_for('device_list'))
+
+    content = request.form.get('note_content', '').strip()
+    if not content:
+        flash('Note cannot be empty.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+
+    if len(content) > 2000:
+        flash('Note is too long (max 2000 characters).', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+
+    author = current_username() if g.user else request.form.get('author_name', '').strip()
+    if not author:
+        author = 'Anonymous'
+
+    db.add_device_note(device_id, author, content)
+    app_logger.info('Note added to device %s by %s', device_id, author)
+    flash('Note added.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
+
+
+@app.route('/devices/<device_id>/notes/<int:note_id>/delete', methods=['POST'])
+@admin_required
+def delete_device_note_route(device_id, note_id):
+    """Delete a device note (admin only)."""
+    db.delete_device_note(note_id)
+    flash('Note deleted.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
 
 # ---------------------------------------------------------------------------
 # Edit device (admin only)

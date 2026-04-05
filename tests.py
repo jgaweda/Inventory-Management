@@ -874,5 +874,387 @@ class TestRoleGranularity(BaseTestCase):
         self.assertIn(b'do not have permission', resp.data)
 
 
+class TestDeviceNotes(BaseTestCase):
+    """Test public device notes feature."""
+
+    def _create_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Note Test Device'})
+        self.client.get('/logout')
+        return did
+
+    def test_notes_section_visible(self):
+        """Device detail should show Notes section and add form."""
+        did = self._create_device()
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Notes', resp.data)
+        self.assertIn(b'note_content', resp.data)
+
+    def test_anonymous_add_note(self):
+        """Anyone can add a note without logging in."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Anonymous test note',
+            'author_name': 'Tester Bob',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+        self.assertIn(b'Anonymous test note', resp.data)
+        self.assertIn(b'Tester Bob', resp.data)
+
+    def test_anonymous_default_name(self):
+        """Omitting author_name defaults to 'Anonymous'."""
+        did = self._create_device()
+        self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'No name note',
+            'author_name': '',
+        })
+        notes = db.get_device_notes(did)
+        self.assertEqual(notes[0]['author'], 'Anonymous')
+
+    def test_logged_in_user_note(self):
+        """Logged-in user's display name is used as author."""
+        did = self._create_device()
+        self.login_admin()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Admin note here',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+        self.assertIn(b'Admin note here', resp.data)
+
+    def test_empty_note_rejected(self):
+        """Empty notes should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '',
+        }, follow_redirects=True)
+        self.assertIn(b'cannot be empty', resp.data)
+
+    def test_whitespace_only_note_rejected(self):
+        """Whitespace-only notes should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '   \n  ',
+        }, follow_redirects=True)
+        self.assertIn(b'cannot be empty', resp.data)
+
+    def test_too_long_note_rejected(self):
+        """Notes over 2000 chars should be rejected."""
+        did = self._create_device()
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'x' * 2001,
+        }, follow_redirects=True)
+        self.assertIn(b'too long', resp.data)
+
+    def test_note_on_nonexistent_device(self):
+        """Adding a note to a nonexistent device should fail gracefully."""
+        resp = self.client.post('/devices/fake123/notes', data={
+            'note_content': 'Orphan note',
+        }, follow_redirects=True)
+        self.assertIn(b'Device not found', resp.data)
+
+    def test_admin_can_delete_note(self):
+        """Admin can delete any note."""
+        did = self._create_device()
+        note_id = db.add_device_note(did, 'Bob', 'Delete me')
+        self.login_admin()
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        self.assertIn(b'Note deleted', resp.data)
+        self.assertEqual(len(db.get_device_notes(did)), 0)
+
+    def test_non_admin_cannot_delete_note(self):
+        """Non-admin users cannot delete notes."""
+        did = self._create_device()
+        note_id = db.add_device_note(did, 'Bob', 'Keep me')
+        # Not logged in — should redirect
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        self.assertNotIn(b'Note deleted', resp.data)
+        self.assertEqual(len(db.get_device_notes(did)), 1)
+
+    def test_multiple_notes_ordered(self):
+        """Multiple notes should all be returned."""
+        did = self._create_device()
+        db.add_device_note(did, 'Alice', 'First note')
+        db.add_device_note(did, 'Bob', 'Second note')
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 2)
+        authors = {n['author'] for n in notes}
+        self.assertIn('Alice', authors)
+        self.assertIn('Bob', authors)
+
+
+class TestFormatToolbar(BaseTestCase):
+    """Test wiki formatting toolbar presence."""
+
+    def test_toolbar_visible_for_logged_in(self):
+        """Logged-in users see the formatting toolbar."""
+        self.login_admin()
+        db.add_product_reference(codename='FmtTest')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertIn(b'fmt-toolbar', resp.data)
+        self.assertIn(b'data-fmt="bold"', resp.data)
+        self.assertIn(b'data-fmt="italic"', resp.data)
+        self.assertIn(b'data-fmt="underline"', resp.data)
+        self.assertIn(b'data-fmt="heading-up"', resp.data)
+        self.assertIn(b'data-fmt="heading-down"', resp.data)
+
+    def test_toolbar_not_visible_for_anonymous(self):
+        """Anonymous users see read-only view without format buttons."""
+        db.add_product_reference(codename='AnonFmt')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.get(f'/wiki/{ref_id}')
+        # The actual toolbar HTML buttons shouldn't be present for anon
+        self.assertNotIn(b'data-fmt="bold"', resp.data)
+        self.assertIn(b'wikiReadOnly', resp.data)
+
+
+class TestExportImportFunctional(BaseTestCase):
+    """Functional tests for export and import flows."""
+
+    def test_csv_export_contains_devices(self):
+        """CSV export should contain all devices."""
+        self.login_admin()
+        db.add_device({'name': 'Export Dev 1', 'category': 'Router'})
+        db.add_device({'name': 'Export Dev 2', 'category': 'Printer', 'codename': 'Test'})
+        resp = self.client.get('/export')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Export Dev 1', resp.data)
+        self.assertIn(b'Export Dev 2', resp.data)
+        self.assertIn('text/csv', resp.content_type)
+
+    def test_xlsx_export(self):
+        """Excel export should return xlsx file."""
+        self.login_admin()
+        db.add_device({'name': 'XLSX Device'})
+        resp = self.client.get('/export/xlsx')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('spreadsheetml', resp.content_type)
+
+    def test_import_xlsx(self):
+        """Test importing devices from xlsx file."""
+        self.login_admin()
+        try:
+            import openpyxl
+        except ImportError:
+            self.skipTest('openpyxl not installed')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Name', 'Category', 'Manufacturer', 'Location'])
+        ws.append(['XLSX Import Dev', 'Router', 'Cisco', 'Lab C'])
+        ws.append(['XLSX Import Dev 2', 'Printer', 'HP', 'Lab D'])
+        from io import BytesIO
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        resp = self.client.post('/import/devices', data={
+            'import_file': (buf, 'test.xlsx')
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn(b'Imported 2', resp.data)
+
+    def test_import_no_file(self):
+        """Import with no file should show error."""
+        self.login_admin()
+        resp = self.client.post('/import/devices', data={},
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'No file selected', resp.data)
+
+
+class TestLabelPDF(BaseTestCase):
+    """Test PDF label generation."""
+
+    def test_label_pdf_returns_pdf(self):
+        """PDF label route should return a valid PDF."""
+        self.login_admin()
+        did = db.add_device({'name': 'PDF Label Test'})
+        device = db.get_device(did)
+        barcode_utils.generate_label(did, device['barcode_value'], 'PDF Label Test')
+        resp = self.client.get(f'/labels/{did}.pdf')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('application/pdf', resp.content_type)
+        self.assertTrue(resp.data.startswith(b'%PDF'))
+
+    def test_label_pdf_nonexistent_device(self):
+        """PDF for nonexistent device should return 404."""
+        resp = self.client.get('/labels/fake123.pdf')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_label_png_always_regenerated(self):
+        """Label PNG route should always serve current label."""
+        self.login_admin()
+        did = db.add_device({'name': 'PNG Label Test'})
+        resp = self.client.get(f'/labels/{did}.png')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('image/png', resp.content_type)
+
+
+class TestDeviceCheckoutFlow(BaseTestCase):
+    """Functional tests for checkout/checkin workflow."""
+
+    def test_checkout_and_checkin(self):
+        """Full checkout → checkin flow."""
+        self.login_admin()
+        did = db.add_device({'name': 'Checkout Test Dev'})
+        # Checkout
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'John Doe'
+        }, follow_redirects=True)
+        self.assertIn(b'checked out', resp.data.lower())
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+        self.assertEqual(device['assigned_to'], 'John Doe')
+        # Checkin
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+        self.assertEqual(device['assigned_to'], '')
+
+    def test_checkout_history_shown(self):
+        """Device detail should show checkout history."""
+        self.login_admin()
+        did = db.add_device({'name': 'History Test Dev'})
+        self.client.post(f'/devices/{did}/checkout', data={'assigned_to': 'Jane'},
+                         follow_redirects=True)
+        self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Checkout History', resp.data)
+
+
+class TestHealthAndDashboard(BaseTestCase):
+    """Functional tests for dashboard and health."""
+
+    def test_dashboard_shows_categories(self):
+        """Dashboard should show category breakdown."""
+        db.add_device({'name': 'Cat Test', 'category': 'Router'})
+        resp = self.client.get('/')
+        self.assertIn(b'Router', resp.data)
+        self.assertIn(b'By Category', resp.data)
+
+    def test_dashboard_shows_recent_activity(self):
+        """Dashboard should show recent activity."""
+        db.add_device({'name': 'Activity Test'})
+        resp = self.client.get('/')
+        self.assertIn(b'Recent Activity', resp.data)
+        self.assertIn(b'Activity Test', resp.data)
+
+    def test_health_endpoint_json(self):
+        """Health endpoint returns JSON with status."""
+        resp = self.client.get('/health')
+        data = json.loads(resp.data)
+        self.assertEqual(data['status'], 'ok')
+
+
+class TestScannerLookup(BaseTestCase):
+    """Test barcode scanner API."""
+
+    def test_scan_lookup_by_barcode(self):
+        """Scanner lookup should find device by barcode value."""
+        did = db.add_device({'name': 'Scanner Test'})
+        device = db.get_device(did)
+        resp = self.client.get(f'/api/lookup?barcode={device["barcode_value"]}')
+        data = json.loads(resp.data)
+        self.assertTrue(data['found'])
+        self.assertEqual(data['device_id'], did)
+
+    def test_scan_lookup_case_insensitive(self):
+        """Scanner lookup should be case-insensitive."""
+        did = db.add_device({'name': 'Case Test'})
+        device = db.get_device(did)
+        bc_lower = device['barcode_value'].lower()
+        resp = self.client.get(f'/api/lookup?barcode={bc_lower}')
+        data = json.loads(resp.data)
+        self.assertTrue(data['found'])
+
+    def test_scan_page_loads(self):
+        """Scan page should load."""
+        resp = self.client.get('/scan')
+        self.assertEqual(resp.status_code, 200)
+
+
+class TestClientSideFiltering(BaseTestCase):
+    """Test that device list supports client-side filtering."""
+
+    def test_device_list_has_data_attributes(self):
+        """Device list rows should have data attributes for filtering."""
+        db.add_device({'name': 'Filter Me', 'category': 'Router', 'location': 'Lab A'})
+        resp = self.client.get('/devices')
+        self.assertIn(b'data-name=', resp.data)
+
+    def test_device_list_has_filter_input(self):
+        """Device list should have a search input for client-side filtering."""
+        resp = self.client.get('/devices')
+        # Should have the search input
+        self.assertIn(b'search', resp.data.lower())
+
+    def test_codename_filter_server_side(self):
+        """Filtering by codename should use server-side filtering."""
+        db.add_device({'name': 'TestPrinter', 'category': 'Printer', 'codename': 'Phoenix'})
+        db.add_device({'name': 'Other Router', 'category': 'Router'})
+        resp = self.client.get('/devices?codename=Phoenix')
+        self.assertIn(b'TestPrinter', resp.data)
+
+
+class TestEdgeCase(BaseTestCase):
+    """Edge case and error handling tests."""
+
+    def test_device_detail_nonexistent(self):
+        """Viewing a nonexistent device should redirect gracefully."""
+        resp = self.client.get('/devices/nonexistent123', follow_redirects=True)
+        self.assertIn(b'Device not found', resp.data)
+
+    def test_login_wrong_password(self):
+        """Wrong password should show error."""
+        resp = self.client.post('/login', data={
+            'username': 'admin', 'password': 'wrongpass',
+        }, follow_redirects=True)
+        self.assertIn(b'Invalid username or password', resp.data)
+
+    def test_logout_redirect(self):
+        """Logout should redirect to dashboard."""
+        self.login_admin()
+        resp = self.client.get('/logout', follow_redirects=True)
+        self.assertIn(b'logged out', resp.data)
+
+    def test_device_retire(self):
+        """Admin can retire a device."""
+        self.login_admin()
+        did = db.add_device({'name': 'Retire Me'})
+        resp = self.client.post(f'/devices/{did}/retire', follow_redirects=True)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'retired')
+
+    def test_xss_prevention_in_notes(self):
+        """Note content should be escaped in the template."""
+        self.login_admin()
+        did = db.add_device({'name': 'XSS Test Device'})
+        self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '<script>alert("xss")</script>',
+        }, follow_redirects=True)
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        # The script tag should be escaped, not rendered as HTML
+        self.assertNotIn(b'<script>alert', resp.data)
+        self.assertIn(b'&lt;script&gt;', resp.data)
+
+    def test_xss_prevention_in_author(self):
+        """Author name should be escaped."""
+        self.login_admin()
+        did = db.add_device({'name': 'XSS Author Test'})
+        self.client.get('/logout')
+        self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Normal content',
+            'author_name': '<img onerror=alert(1) src=x>',
+        }, follow_redirects=True)
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn(b'<img onerror', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()
