@@ -2368,10 +2368,16 @@ if __name__ == '__main__':
 
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')) as _vf:
+            _version = _vf.read().strip()
+    except Exception:
+        _version = 'unknown'
     w = 49  # inner width between | chars
     print()
     print(f'  +{"-" * w}+')
     print(f'  |{"HP Connectivity Team Inventory System":^{w}}|')
+    print(f'  |{("v" + _version):^{w}}|')
     print(f'  |{"":^{w}}|')
     print(f'  |{"  Running at: " + url:<{w}}|')
     print(f'  |{"  Mode: " + mode:<{w}}|')
