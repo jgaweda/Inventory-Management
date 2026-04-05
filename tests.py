@@ -2532,22 +2532,6 @@ class TestBackupImprovements(BaseTestCase):
         self.assertFalse(result['ok'])
         self.assertIn('No backup files', result['result'])
 
-    def test_verify_now_route(self):
-        """Manual verify endpoint works."""
-        self.login_admin()
-        db.add_device({'name': 'Route Verify'})
-        db.backup_database(performed_by='test', manual=True)
-        resp = self.client.post('/backups/verify', follow_redirects=True)
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'Verification passed', resp.data)
-
-    def test_verify_now_requires_permission(self):
-        """Verify endpoint blocked for viewers."""
-        db.create_user('viewer1', 'pass1234', role='custom')
-        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
-        resp = self.client.post('/backups/verify', follow_redirects=True)
-        self.assertIn(b'permission', resp.data.lower())
-
     def test_upload_rejects_non_sqlite(self):
         """Upload rejects files that aren't valid SQLite databases."""
         self.login_admin()

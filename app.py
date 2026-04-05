@@ -1413,21 +1413,6 @@ def backup_upload():
     return redirect(url_for('backup_list'))
 
 
-@app.route('/backups/verify', methods=['POST'])
-@permission_required('backups')
-def backup_verify_now():
-    """Manually trigger backup verification."""
-    try:
-        result = db.verify_backup(rotate=False)
-        if result['ok']:
-            flash(f'Verification passed: {result["filename"]}', 'success')
-        else:
-            flash(f'Verification failed: {result["filename"]} — {result["result"]}', 'error')
-    except Exception as e:
-        app_logger.error('Manual verification failed: %s\nTraceback:\n%s', e, traceback.format_exc())
-        flash(f'Verification error: {e}', 'error')
-    return redirect(url_for('backup_list'))
-
 
 @app.route('/backups/config', methods=['POST'])
 @permission_required('backups')
