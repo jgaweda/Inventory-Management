@@ -39,6 +39,7 @@ class TestProductReferenceAPI(BaseTestCase):
                                  content_type='application/json')
         self.assertEqual(resp.status_code, 400)
 
+
 class TestProductReferenceDeleteExport(BaseTestCase):
     """Test product reference delete and export routes."""
 
@@ -76,6 +77,7 @@ class TestProductReferenceDeleteExport(BaseTestCase):
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.get('/reference/export', follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
+
 
 class TestProductReferenceSeed(BaseTestCase):
     """Test automatic product reference seeding from seed_data/."""
@@ -272,6 +274,7 @@ class TestProductReferenceSeed(BaseTestCase):
         attachments = db.get_wiki_attachments(refs[0]['ref_id'])
         self.assertEqual(len(attachments), 1)
 
+
 class TestUpsertProductReference(BaseTestCase):
     """Test upsert_product_reference for seed import mode."""
 
@@ -318,6 +321,7 @@ class TestUpsertProductReference(BaseTestCase):
         self.assertEqual(action, 'added')
         wiki = db.get_wiki_by_ref_id(ref_id)
         self.assertIsNotNone(wiki)
+
 
 class TestSeedImportMode(BaseTestCase):
     """Test the seed import mode via the web UI."""
@@ -428,6 +432,7 @@ class TestSeedImportMode(BaseTestCase):
             resp = self.client.post('/reference/seed', follow_redirects=True)
         self.assertIn(b'Seed data not found', resp.data)
 
+
 class TestLargeFormatPrintTechnology(BaseTestCase):
     """Test Large Format as a print technology option."""
 
@@ -458,6 +463,7 @@ class TestLargeFormatPrintTechnology(BaseTestCase):
         ref_id, action = db.upsert_product_reference(codename='Beam', model_name='DJ XT950')
         refs = db.get_product_reference_by_codename('Beam')
         self.assertEqual(refs[0]['print_technology'], 'Large Format')
+
 
 class TestCartridgeToner(BaseTestCase):
     """Test the Cartridge/Toner field across the application."""
