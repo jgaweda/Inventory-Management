@@ -1785,6 +1785,56 @@ def product_reference_export():
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
 
 
+@app.route('/reference/export/xlsx')
+@login_required
+def product_reference_export_xlsx():
+    """Export all product references as an .xlsx download."""
+    if not _can_manage_references():
+        flash('You do not have permission to manage product references.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        flash('openpyxl is required for Excel export. Install with: pip install openpyxl', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    refs = db.get_all_product_references()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Product Reference'
+
+    headers = ['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
+               'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase']
+    ws.append(headers)
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+
+    for r in refs:
+        ws.append([r['codename'], r['model_name'], r['print_technology'],
+                   r['wifi_gen'], r['year'], r['chip_manufacturer'],
+                   r['chip_codename'], r['fw_codebase']])
+
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or '')) for cell in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+    ws.freeze_panes = 'A2'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=product_reference.xlsx'}
+    )
+
+
 # ---------------------------------------------------------------------------
 # Product Wiki — community notes per product
 # ---------------------------------------------------------------------------
