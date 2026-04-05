@@ -130,6 +130,23 @@ def load_user():
             session.clear()
 
 
+# Periodically check if the scheduler thread is alive (every ~60 seconds)
+_last_scheduler_check = datetime.now()
+
+
+@app.before_request
+def _check_scheduler_health():
+    """Self-heal: restart scheduler thread if it died, checked at most once per minute."""
+    global _last_scheduler_check
+    now = datetime.now()
+    if (now - _last_scheduler_check).total_seconds() < 60:
+        return
+    _last_scheduler_check = now
+    if _scheduler_thread is not None and not _scheduler_thread.is_alive():
+        app_logger.warning('Scheduler thread found dead — restarting')
+        _ensure_scheduler_running()
+
+
 def login_required(f):
     """Decorator: redirect to login if not authenticated."""
     @wraps(f)
@@ -1148,22 +1165,25 @@ _fail_count = {'backup': 0, 'git_push': 0, 'prune': 0}
 def _scheduler_loop():
     """Persistent loop: wake every 60s, run any overdue tasks."""
     while not _scheduler_stop.is_set():
-        now = datetime.now()
+        try:
+            now = datetime.now()
 
-        with _scheduler_lock:
-            run_backup = _next_backup_time is not None and now >= _next_backup_time
-            run_git = _next_git_push_time is not None and now >= _next_git_push_time
-            run_prune = _next_prune_time is not None and now >= _next_prune_time
-            run_verify = _next_verify_time is not None and now >= _next_verify_time
+            with _scheduler_lock:
+                run_backup = _next_backup_time is not None and now >= _next_backup_time
+                run_git = _next_git_push_time is not None and now >= _next_git_push_time
+                run_prune = _next_prune_time is not None and now >= _next_prune_time
+                run_verify = _next_verify_time is not None and now >= _next_verify_time
 
-        if run_backup:
-            _exec_scheduled_backup()
-        if run_git:
-            _exec_scheduled_git_push()
-        if run_prune:
-            _exec_scheduled_prune()
-        if run_verify:
-            _exec_scheduled_verify()
+            if run_backup:
+                _exec_scheduled_backup()
+            if run_git:
+                _exec_scheduled_git_push()
+            if run_prune:
+                _exec_scheduled_prune()
+            if run_verify:
+                _exec_scheduled_verify()
+        except Exception:
+            app_logger.error('Scheduler loop error (will continue):\n%s', traceback.format_exc())
 
         # Sleep in 5-second chunks so stop events are responsive
         for _ in range(12):
