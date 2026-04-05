@@ -3404,5 +3404,56 @@ class TestCartridgeToner(BaseTestCase):
         self.assertIn(b'HP 67/67XL', resp.data)
 
 
+class TestAttachmentIntegrity(BaseTestCase):
+    """Test wiki attachment integrity checking."""
+
+    def test_check_no_attachments(self):
+        """Integrity check with no attachments returns clean result."""
+        uploads_dir = os.path.join(_test_dir, 'wiki_uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        result = db.check_attachment_integrity(uploads_dir)
+        self.assertEqual(result['total_checked'], 0)
+        self.assertEqual(result['orphaned_removed'], 0)
+
+    def test_check_removes_orphaned_records(self):
+        """Integrity check removes DB records with missing files."""
+        ref_id = db.add_product_reference(codename='OrphanTest')
+        db.add_wiki_attachment(ref_id, 'missing_file.png', 'photo.png', 'image/png', 1024, 'admin')
+        uploads_dir = os.path.join(_test_dir, 'wiki_uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        # File doesn't exist on disk — should be cleaned
+        result = db.check_attachment_integrity(uploads_dir)
+        self.assertEqual(result['orphaned_removed'], 1)
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 0)
+
+    def test_check_preserves_valid_attachments(self):
+        """Integrity check keeps records where files exist."""
+        ref_id = db.add_product_reference(codename='ValidTest')
+        db.add_wiki_attachment(ref_id, 'real_file.txt', 'doc.txt', 'text/plain', 5, 'admin')
+        uploads_dir = os.path.join(_test_dir, 'wiki_uploads')
+        file_dir = os.path.join(uploads_dir, str(ref_id))
+        os.makedirs(file_dir, exist_ok=True)
+        with open(os.path.join(file_dir, 'real_file.txt'), 'w') as f:
+            f.write('hello')
+        result = db.check_attachment_integrity(uploads_dir)
+        self.assertEqual(result['orphaned_removed'], 0)
+        self.assertEqual(result['total_checked'], 1)
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 1)
+
+    def test_repair_endpoint_requires_permission(self):
+        """Repair endpoint requires wiki_admin permission."""
+        resp = self.client.post('/wiki/repair', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        # Not logged in — should redirect to login
+        self.assertIn(b'login', resp.data.lower())
+
+    def test_repair_endpoint_works(self):
+        """Admin can trigger repair and get feedback."""
+        self.login_admin()
+        resp = self.client.post('/wiki/repair', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'intact', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()

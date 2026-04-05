@@ -105,10 +105,15 @@ with app.app_context():
     db.init_db()
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
     os.makedirs(db._get_backup_dir(), exist_ok=True)
+    os.makedirs(os.path.join(DATA_DIR, 'wiki_uploads'), exist_ok=True)
     # Startup integrity check — log warning if database is corrupt
     _integrity = db.startup_integrity_check()
     if not _integrity['ok']:
         app_logger.error('DATABASE INTEGRITY ISSUE ON STARTUP: %s', _integrity['result'])
+    # Check wiki attachment integrity — remove orphaned DB records for missing files
+    _att_check = db.check_attachment_integrity(os.path.join(DATA_DIR, 'wiki_uploads'))
+    if _att_check['orphaned_removed'] > 0:
+        app_logger.warning('Startup: removed %d orphaned wiki attachment records', _att_check['orphaned_removed'])
     app_logger.info('Application started — database initialized')
 
 # ---------------------------------------------------------------------------
@@ -1314,12 +1319,32 @@ def _ensure_scheduler_running():
     app_logger.info('Backup scheduler thread started')
 
 
-# Restore schedules on startup
+# Restore schedules on startup — if a task is overdue, run it soon instead of
+# waiting a full interval (prevents persistent "overdue" after restart).
 _startup_config = db._get_backup_config()
 if _startup_config.get('backup_enabled'):
-    _start_backup_timer(_startup_config['backup_interval_hours'])
+    _last_bk = _startup_config.get('last_backup', '')
+    _bk_interval = _startup_config['backup_interval_hours']
+    if _last_bk:
+        _bk_age_hours = (datetime.now() - datetime.strptime(_last_bk, '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600
+        if _bk_age_hours > _bk_interval:
+            app_logger.info('Backup overdue on startup (%.1f hours old), scheduling in 30 seconds', _bk_age_hours)
+            _start_backup_timer(30 / 3600)  # ~30 seconds
+        else:
+            _start_backup_timer(_bk_interval - _bk_age_hours)
+    else:
+        _start_backup_timer(_bk_interval)
 if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
-    _start_git_push_timer(_startup_config['git_push_interval_hours'])
+    _last_gp = _startup_config.get('last_git_push', '')
+    _gp_interval = _startup_config['git_push_interval_hours']
+    if _last_gp:
+        _gp_age_hours = (datetime.now() - datetime.strptime(_last_gp, '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600
+        if _gp_age_hours > _gp_interval:
+            _start_git_push_timer(30 / 3600)
+        else:
+            _start_git_push_timer(_gp_interval - _gp_age_hours)
+    else:
+        _start_git_push_timer(_gp_interval)
 if _startup_config.get('prune_enabled'):
     _start_prune_timer(_startup_config['prune_interval_hours'])
 
@@ -2202,6 +2227,23 @@ def wiki_delete_attachment(attachment_id):
     db.delete_wiki_attachment(attachment_id)
     flash(f'Deleted {att["original_name"]}.', 'success')
     return redirect(url_for('product_wiki', ref_id=att['ref_id']))
+
+
+@app.route('/wiki/repair', methods=['POST'])
+@login_required
+def wiki_repair_attachments():
+    """Manually run attachment integrity check — removes orphaned DB records."""
+    if not has_permission('wiki_admin'):
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('product_reference_list'))
+    result = db.check_attachment_integrity(WIKI_UPLOADS_DIR)
+    if result['orphaned_removed'] > 0:
+        app_logger.info('Manual attachment repair: removed %d orphaned records by=%s',
+                        result['orphaned_removed'], current_username())
+        flash(f'Repair complete: removed {result["orphaned_removed"]} broken attachment references.', 'success')
+    else:
+        flash(f'All {result["total_checked"]} attachments are intact. No repairs needed.', 'success')
+    return redirect(request.referrer or url_for('product_reference_list'))
 
 
 @app.route('/api/devices/distinct/<field>')

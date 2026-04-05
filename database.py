@@ -2478,6 +2478,46 @@ def delete_wiki_attachment(attachment_id):
         conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))
 
 
+def check_attachment_integrity(uploads_dir):
+    """Check all wiki_attachments records have files on disk.
+
+    Removes orphaned DB records (file missing) and returns a summary.
+    """
+    conn = get_connection()
+    try:
+        rows = conn.execute('SELECT attachment_id, ref_id, filename, original_name FROM wiki_attachments').fetchall()
+    finally:
+        conn.close()
+
+    orphaned = []
+    for row in rows:
+        filepath = os.path.join(uploads_dir, str(row['ref_id']), row['filename'])
+        if not os.path.isfile(filepath):
+            orphaned.append({
+                'attachment_id': row['attachment_id'],
+                'ref_id': row['ref_id'],
+                'filename': row['filename'],
+                'original_name': row['original_name'],
+            })
+
+    if orphaned:
+        ids = [o['attachment_id'] for o in orphaned]
+        with db_transaction() as conn:
+            conn.executemany(
+                'DELETE FROM wiki_attachments WHERE attachment_id = ?',
+                [(aid,) for aid in ids]
+            )
+        _audit_logger.warning('Attachment integrity: removed %d orphaned records (files missing on disk)', len(orphaned))
+    else:
+        _audit_logger.info('Attachment integrity check: all %d attachments OK', len(rows))
+
+    return {
+        'total_checked': len(rows),
+        'orphaned_removed': len(orphaned),
+        'orphaned_details': orphaned,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Device Notes — anyone can add notes to a device
 # ---------------------------------------------------------------------------
