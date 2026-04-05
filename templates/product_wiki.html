@@ -155,8 +155,26 @@
 <!-- Wiki Content -->
 <div class="card" style="padding: 0; overflow: hidden; cursor: default;">
     {% if current_user %}
-    <!-- Editable wiki for logged-in users -->
-    <form method="POST" action="{{ url_for('product_wiki_save', ref_id=ref.ref_id) }}">
+    <!-- View mode (default): rendered markdown with Edit button -->
+    <div id="wikiViewMode">
+        <div class="wiki-toolbar" style="padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary);">
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
+                    <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+                </svg>
+                Wiki
+            </span>
+            <div style="flex: 1;"></div>
+            <button type="button" id="wikiEditBtn" class="btn btn-secondary btn-sm">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit
+            </button>
+        </div>
+        <div class="wiki-content" id="wikiRendered"></div>
+    </div>
+
+    <!-- Edit mode (hidden by default): textarea with toolbar -->
+    <form method="POST" action="{{ url_for('product_wiki_save', ref_id=ref.ref_id) }}" id="wikiEditMode" style="display: none;">
         <div class="wiki-toolbar" style="padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary);">
             <span style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">
                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
@@ -165,6 +183,7 @@
                 Editing
             </span>
             <div style="flex: 1;"></div>
+            <button type="button" id="wikiCancelBtn" class="btn btn-secondary btn-sm" style="margin-right: 8px;">Cancel</button>
             <button type="submit" class="btn btn-primary btn-sm">
                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 Save
@@ -309,7 +328,7 @@
 </div>
 
 {% if current_user %}
-<p class="format-hint">
+<p class="format-hint" id="wikiFormatHint" style="display: none;">
     Supports Markdown: **bold**, *italic*, # Heading, - lists, `code`, [links](url), > quotes.
     All logged-in users can edit. Changes are visible to the entire team.
 </p>
@@ -338,14 +357,46 @@
         return div.innerHTML.replace(/\n/g, '<br>');
     }
 
-    // Render read-only view
+    // Render read-only view (non-logged-in users)
     var readOnly = document.getElementById('wikiReadOnly');
     if (readOnly) {
         readOnly.innerHTML = renderMarkdown(rawContent);
     }
 
-    // --- Formatting toolbar logic ---
+    // Render view mode for logged-in users (default)
+    var rendered = document.getElementById('wikiRendered');
+    if (rendered) {
+        rendered.innerHTML = renderMarkdown(rawContent);
+    }
+
+    // --- View/Edit mode toggling ---
+    var viewMode = document.getElementById('wikiViewMode');
+    var editMode = document.getElementById('wikiEditMode');
+    var editBtn = document.getElementById('wikiEditBtn');
+    var cancelBtn = document.getElementById('wikiCancelBtn');
+    var formatHint = document.getElementById('wikiFormatHint');
     var editor = document.getElementById('wikiEditor');
+
+    if (editBtn && viewMode && editMode) {
+        editBtn.addEventListener('click', function() {
+            viewMode.style.display = 'none';
+            editMode.style.display = '';
+            if (formatHint) formatHint.style.display = '';
+            if (editor) editor.focus();
+        });
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function() {
+                // Reset editor content and switch back to view
+                if (editor) editor.value = rawContent || '';
+                editMode.style.display = 'none';
+                viewMode.style.display = '';
+                if (formatHint) formatHint.style.display = 'none';
+            });
+        }
+    }
+
+    // --- Formatting toolbar logic ---
     if (editor) {
         // Wrap/insert Markdown around selection
         function wrapSelection(before, after) {
@@ -398,7 +449,6 @@
                     wrapSelection('*', '*');
                     break;
                 case 'underline':
-                    // HTML underline since Markdown has no native underline
                     wrapSelection('<u>', '</u>');
                     break;
                 case 'heading-up': {
@@ -411,7 +461,6 @@
                     } else if (hashes.length > 1) {
                         replaceLine(info.lineStart, info.lineEnd, hashes.substring(1) + ' ' + rest);
                     }
-                    // Already h1 — do nothing
                     break;
                 }
                 case 'heading-down': {
@@ -421,10 +470,7 @@
                     var rest = match[2] || '';
                     if (hashes.length > 0 && hashes.length < 6) {
                         replaceLine(info.lineStart, info.lineEnd, hashes + '# ' + rest);
-                    } else if (hashes.length === 0) {
-                        // Not a heading — do nothing
-                    } else {
-                        // h6 — remove heading
+                    } else if (hashes.length === 6) {
                         replaceLine(info.lineStart, info.lineEnd, rest);
                     }
                     break;
@@ -449,7 +495,6 @@
                     if (selected) {
                         var replacement = '[' + selected + '](url)';
                         editor.value = text.substring(0, start) + replacement + text.substring(end);
-                        // Select "url" for easy replacement
                         editor.selectionStart = start + selected.length + 2;
                         editor.selectionEnd = start + selected.length + 5;
                     } else {
@@ -470,40 +515,6 @@
                 if (e.key === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
                 if (e.key === 'i') { e.preventDefault(); wrapSelection('*', '*'); }
                 if (e.key === 'u') { e.preventDefault(); wrapSelection('<u>', '</u>'); }
-            }
-        });
-    }
-
-    // Add live preview toggle for editor
-    var toolbar = document.querySelector('.wiki-toolbar');
-    if (editor && toolbar) {
-        // Add preview button to toolbar
-        var previewBtn = document.createElement('button');
-        previewBtn.type = 'button';
-        previewBtn.className = 'btn btn-secondary btn-sm';
-        previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview';
-        previewBtn.style.marginRight = '8px';
-        toolbar.querySelector('[style="flex: 1;"]').insertAdjacentElement('afterend', previewBtn);
-
-        // Create preview div
-        var previewDiv = document.createElement('div');
-        previewDiv.className = 'wiki-content';
-        previewDiv.style.display = 'none';
-        previewDiv.style.minHeight = '500px';
-        editor.parentNode.insertBefore(previewDiv, editor.nextSibling);
-
-        var previewing = false;
-        previewBtn.addEventListener('click', function() {
-            previewing = !previewing;
-            if (previewing) {
-                previewDiv.innerHTML = renderMarkdown(editor.value);
-                previewDiv.style.display = 'block';
-                editor.style.display = 'none';
-                previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit';
-            } else {
-                previewDiv.style.display = 'none';
-                editor.style.display = '';
-                previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview';
             }
         });
     }
