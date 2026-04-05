@@ -22,6 +22,16 @@
         box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
     }
 
+    .fmt-btn {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 30px; height: 28px; border: none; border-radius: 4px;
+        background: transparent; color: var(--text-secondary); cursor: pointer;
+        font-size: 14px; font-family: 'DM Sans', serif;
+        transition: background 0.12s, color 0.12s;
+    }
+    .fmt-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+    .fmt-btn:active { background: var(--accent-blue); color: #fff; }
+
     .wiki-content {
         padding: 20px; font-size: 14px; line-height: 1.8;
         color: var(--text-primary); word-wrap: break-word;
@@ -160,7 +170,30 @@
                 Save
             </button>
         </div>
-        <textarea name="content" class="wiki-editor" placeholder="Start documenting this product...&#10;&#10;Add testing nuances, known issues, configuration tips, or anything the team should know.">{{ content }}</textarea>
+        <!-- Formatting toolbar -->
+        <div class="fmt-toolbar" style="display: flex; align-items: center; gap: 2px; padding: 6px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary);">
+            <button type="button" class="fmt-btn" data-fmt="bold" title="Bold (Ctrl+B)"><strong>B</strong></button>
+            <button type="button" class="fmt-btn" data-fmt="italic" title="Italic (Ctrl+I)"><em>I</em></button>
+            <button type="button" class="fmt-btn" data-fmt="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+            <span style="width: 1px; height: 20px; background: var(--border-color); margin: 0 6px;"></span>
+            <button type="button" class="fmt-btn" data-fmt="heading-up" title="Increase heading level">
+                <span style="font-size: 13px; font-weight: 700;">H</span><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align: 0px;"><path d="M5 2L2 6h6z"/></svg>
+            </button>
+            <button type="button" class="fmt-btn" data-fmt="heading-down" title="Decrease heading level">
+                <span style="font-size: 13px; font-weight: 700;">H</span><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="vertical-align: 0px;"><path d="M5 8L2 4h6z"/></svg>
+            </button>
+            <span style="width: 1px; height: 20px; background: var(--border-color); margin: 0 6px;"></span>
+            <button type="button" class="fmt-btn" data-fmt="list" title="Bullet list">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
+            </button>
+            <button type="button" class="fmt-btn" data-fmt="code" title="Code">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </button>
+            <button type="button" class="fmt-btn" data-fmt="link" title="Link">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            </button>
+        </div>
+        <textarea name="content" class="wiki-editor" id="wikiEditor" placeholder="Start documenting this product...&#10;&#10;Add testing nuances, known issues, configuration tips, or anything the team should know.">{{ content }}</textarea>
     </form>
     {% else %}
     <!-- Read-only view for visitors -->
@@ -311,8 +344,137 @@
         readOnly.innerHTML = renderMarkdown(rawContent);
     }
 
+    // --- Formatting toolbar logic ---
+    var editor = document.getElementById('wikiEditor');
+    if (editor) {
+        // Wrap/insert Markdown around selection
+        function wrapSelection(before, after) {
+            var start = editor.selectionStart;
+            var end = editor.selectionEnd;
+            var text = editor.value;
+            var selected = text.substring(start, end);
+            // If already wrapped, unwrap
+            var preBefore = text.substring(Math.max(0, start - before.length), start);
+            var postAfter = text.substring(end, end + after.length);
+            if (preBefore === before && postAfter === after) {
+                editor.value = text.substring(0, start - before.length) + selected + text.substring(end + after.length);
+                editor.selectionStart = start - before.length;
+                editor.selectionEnd = end - before.length;
+            } else {
+                var replacement = before + (selected || 'text') + after;
+                editor.value = text.substring(0, start) + replacement + text.substring(end);
+                editor.selectionStart = start + before.length;
+                editor.selectionEnd = start + before.length + (selected || 'text').length;
+            }
+            editor.focus();
+        }
+
+        function getLineInfo() {
+            var start = editor.selectionStart;
+            var text = editor.value;
+            var lineStart = text.lastIndexOf('\n', start - 1) + 1;
+            var lineEnd = text.indexOf('\n', start);
+            if (lineEnd === -1) lineEnd = text.length;
+            return { lineStart: lineStart, lineEnd: lineEnd, line: text.substring(lineStart, lineEnd) };
+        }
+
+        function replaceLine(lineStart, lineEnd, newLine) {
+            var text = editor.value;
+            editor.value = text.substring(0, lineStart) + newLine + text.substring(lineEnd);
+            editor.selectionStart = editor.selectionEnd = lineStart + newLine.length;
+            editor.focus();
+        }
+
+        document.querySelector('.fmt-toolbar').addEventListener('click', function(e) {
+            var btn = e.target.closest('.fmt-btn');
+            if (!btn) return;
+            var fmt = btn.getAttribute('data-fmt');
+
+            switch (fmt) {
+                case 'bold':
+                    wrapSelection('**', '**');
+                    break;
+                case 'italic':
+                    wrapSelection('*', '*');
+                    break;
+                case 'underline':
+                    // HTML underline since Markdown has no native underline
+                    wrapSelection('<u>', '</u>');
+                    break;
+                case 'heading-up': {
+                    var info = getLineInfo();
+                    var match = info.line.match(/^(#{0,6})\s*(.*)/);
+                    var hashes = match[1] || '';
+                    var rest = match[2] || '';
+                    if (hashes.length === 0) {
+                        replaceLine(info.lineStart, info.lineEnd, '# ' + rest);
+                    } else if (hashes.length > 1) {
+                        replaceLine(info.lineStart, info.lineEnd, hashes.substring(1) + ' ' + rest);
+                    }
+                    // Already h1 — do nothing
+                    break;
+                }
+                case 'heading-down': {
+                    var info = getLineInfo();
+                    var match = info.line.match(/^(#{0,6})\s*(.*)/);
+                    var hashes = match[1] || '';
+                    var rest = match[2] || '';
+                    if (hashes.length > 0 && hashes.length < 6) {
+                        replaceLine(info.lineStart, info.lineEnd, hashes + '# ' + rest);
+                    } else if (hashes.length === 0) {
+                        // Not a heading — do nothing
+                    } else {
+                        // h6 — remove heading
+                        replaceLine(info.lineStart, info.lineEnd, rest);
+                    }
+                    break;
+                }
+                case 'list': {
+                    var info = getLineInfo();
+                    if (info.line.match(/^- /)) {
+                        replaceLine(info.lineStart, info.lineEnd, info.line.substring(2));
+                    } else {
+                        replaceLine(info.lineStart, info.lineEnd, '- ' + info.line);
+                    }
+                    break;
+                }
+                case 'code':
+                    wrapSelection('`', '`');
+                    break;
+                case 'link': {
+                    var start = editor.selectionStart;
+                    var end = editor.selectionEnd;
+                    var selected = editor.value.substring(start, end);
+                    var text = editor.value;
+                    if (selected) {
+                        var replacement = '[' + selected + '](url)';
+                        editor.value = text.substring(0, start) + replacement + text.substring(end);
+                        // Select "url" for easy replacement
+                        editor.selectionStart = start + selected.length + 2;
+                        editor.selectionEnd = start + selected.length + 5;
+                    } else {
+                        var replacement = '[link text](url)';
+                        editor.value = text.substring(0, start) + replacement + text.substring(end);
+                        editor.selectionStart = start + 1;
+                        editor.selectionEnd = start + 10;
+                    }
+                    editor.focus();
+                    break;
+                }
+            }
+        });
+
+        // Keyboard shortcuts
+        editor.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+                if (e.key === 'b') { e.preventDefault(); wrapSelection('**', '**'); }
+                if (e.key === 'i') { e.preventDefault(); wrapSelection('*', '*'); }
+                if (e.key === 'u') { e.preventDefault(); wrapSelection('<u>', '</u>'); }
+            }
+        });
+    }
+
     // Add live preview toggle for editor
-    var editor = document.querySelector('.wiki-editor');
     var toolbar = document.querySelector('.wiki-toolbar');
     if (editor && toolbar) {
         // Add preview button to toolbar
