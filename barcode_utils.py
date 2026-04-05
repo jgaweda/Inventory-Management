@@ -142,15 +142,16 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     """
     Create a 1050x450 pixel device label (3.5x1.5 inches at 300 DPI, landscape).
 
-    Layout (full-bleed):
+    Layout (full-bleed, three-band):
       Left  : QR code scaled to full label height
-      Right : Code 128 barcode fills entire remaining area, full height
-              Device name in a white notch at top-right of barcode
-              Barcode ID in a white notch at bottom-center of barcode
+      Right : Three stacked bands filling the entire area:
+              TOP    — device name (white background, full width)
+              MIDDLE — Code 128 barcode (fills all remaining height)
+              BOTTOM — barcode ID (white background, full width)
 
-    The barcode bars extend the full height of the label. Text is placed
-    in white rectangular indentations carved into the barcode so scanners
-    can read any horizontal line that doesn't cross a text notch.
+    Barcode bars run exactly between the text bands — no bars extend
+    above the name or below the ID. The label is visually full with
+    no wasted whitespace.
 
     If save=True, writes PNG to static/labels/{device_id}.png.
     Returns the file path (if saved) or the PIL Image.
@@ -158,6 +159,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     W, H = 1050, 450
     EDGE = 8          # minimal edge margin
     QR_GAP = 10       # gap between QR and barcode
+    TEXT_PAD_Y = 8    # vertical padding inside text bands
 
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
@@ -167,52 +169,40 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     qr_img = generate_qr_code(barcode_value, size=qr_size)
     label.paste(qr_img, (EDGE, EDGE))
 
-    # --- Right: barcode fills entire remaining area ---
+    # --- Right side geometry ---
     bc_x = EDGE + qr_size + QR_GAP
     bc_w = W - bc_x - EDGE
-    bc_h = H - 2 * EDGE
 
-    try:
-        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h)
-        label.paste(barcode_img, (bc_x, EDGE))
-    except Exception:
-        font_fb = _find_font(MONO_BOLD_FONTS, 36)
-        draw.text((bc_x + 20, H // 2 - 20), barcode_value, fill='black', font=font_fb)
-
-    # --- Notch 1: device name at top-right of barcode area ---
-    NOTCH_PAD_X = 12   # horizontal padding inside notch
-    NOTCH_PAD_Y = 6    # vertical padding inside notch
-
+    # --- Measure text bands first to calculate barcode height ---
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, bc_w - 2 * NOTCH_PAD_X, 38, min_size=20)
+        draw, device_name, BOLD_FONTS, bc_w - 20, 38, min_size=20)
+    font_id, display_id, id_tw, id_th = _fit_font(
+        draw, barcode_value, MONO_BOLD_FONTS, bc_w - 20, 44, min_size=24)
 
-    notch1_w = name_tw + 2 * NOTCH_PAD_X
-    notch1_h = name_th + 2 * NOTCH_PAD_Y
-    notch1_x = bc_x + (bc_w - notch1_w) // 2
-    notch1_y = EDGE
+    top_band_h = name_th + 2 * TEXT_PAD_Y
+    bot_band_h = id_th + 2 * TEXT_PAD_Y
+    bc_h = H - 2 * EDGE - top_band_h - bot_band_h
 
-    # White rectangle notch, then text
-    draw.rectangle([notch1_x, notch1_y, notch1_x + notch1_w, notch1_y + notch1_h],
-                   fill='white')
-    name_x = notch1_x + NOTCH_PAD_X
-    name_y = notch1_y + NOTCH_PAD_Y
-    # Correct for font bearing offset
+    # --- TOP band: device name (white, full width) ---
+    top_y = EDGE
+    name_x = bc_x + (bc_w - name_tw) // 2
+    name_y = top_y + TEXT_PAD_Y
     bearing = draw.textbbox((name_x, name_y), display_name, font=font_name)[0] - name_x
     draw.text((name_x - bearing, name_y), display_name, fill='black', font=font_name)
 
-    # --- Notch 2: barcode ID at bottom-center of barcode area ---
-    font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, bc_w - 2 * NOTCH_PAD_X, 44, min_size=24)
+    # --- MIDDLE band: barcode (fills between text bands) ---
+    barcode_y = top_y + top_band_h
+    try:
+        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h)
+        label.paste(barcode_img, (bc_x, barcode_y))
+    except Exception:
+        font_fb = _find_font(MONO_BOLD_FONTS, 36)
+        draw.text((bc_x + 20, barcode_y + 20), barcode_value, fill='black', font=font_fb)
 
-    notch2_w = id_tw + 2 * NOTCH_PAD_X
-    notch2_h = id_th + 2 * NOTCH_PAD_Y
-    notch2_x = bc_x + (bc_w - notch2_w) // 2
-    notch2_y = H - EDGE - notch2_h
-
-    draw.rectangle([notch2_x, notch2_y, notch2_x + notch2_w, notch2_y + notch2_h],
-                   fill='white')
-    id_x = notch2_x + NOTCH_PAD_X
-    id_y = notch2_y + NOTCH_PAD_Y
+    # --- BOTTOM band: barcode ID (white, full width) ---
+    bot_y = barcode_y + bc_h
+    id_x = bc_x + (bc_w - id_tw) // 2
+    id_y = bot_y + TEXT_PAD_Y
     draw.text((id_x, id_y), display_id, fill='black', font=font_id)
 
     if save:
