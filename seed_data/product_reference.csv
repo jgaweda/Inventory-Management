@@ -1,137 +1,136 @@
-﻿Codename,Model Name,Print Technology,Wi-Fi Gen,Year,Wireless Chip Set Manufacturer,Wireless Chipset Codename,FW Codebase,Variant
-Dragonfly,,,5,????,Infineon,Silverstar,Ares,
-Libra,,,,2029,,,,
-Polestar,,,,2029,,,,
-Scorpius,,,,2028,Realtek,Stellar,,
-Lynx,,,,2027,,,,
-Magellan,OfficeJet Pro 9130b,Ink,5,2027,Realtek,Stingray,Dune,
-Greenfield,M214/M216/M220/M223,Laser,4,2026,TI,Snowy,Ares 2,
-Leo,Smart Tank xxxxx,Ink,,2026,,,,
-Lotus,LaserJet Pro MFP 4112-4115fdw,Laser,6,2026,Realtek,Stellar,Dune,
-Sunspear,M239/M241/M246/M248,Laser,4,2026,TI,Snowy,Ares 2,
-Cherry,LaserJet Pro 4006-40009dn,Laser,6,2025,Realtek,Stellar,Dune,
-Trillium,,,4,2025,TI,Snowy,Ares,
-Victoria,Envy 6100/6500,Ink,5,2024,Realtek,Stingray,Dune,
-Beam,DesignJet XT950,Large Format,5,2023,Realtek,Stingray,Dune,
-Euthenia,Color LaserJet Pro MFP 3301-3304/3388 series,Laser,5,2023,Realtek,Stingray,Dune,
-Kebin,OfficeJet Pro 9720 Series,Large Format,5,2023,Realtek,Stingray,Dune,
-Kegon,,,,2023,Marvell,Styx,Apollo,
-Marconi,OfficeJet Pro 9120 / 9120b Series,Ink,5,2023,Realtek,Stingray,Dune,
-Moreto,OfficeJet Pro 8030 series,Ink,5,2023,Realtek,Stingray,Dune,
-Selene,Color LaserJet Pro MFP 4301-4303,Laser,5,2023,Realtek,Stingray,Dune,
-Tassel,"Deskjet 2800, 4200, 4900",Ink,5,2023,Infineon,Silverstar,Ares,
-Ulysses,Color LaserJet Pro 4201-4203,Laser,5,2023,Realtek,Stingray,Dune,
-Union,,,,2023,Marvell,Styx,Apollo,
-Zelus,Color LaserJet Pro 3288,Laser,5,2023,Realtek,Stingray,Dune,
-Angel,1005/1602/2604,Laser,4,2022,Marvell,Styx,Apollo,
-LEBI,"Smart Tank 580-590/5100, 520/50000, 200-210/2100",Ink,5,2022,Infineon,Silverstar,Ares,
-Shiralto,1020/1502/1504/2502/2504/2506,Laser,4,2022,Marvell,Styx,Apollo,
-Gaheris,M139/M140/M141/M142,Laser,4,2021,Marvell,Styx,Apollo,
-Hulk,LaserJet 310x,Laser,4,2021,Marvell,Styx,SoL,
-Kay,M109/M110/M111/M112,Laser,4,2021,Marvell,Styx,Apollo,
-Lochsa,LaserJet 410x,Laser,4,2021,Marvell,Styx,SoL,
-Novelli,Envy Inspire 7200/7900,Ink,5,2021,Realtek,Stingray,SoL,
-Sayan,Smart Tank 7xx/7x0x,Ink,5,2021,Realtek,Stingray,SoL,
-Storm,LaserJet 300x,Laser,4,2021,Marvell,Styx,SoL,
-Vasari Yeti,Envy 6000/6400,Ink,5,2021,Realtek,Stingray,SoL,
-Yoshino,LaserJet 400x,Laser,4,2021,Marvell,Styx,SoL,
-Bella,M182/M183,Laser,4,2020,Infineon,Ulysses,Phoenix,
-Betel,M282/M283,Laser,4,2020,Infineon,Ulysses,Phoenix,
-Eyrie,M207-M212,Laser,4,2020,Marvell,Styx,Apollo,
-Malbec Yeti,OJ Pro 80x0,Ink,5,2020,Realtek,Stingray,SoL,
-Manhattan Yeti,OJ Pro 90x0,Ink,5,2020,Realtek,Stingray,SoL,
-Meissa,M255,Laser,4,2020,Infineon,Ulysses,Phoenix,
-Saiph,M155,Laser,4,2020,Infineon,Ulysses,Phoenix,
-Skyreach,M232-M237,Laser,4,2020,Marvell,Styx,Apollo,
-Spark,DesignJet T250/T650,Large Format,4,2020,Marvell,Styx,SoL,
-Taccola,DJ 2700/4100,Ink,4,2020,Marvell,Styx,Classic,
-Vasari,Envy 6000/6400,Ink,5,2020,Realtek,Stingray,SoL,
-Colossus,1200,Laser,4,2019,Infineon,Spectra,Apollo,
-Malbec,OJ Pro 80x0,Ink,4,2019,Marvell,Styx,SoL,
-Manhattan,OJ Pro 90x0,Ink,4,2019,Marvell,Styx,SoL,
-Wolverine,1000,Laser,4,2019,Infineon,Spectra,Apollo,
-Arthur,M14/M15/M16,Laser,4,2018,Infineon,Spectra,Apollo,
-Clearwater,M479,Laser,4,2018,Marvell,Styx,SoL,
-Gawain,M28/M29/M31,Laser,4,2018,Infineon,Spectra,Apollo,
-Infinity,Tango,Ink,4,2018,Marvell,Styx,SoL,
-Marathon,PageWide Pro 7xx,Large Format,4,2018,Infineon,UlyssesBlue,SoL,
-Mogami,M404,Laser,4,2018,Marvell,Styx,SoL,
-Poseidon,Smart Tank 5xx/6xx,Ink,4,2018,Marvell,Styx,SoL,
-Shimanto,M454,Laser,4,2018,Marvell,Styx,SoL,
-Spirit,PageWide Pro 750,Large Format,4,2018,Infineon,UlyssesBlue,SoL,
-Teton,M428,Laser,4,2018,Marvell,Styx,SoL,
-Aurora,M254,Laser,4,2017,Infineon,Ulysses,Phoenix,
-Ellis,OJ Pro 77x0,Large Format,4,2017,Infineon,Spectra,SoL 1.0,
-Limo,PageWide Pro 750,Large Format,4,2017,Infineon,UlyssesBlue,SoL,
-Nile,M153/M154,Laser,4,2017,Infineon,Ulysses,Phoenix,
-Palermo,Envy Photo 6200/7x00,Ink,4,2017,Infineon,UlyssesBlue,SoL,
-Photon,DJ Txxx,Large Format,4,2017,Infineon,Spectra,SoL 1.0,
-Pyramid,MFP M180/M181,Laser,4,2017,Infineon,Ulysses,Phoenix,
-Taiji,DJ 2600,Ink,4,2017,Infineon,Spectra,Sirius,
-Verona,Envy 5xxx,Ink,4,2017,Infineon,UlyssesBlue,SoL,
-Zenith,MFP M280/M281,Laser,4,2017,Infineon,Ulysses,Phoenix,
-Bigeye,Pro M501,Laser,4,2016,Infineon,,Phoenix,
-Canary,M102/M104/M106,Laser,4,2016,Infineon,Ulysses,Phoenix,
-Edwin,OJ Pro 7740,Large Format,4,2016,Infineon,Spectra,Sirius,
-Lark,MFP M130/M132/M134,Laser,4,2016,Infineon,Ulysses,Phoenix,
-Lhasa,DJ 3700/2200,Ink,4,2016,Infineon,Spectra,Sirius,
-Muscatel,OJ 69x0,Ink,4,2016,Infineon,Spectra,Sirius,
-Ruby,OJ 200,Ink,4,2016,Infineon,Ultra,Sirius,
-Seagull,M203/M206,Laser,4,2016,Infineon,Ulysses,Phoenix,
-Swan,MFP M227/M230,Laser,4,2016,Infineon,Ulysses,Phoenix,
-Tesla PDL,OJ Pro 8210,Ink,4,2016,Infineon,Spectra,Sirius,
-Topaz,OJ 250,Ink,4,2016,Infineon,UltraBlue,Sirius,
-Weber,OJ Pro 87x0,Ink,4,2016,Infineon,Spectra,Sirius,
-Candela,DesignJet T730,Large Format,4,2015,Infineon,Spectra,Sirius,
-Corfu,Envy 4xx0,Ink,4,2015,Infineon,Spectra,Sirius,
-Dorado,M402/M403,Laser,4,2015,Infineon,Ultra,Phoenix,
-Emerson,OJ 7510,Large Format,4,2015,Infineon,Ultra,Sirius,
-Gemini,M452,Laser,4,2015,Infineon,Ultra,Phoenix,
-Iceman,PageWide x52,Large Format,4,2015,Infineon,Spectra,SoL 1.0,
-Kronos,DJ 5820,Ink,4,2015,Infineon,Spectra,Sirius,
-Marlin,MFP M426/M427,Laser,4,2015,Infineon,Ultra,Phoenix,
-Maverick,PageWide x77,Large Format,4,2015,Infineon,Spectra,SoL 1.0,
-Nebula,MFP M277/M274,Laser,4,2015,Infineon,Ultra,Phoenix,
-Neptune,MFP M477/M377,Laser,4,2015,Infineon,Ultra,Phoenix,
-Orion,Pro M252,Laser,4,2015,Infineon,Ultra,Phoenix,
-Shaolin,DJ 3630 / OJ 3830,Ink,4,2015,Infineon,Spectra,Sirius,
-Agave,OJ Pro 6230/6220,Ink,4,2014,Marvell,Sepia,Sirius,
-Asteroid,Pro M201/M202,Laser,4,2014,Marvell,Umber,Phoenix,
-Farad,OJ Pro 86x0,Ink,4,2014,Marvell,Sepia-Lite,Sirius,
-Moon,Pro MFP M225/M226,Laser,4,2014,Marvell,Umber-Lite,Phoenix,
-Naples,Envy 5640/5740,Ink,4,2014,Infineon,Ultra,Sirius,
-Pinot,OJ Pro 6830,Ink,4,2014,Marvell,Sepia-Lite,Sirius,
-Puma,MFP M476,Laser,4,2014,Marvell,Umber,Phoenix,
-Sanya,Pro M701/M706,Laser,4,2014,Marvell,--,Phoenix,
-Baja,OJ Pro X451/X551,Large Format,4,2013,Marvell,Sepia,Sirius,
-Congo,DJ 2540,Ink,4,2013,Marvell,Sepia-Lite,Sirius,
-Dynasty,Pro MFP M435,Laser,4,2013,Marvell,Umber,Phoenix,
-Ebadi,OJ 7110,Large Format,4,2013,Marvell,Umber,Sirius,
-Elvis MLK,PS 75x0,Ink,4,2013,Marvell,Umber,Sirius,
-Engle,OJ 7610,Large Format,4,2013,Marvell,Umber,Sirius,
-Everett,OJ Pro 251,Ink,4,2013,Marvell,Umber,Sirius,
-Forrester,OJ Pro 276,Ink,4,2013,Marvell,Umber,Sirius,
-Homer,Pro MFP M521,Laser,4,2013,Marvell,Umber,Phoenix,
-Le Mans,OJ Pro X476/X576,Large Format,4,2013,Marvell,Sepia,Sirius,
-Mykonos,Envy 4500 / OJ 4630,Ink,4,2013,Marvell,Sepia-Lite,Sirius,
-Orchid,Envy 5530,Ink,4,2013,Marvell,Sepia-Lite,Sirius,
-Ampere,DJ Txxx,Large Format,4,2012,Marvell,Umber,Sirius,
-Buck,200 color M251,Laser,4,2012,Marvell,Miranda,Phoenix,
-Cesar,OJ 4620,Ink,4,2012,Marvell,Miranda,Sirius,
-Cheetah,"400 colorMFP M475, 375",Laser,4,2012,Marvell,Miranda,Phoenix,
-Elvis,PS 7520,Ink,4,2012,Marvell,Umber-Lite,Sirius,
-Epic,500 colorMFP M570,Laser,4,2012,Marvell,Umber,Phoenix,
-Guitar,DJ 3510,Ink,4,2012,Marvell,Umber,Sirius,
-Morgan,PS 5520,Ink,4,2012,Marvell,Umber,Sirius,
-Poker,PS 3520,Ink,4,2012,Marvell,Umber,Sirius,
-Schooner,Envy 120,Ink,4,2012,Marvell,Umber,Sirius,
-Stuttgart,DJ 3520,Ink,4,2012,Marvell,Umber,Sirius,
-Sun,400 MFP M425,Laser,4,2012,Marvell,Miranda,Phoenix,
-Switchback,200 colorMFP M276,Laser,4,2012,Marvell,Miranda,Phoenix,
-Taishan,400 M401,Laser,4,2012,Marvell,Miranda,Phoenix,
-Thunderbird,400 color M451,Laser,4,2012,Marvell,Miranda,Phoenix,
-EagleEye,200 colorMFP M275,Laser,4,2011,Marvell,Miranda,Phoenix,
-Caracal,100 colorMFP M175,Laser,4,2010,Marvell,Miranda,Phoenix,
-Cougar,CM1415,Laser,4,2010,Marvell,Miranda,Phoenix,
-Jaybird,CP1525,Laser,4,2010,Marvell,Miranda,Phoenix,
-Lonepine,M1536dnf,Laser,4,2010,Marvell,Miranda,Phoenix,
+﻿Model Name,Print Technology,Cartridge/Toner,Wi-Fi Gen,Year
+(TBD),,,5,2029
+(TBD),,,,2029
+(TBD),,,,2028
+(TBD),,,,2027
+OfficeJet Pro 9130b,Ink,HP 936/937/938,5,2027
+LaserJet M214/M216/M220/M223,Laser,,4,2026
+Smart Tank xxxxx,Ink,Continuous Ink (bottled),,2026
+LaserJet Pro MFP 4112-4115fdw,Laser,HP 230A/230X,6,2026
+LaserJet M239/M241/M246/M248,Laser,,4,2026
+LaserJet Pro 4006-4009dn,Laser,HP 230A/230X,6,2025
+(TBD),,,4,2025
+ENVY 6100/6500,Ink,HP 68,5,2024
+DesignJet XT950,Large Format,HP 776,5,2023
+Color LaserJet Pro MFP 3301-3304/3388 series,Laser,HP 222A/222X,5,2023
+OfficeJet Pro 9720 Wide Format AiO,Large Format,HP 936/937/938,5,2023
+(TBD),,,,2023
+OfficeJet Pro 9120 / 9120b Series,Ink,HP 936/937/938,5,2023
+OfficeJet Pro 8030 series,Ink,HP 936/937/938,5,2023
+Color LaserJet Pro MFP 4301-4303,Laser,HP 230A/230X,5,2023
+DeskJet 2800 / 4200 / 4900,Ink,HP 67/67XL,5,2023
+Color LaserJet Pro 4201-4203,Laser,HP 230A/230X,5,2023
+(TBD),,,,2023
+Color LaserJet Pro 3288,Laser,HP 222A/222X,5,2023
+LaserJet 1005/1602/2604,Laser,HP 154A/154X (toner reload),4,2022
+"Smart Tank 580-590/5100, 520/5000, 200-210/2100",Ink,Continuous Ink (bottled),5,2022
+LaserJet Tank 1020/1502/1504/2502/2504/2506,Laser,HP 154A/154X (toner reload),4,2022
+LaserJet M139/M140/M141/M142,Laser,HP 141A/141X,4,2021
+LaserJet 310x,Laser,HP 220A/220X,4,2021
+LaserJet M109/M110/M111/M112,Laser,HP 141A/141X,4,2021
+LaserJet 410x,Laser,HP 220A/220X,4,2021
+ENVY Inspire 7200/7900,Ink,HP 64/64XL,5,2021
+Smart Tank 7xx/7x0x,Ink,Continuous Ink (bottled),5,2021
+LaserJet 300x,Laser,HP 220A/220X,4,2021
+ENVY 6000/6400,Ink,HP 67/67XL,5,2021
+LaserJet 400x,Laser,HP 220A/220X,4,2021
+Color LaserJet Pro MFP M182/M183,Laser,HP 215A,4,2020
+Color LaserJet Pro MFP M282/M283,Laser,HP 206A/206X,4,2020
+LaserJet M207-M212,Laser,HP 136A/136X,4,2020
+OfficeJet Pro 8020/8025 series,Ink,HP 910/910XL,5,2020
+OfficeJet Pro 9010/9015/9020 series,Ink,HP 962/962XL,5,2020
+Color LaserJet Pro M255,Laser,HP 206A/206X,4,2020
+Color LaserJet Pro M155,Laser,HP 215A,4,2020
+LaserJet MFP M232-M237,Laser,HP 136A/136X,4,2020
+DesignJet T250/T650,Large Format,HP 712,4,2020
+DeskJet 2700 / DeskJet Plus 4100,Ink,HP 67/67XL,4,2020
+ENVY 6000/6400,Ink,HP 67/67XL,5,2020
+Neverstop Laser MFP 1200 series,Laser,HP 103A/143A (toner reload),4,2019
+OfficeJet Pro 8020 series (Gen 1),Ink,HP 910/910XL,4,2019
+OfficeJet Pro 9010/9020 series (Gen 1),Ink,HP 962/962XL,4,2019
+Neverstop Laser 1000 series,Laser,HP 103A/143A (toner reload),4,2019
+LaserJet Pro M14/M15/M16,Laser,HP 48A,4,2018
+Color LaserJet Pro MFP M479,Laser,HP 415A/415X,4,2018
+LaserJet Pro MFP M28/M29/M31,Laser,HP 48A,4,2018
+Tango / Tango X Smart Home Printer,Ink,HP 64/64XL,4,2018
+"PageWide Pro 772dn/dw, 777z",Large Format,HP 982A/982X,4,2018
+LaserJet Pro M404,Laser,HP 58A/58X,4,2018
+Smart Tank 500/515/530/615,Ink,Continuous Ink (bottled),4,2018
+Color LaserJet Pro M454,Laser,HP 415A/415X,4,2018
+PageWide Pro 750dw,Large Format,HP 982A/982X,4,2018
+LaserJet Pro MFP M428,Laser,HP 58A/58X,4,2018
+Color LaserJet Pro M254,Laser,HP 202A/202X,4,2017
+OfficeJet Pro 7720/7730/7740 Wide Format,Large Format,HP 953/953XL,4,2017
+PageWide Pro 750dw (Gen 1),Large Format,HP 982A/982X,4,2017
+Color LaserJet Pro M153/M154,Laser,HP 204A,4,2017
+ENVY Photo 6200/7100/7800,Ink,HP 64/64XL,4,2017
+DesignJet T-series (T730/T830),Large Format,HP 728,4,2017
+Color LaserJet Pro MFP M180/M181,Laser,HP 204A,4,2017
+DeskJet 2600 series,Ink,HP 65/65XL,4,2017
+ENVY 5000 series,Ink,HP 65/65XL,4,2017
+Color LaserJet Pro MFP M280/M281,Laser,HP 202A/202X,4,2017
+LaserJet Pro M501dn,Laser,HP 87A/87X,4,2016
+LaserJet Pro M102/M104/M106,Laser,HP 17A,4,2016
+OfficeJet Pro 7740 Wide Format AiO,Large Format,HP 953/953XL,4,2016
+LaserJet Pro MFP M130/M132/M134,Laser,HP 17A/19A,4,2016
+DeskJet 3700 / 2200 series,Ink,HP 65/65XL,4,2016
+OfficeJet 6950/6960 series,Ink,HP 903/903XL,4,2016
+OfficeJet 200 Mobile Printer,Ink,HP 62/62XL,4,2016
+LaserJet Pro M203/M206,Laser,HP 30A/32A,4,2016
+LaserJet Pro MFP M227/M230,Laser,HP 30A/32A,4,2016
+OfficeJet Pro 8210,Ink,HP 952/952XL,4,2016
+OfficeJet 250 Mobile AiO,Ink,HP 62/62XL,4,2016
+OfficeJet Pro 8710/8720/8730/8740,Ink,HP 952/952XL,4,2016
+DesignJet T730,Large Format,HP 728,4,2015
+ENVY 4520 series,Ink,HP 63/63XL,4,2015
+LaserJet Pro M402/M403,Laser,HP 26A/26X,4,2015
+OfficeJet 7510 Wide Format AiO,Large Format,HP 932/932XL/933/933XL,4,2015
+Color LaserJet Pro M452,Laser,HP 410A/410X,4,2015
+PageWide Pro 452/552 series,Large Format,HP 972A/972X,4,2015
+DeskJet GT 5820 Ink Tank,Ink,HP GT51/GT52 (bottled),4,2015
+LaserJet Pro MFP M426/M427,Laser,HP 26A/26X,4,2015
+PageWide Pro 477/577 series,Large Format,HP 972A/972X,4,2015
+Color LaserJet Pro MFP M277/M274,Laser,HP 201A/201X,4,2015
+Color LaserJet Pro MFP M477/M377,Laser,HP 410A/410X,4,2015
+Color LaserJet Pro M252,Laser,HP 201A/201X,4,2015
+DeskJet 3630 / OfficeJet 3830,Ink,HP 63/63XL,4,2015
+OfficeJet Pro 6230/6220,Ink,HP 934/934XL/935/935XL,4,2014
+LaserJet Pro M201/M202,Laser,HP 83A,4,2014
+OfficeJet Pro 8610/8620/8630/8640/8660,Ink,HP 950/950XL/951/951XL,4,2014
+LaserJet Pro MFP M225/M226,Laser,HP 83A,4,2014
+ENVY 5640/5740,Ink,HP 62/62XL,4,2014
+OfficeJet Pro 6830,Ink,HP 934/934XL/935/935XL,4,2014
+Color LaserJet Pro MFP M476,Laser,HP 312A/312X,4,2014
+LaserJet Pro M701/M706,Laser,HP 93A,4,2014
+OfficeJet Pro X451/X551 (PageWide),Large Format,HP 970/970XL/971/971XL,4,2013
+DeskJet 2540,Ink,HP 61/61XL,4,2013
+LaserJet Pro MFP M435nw,Laser,HP 93A,4,2013
+OfficeJet 7110 Wide Format,Large Format,HP 932/932XL/933/933XL,4,2013
+Photosmart 7520 e-AiO,Ink,HP 564/564XL,4,2013
+OfficeJet 7610 Wide Format,Large Format,HP 932/932XL/933/933XL,4,2013
+OfficeJet Pro 251dw,Ink,HP 950/950XL/951/951XL,4,2013
+OfficeJet Pro 276dw MFP,Ink,HP 950/950XL/951/951XL,4,2013
+LaserJet Pro MFP M521,Laser,HP 55A/55X,4,2013
+OfficeJet Pro X476/X576 MFP (PageWide),Large Format,HP 970/970XL/971/971XL,4,2013
+ENVY 4500 / OfficeJet 4630,Ink,HP 61/61XL,4,2013
+ENVY 5530,Ink,HP 61/61XL,4,2013
+DesignJet T-series (T520),Large Format,HP 711,4,2012
+LaserJet Pro 200 color M251,Laser,HP 131A,4,2012
+OfficeJet 4620,Ink,HP 564/564XL,4,2012
+LaserJet Pro 400 color MFP M475/300 color MFP M375,Laser,HP 305A/305X,4,2012
+Photosmart 7520 e-AiO,Ink,HP 564/564XL,4,2012
+LaserJet Pro 500 color MFP M570,Laser,HP 507A/507X,4,2012
+DeskJet 3510,Ink,HP 61/61XL,4,2012
+Photosmart 5520 e-AiO,Ink,HP 564/564XL,4,2012
+Photosmart 3520 e-AiO,Ink,HP 564/564XL,4,2012
+ENVY 120,Ink,HP 60/60XL,4,2012
+DeskJet 3520 e-AiO,Ink,HP 564/564XL,4,2012
+LaserJet Pro 400 MFP M425,Laser,HP 80A/80X,4,2012
+LaserJet Pro 200 color MFP M276,Laser,HP 131A,4,2012
+LaserJet Pro 400 M401,Laser,HP 80A/80X,4,2012
+LaserJet Pro 400 color M451,Laser,HP 305A/305X,4,2012
+LaserJet Pro 200 color MFP M275 (TopShot),Laser,HP 126A,4,2011
+LaserJet Pro 100 color MFP M175,Laser,HP 126A,4,2010
+LaserJet Pro CM1415fn/fnw Color MFP,Laser,HP 128A,4,2010
+LaserJet Pro CP1525n/nw,Laser,HP 128A,4,2010
+LaserJet Pro M1536dnf,Laser,HP 78A,4,2010
