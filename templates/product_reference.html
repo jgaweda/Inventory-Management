@@ -109,12 +109,6 @@
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import
         </button>
-        <form method="POST" action="{{ url_for('product_reference_seed') }}" style="margin:0;">
-            <button type="submit" class="btn btn-secondary btn-sm" onclick="return confirm('Import seed data? This will update existing entries and add any missing products and wiki images.')">
-                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4l2 2"/></svg>
-                Seed
-            </button>
-        </form>
         {% if refs %}
         <div style="position: relative;" id="exportDropdown">
             <button type="button" class="btn btn-secondary btn-sm" onclick="var m=document.getElementById('exportMenu');m.style.display=m.style.display==='block'?'none':'block'">
@@ -252,28 +246,40 @@
 <div id="importModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
     <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:24px; width:100%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
         <h3 style="font-size:18px; font-weight:700; margin-bottom:16px;">Import Product References</h3>
-        <form method="POST" action="{{ url_for('product_reference_import') }}" enctype="multipart/form-data">
-            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
-                Upload a <strong>.xlsx</strong> or <strong>.csv</strong> file with columns:<br>
-                <span class="font-mono" style="font-size:11px; color:var(--text-muted); line-height:1.8;">
-                    Codename, Model Name, Wi-Fi Gen, Year,<br>
-                    Wireless Chip Set Manufacturer, Wireless Chipset Codename, FW Codebase
-                </span>
-            </p>
-            <div style="margin-bottom:16px;">
-                <input type="file" name="import_file" accept=".xlsx,.csv" required
-                       style="font-size:13px; width:100%; padding:8px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary);">
-            </div>
+        <form id="importForm" method="POST" action="{{ url_for('product_reference_import') }}" enctype="multipart/form-data">
             <div style="margin-bottom:16px;">
                 <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:8px;">Import Mode</label>
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
                     <input type="radio" name="import_mode" value="add" checked style="accent-color:var(--accent-blue);">
-                    <span><strong>Add</strong> — append to existing products</span>
+                    <span><strong>Add</strong> — append to existing products from file</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
+                    <input type="radio" name="import_mode" value="overwrite" style="accent-color:var(--accent-red);">
+                    <span><strong>Overwrite</strong> — replace all existing products from file</span>
                 </label>
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary);">
-                    <input type="radio" name="import_mode" value="overwrite" style="accent-color:var(--accent-red);">
-                    <span><strong>Overwrite</strong> — replace all existing products</span>
+                    <input type="radio" name="import_mode" value="seed" style="accent-color:var(--accent-green);">
+                    <span><strong>Seed</strong> — load built-in references and wiki images</span>
                 </label>
+            </div>
+            <div id="importFileSection">
+                <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+                    Upload a <strong>.xlsx</strong> or <strong>.csv</strong> file with columns:<br>
+                    <span class="font-mono" style="font-size:11px; color:var(--text-muted); line-height:1.8;">
+                        Codename, Model Name, Wi-Fi Gen, Year,<br>
+                        Wireless Chip Set Manufacturer, Wireless Chipset Codename, FW Codebase
+                    </span>
+                </p>
+                <div style="margin-bottom:16px;">
+                    <input type="file" name="import_file" id="importFileInput" accept=".xlsx,.csv"
+                           style="font-size:13px; width:100%; padding:8px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary);">
+                </div>
+            </div>
+            <div id="importSeedInfo" style="display:none; margin-bottom:16px;">
+                <p style="font-size:13px; color:var(--text-secondary);">
+                    Updates existing entries, adds any missing products, and attaches
+                    seed images to wiki pages. No file upload needed.
+                </p>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end;">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('importModal').style.display='none'">Cancel</button>
@@ -282,6 +288,26 @@
         </form>
     </div>
 </div>
+<script>
+(function() {
+    var form = document.getElementById('importForm');
+    var fileSection = document.getElementById('importFileSection');
+    var seedInfo = document.getElementById('importSeedInfo');
+    var fileInput = document.getElementById('importFileInput');
+    var radios = form.querySelectorAll('input[name="import_mode"]');
+    radios.forEach(function(r) {
+        r.addEventListener('change', function() {
+            var isSeed = this.value === 'seed';
+            fileSection.style.display = isSeed ? 'none' : '';
+            seedInfo.style.display = isSeed ? '' : 'none';
+            fileInput.required = !isSeed;
+            form.action = isSeed
+                ? '{{ url_for("product_reference_seed") }}'
+                : '{{ url_for("product_reference_import") }}';
+        });
+    });
+})();
+</script>
 
 <script>
 // --- Inline Edit (auto-save on blur/change) ---
