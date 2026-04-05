@@ -21,7 +21,7 @@ os.environ['INVENTORY_DATA_DIR'] = _test_dir
 
 import database as db
 import barcode_utils
-from app import app
+from app import app, ROLE_PERMISSIONS, has_permission
 
 
 class BaseTestCase(unittest.TestCase):
@@ -1852,6 +1852,66 @@ class TestPowerUserPermissions(BaseTestCase):
             'assigned_to': 'Someone',
         }, follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
+
+
+class TestPermissionModel(BaseTestCase):
+    """Test the centralized ROLE_PERMISSIONS system."""
+
+    def test_all_roles_defined(self):
+        """Every role in the DB constraint must be in ROLE_PERMISSIONS."""
+        for role in ['admin', 'editor', 'power_user', 'viewer']:
+            self.assertIn(role, ROLE_PERMISSIONS, f'{role} missing from ROLE_PERMISSIONS')
+
+    def test_admin_has_all_permissions(self):
+        """Admin should have every permission."""
+        all_perms = set()
+        for perms in ROLE_PERMISSIONS.values():
+            all_perms |= perms
+        for perm in all_perms:
+            self.assertIn(perm, ROLE_PERMISSIONS['admin'], f'Admin missing permission: {perm}')
+
+    def test_viewer_cannot_manage(self):
+        """Viewer should not have devices, references, users, backups, or logs."""
+        for perm in ['devices', 'references', 'users', 'backups', 'logs', 'settings']:
+            self.assertNotIn(perm, ROLE_PERMISSIONS['viewer'], f'Viewer should not have: {perm}')
+
+    def test_editor_has_devices_only(self):
+        """Editor should have devices and wiki, not references or admin features."""
+        self.assertIn('devices', ROLE_PERMISSIONS['editor'])
+        self.assertIn('wiki', ROLE_PERMISSIONS['editor'])
+        self.assertNotIn('references', ROLE_PERMISSIONS['editor'])
+        self.assertNotIn('users', ROLE_PERMISSIONS['editor'])
+        self.assertNotIn('backups', ROLE_PERMISSIONS['editor'])
+
+    def test_power_user_has_references_only(self):
+        """Power user should have references and wiki, not devices or admin features."""
+        self.assertIn('references', ROLE_PERMISSIONS['power_user'])
+        self.assertIn('wiki', ROLE_PERMISSIONS['power_user'])
+        self.assertNotIn('devices', ROLE_PERMISSIONS['power_user'])
+        self.assertNotIn('users', ROLE_PERMISSIONS['power_user'])
+        self.assertNotIn('backups', ROLE_PERMISSIONS['power_user'])
+
+    def test_has_permission_with_user(self):
+        """has_permission should check ROLE_PERMISSIONS dict."""
+        with self.app.test_request_context():
+            from flask import g
+            g.user = {'role': 'editor'}
+            self.assertTrue(has_permission('devices'))
+            self.assertFalse(has_permission('backups'))
+
+    def test_has_permission_no_user(self):
+        """has_permission should return False with no user."""
+        with self.app.test_request_context():
+            from flask import g
+            g.user = None
+            self.assertFalse(has_permission('devices'))
+
+    def test_version_in_context(self):
+        """App version should be available in templates."""
+        resp = self.client.get('/')
+        self.assertEqual(resp.status_code, 200)
+        # Version string should appear in the sidebar
+        self.assertIn(b'v1.0', resp.data)
 
 
 # ==========================================================================

@@ -237,7 +237,7 @@
                 <a href="{{ url_for('wiki_download', attachment_id=att.attachment_id) }}" class="attach-name" title="{{ att.original_name }}">{{ att.original_name }}</a>
                 <div class="attach-meta">
                     <span>{{ '%.1f'|format(att.size_bytes / 1024) }} KB &middot; {{ att.uploaded_by }}</span>
-                    {% if current_user and current_user.role == 'admin' %}
+                    {% if has_permission('wiki_admin') %}
                     <form method="POST" action="{{ url_for('wiki_delete_attachment', attachment_id=att.attachment_id) }}"
                           onsubmit="return confirm('Delete {{ att.original_name }}?')" style="margin: 0;">
                         <button type="submit" class="attach-delete" title="Delete">&times;</button>
@@ -248,11 +248,11 @@
         </div>
         {% endfor %}
     </div>
-    {% elif not current_user or current_user.role != 'admin' %}
+    {% elif not has_permission('wiki_admin') %}
     <p style="color: var(--text-muted); font-size: 13px; margin-top: 12px;">No attachments yet.</p>
     {% endif %}
 
-    {% if current_user and current_user.role == 'admin' %}
+    {% if has_permission('wiki_admin') %}
     <!-- Upload area (admin only) -->
     <form method="POST" action="{{ url_for('wiki_upload', ref_id=ref.ref_id) }}" enctype="multipart/form-data" id="uploadForm">
         <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
