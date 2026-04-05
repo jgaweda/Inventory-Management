@@ -3213,10 +3213,7 @@ class TestSeedImportMode(BaseTestCase):
         ])
         self.login_admin()
         with patch('app.BUNDLE_DIR', _test_dir):
-            resp = self.client.post('/reference/import',
-                                    data={'import_mode': 'seed'},
-                                    content_type='multipart/form-data',
-                                    follow_redirects=True)
+            resp = self.client.post('/reference/seed', follow_redirects=True)
         self.assertIn(b'2 added', resp.data)
         refs = db.get_all_product_references()
         self.assertEqual(len(refs), 2)
@@ -3230,10 +3227,7 @@ class TestSeedImportMode(BaseTestCase):
         ])
         self.login_admin()
         with patch('app.BUNDLE_DIR', _test_dir):
-            resp = self.client.post('/reference/import',
-                                    data={'import_mode': 'seed'},
-                                    content_type='multipart/form-data',
-                                    follow_redirects=True)
+            resp = self.client.post('/reference/seed', follow_redirects=True)
         self.assertIn(b'1 updated', resp.data)
         refs = db.get_product_reference_by_codename('Marconi')
         self.assertEqual(refs[0]['model_name'], 'OJ Pro 9120')
@@ -3250,10 +3244,7 @@ class TestSeedImportMode(BaseTestCase):
         })
         self.login_admin()
         with patch('app.BUNDLE_DIR', _test_dir):
-            resp = self.client.post('/reference/import',
-                                    data={'import_mode': 'seed'},
-                                    content_type='multipart/form-data',
-                                    follow_redirects=True)
+            resp = self.client.post('/reference/seed', follow_redirects=True)
         self.assertIn(b'1 images attached', resp.data)
         refs = db.get_product_reference_by_codename('Marconi')
         attachments = db.get_wiki_attachments(refs[0]['ref_id'])
@@ -3276,18 +3267,13 @@ class TestSeedImportMode(BaseTestCase):
         })
         self.login_admin()
         with patch('app.BUNDLE_DIR', _test_dir):
-            resp = self.client.post('/reference/import',
-                                    data={'import_mode': 'seed'},
-                                    content_type='multipart/form-data',
-                                    follow_redirects=True)
+            resp = self.client.post('/reference/seed', follow_redirects=True)
         attachments = db.get_wiki_attachments(ref_id)
         self.assertEqual(len(attachments), 1)  # still just the original
 
     def test_seed_mode_requires_login(self):
         """Seed mode requires authentication."""
-        resp = self.client.post('/reference/import',
-                                data={'import_mode': 'seed'},
-                                content_type='multipart/form-data')
+        resp = self.client.post('/reference/seed')
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/login', resp.headers['Location'])
 
@@ -3295,10 +3281,7 @@ class TestSeedImportMode(BaseTestCase):
         """Seed mode shows error when seed data is missing."""
         self.login_admin()
         with patch('app.BUNDLE_DIR', _test_dir):
-            resp = self.client.post('/reference/import',
-                                    data={'import_mode': 'seed'},
-                                    content_type='multipart/form-data',
-                                    follow_redirects=True)
+            resp = self.client.post('/reference/seed', follow_redirects=True)
         self.assertIn(b'Seed data not found', resp.data)
 
 

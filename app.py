@@ -1860,6 +1860,16 @@ def _import_seed_data():
     return redirect(url_for('product_reference_list'))
 
 
+@app.route('/reference/seed', methods=['POST'])
+@login_required
+def product_reference_seed():
+    """Import seed data from the application bundle."""
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('product_reference_list'))
+    return _import_seed_data()
+
+
 @app.route('/reference/import', methods=['POST'])
 @login_required
 def product_reference_import():
@@ -1867,12 +1877,6 @@ def product_reference_import():
     if not has_permission('references'):
         flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
-
-    import_mode = request.form.get('import_mode', 'add')
-
-    # Seed mode: use built-in seed data instead of uploaded file
-    if import_mode == 'seed':
-        return _import_seed_data()
 
     file = request.files.get('import_file')
     if not file or not file.filename:
@@ -1885,7 +1889,7 @@ def product_reference_import():
         return redirect(url_for('product_reference_list'))
 
     try:
-
+        import_mode = request.form.get('import_mode', 'add')
         if import_mode == 'overwrite':
             db.clear_all_product_references()
 

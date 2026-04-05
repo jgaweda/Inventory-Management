@@ -109,6 +109,12 @@
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Import
         </button>
+        <form method="POST" action="{{ url_for('product_reference_seed') }}" style="margin:0;">
+            <button type="submit" class="btn btn-secondary btn-sm" onclick="return confirm('Import seed data? This will update existing entries and add any missing products and wiki images.')">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 8v4l2 2"/></svg>
+                Seed
+            </button>
+        </form>
         {% if refs %}
         <div style="position: relative;" id="exportDropdown">
             <button type="button" class="btn btn-secondary btn-sm" onclick="var m=document.getElementById('exportMenu');m.style.display=m.style.display==='block'?'none':'block'">
@@ -263,10 +269,6 @@
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
                     <input type="radio" name="import_mode" value="add" checked style="accent-color:var(--accent-blue);">
                     <span><strong>Add</strong> — append to existing products</span>
-                </label>
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
-                    <input type="radio" name="import_mode" value="seed" style="accent-color:var(--accent-green);">
-                    <span><strong>Seed</strong> — update existing, add missing, attach images</span>
                 </label>
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary);">
                     <input type="radio" name="import_mode" value="overwrite" style="accent-color:var(--accent-red);">
