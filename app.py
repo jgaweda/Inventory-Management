@@ -1788,6 +1788,78 @@ HEADER_MAP = {
 }
 
 
+def _import_seed_data():
+    """Import seed CSV (upsert) and attach seed images to wiki pages."""
+    import csv as _csv
+    seed_dir = os.path.join(BUNDLE_DIR, 'seed_data')
+    csv_path = os.path.join(seed_dir, 'product_reference.csv')
+
+    if not os.path.isfile(csv_path):
+        flash('Seed data not found. No seed_data/product_reference.csv in the application bundle.', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    added = 0
+    updated = 0
+    skipped = 0
+    try:
+        with open(csv_path, 'r', encoding='utf-8-sig') as f:
+            reader = _csv.DictReader(f)
+            if reader.fieldnames is None:
+                flash('Seed CSV has no headers.', 'error')
+                return redirect(url_for('product_reference_list'))
+            for row in reader:
+                norm = {k.strip().lower(): v.strip() for k, v in row.items() if k}
+                codename = norm.get('codename', '').strip()
+                if not codename:
+                    skipped += 1
+                    continue
+                _ref_id, action = db.upsert_product_reference(
+                    codename=codename,
+                    model_name=norm.get('model name', norm.get('model_name', '')),
+                    wifi_gen=norm.get('wi-fi gen', norm.get('wifi gen', norm.get('wifi_gen', ''))),
+                    year=norm.get('year', ''),
+                    chip_manufacturer=norm.get('wireless chip set manufacturer',
+                                     norm.get('chip manufacturer', norm.get('chip_manufacturer', ''))),
+                    chip_codename=norm.get('wireless chipset codename',
+                                  norm.get('chip codename', norm.get('chip_codename', ''))),
+                    fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
+                    print_technology=norm.get('print technology', norm.get('print_technology', '')),
+                    variant=norm.get('variant', ''),
+                )
+                if action == 'added':
+                    added += 1
+                else:
+                    updated += 1
+    except Exception as e:
+        app_logger.error('Seed CSV import failed: %s\n%s', e, traceback.format_exc())
+        flash(f'Seed import failed: {e}', 'error')
+        return redirect(url_for('product_reference_list'))
+
+    # Phase 2: attach seed images to wiki pages
+    images_attached = 0
+    zip_path = os.path.join(seed_dir, 'printer_images.zip')
+    if os.path.isfile(zip_path):
+        try:
+            from database import _seed_wiki_images
+            images_attached = _seed_wiki_images(zip_path)
+        except Exception as e:
+            app_logger.error('Seed image attachment failed: %s\n%s', e, traceback.format_exc())
+            flash(f'Image attachment partially failed: {e}', 'warning')
+
+    parts = []
+    if added:
+        parts.append(f'{added} added')
+    if updated:
+        parts.append(f'{updated} updated')
+    if skipped:
+        parts.append(f'{skipped} skipped')
+    msg = f'Seed import: {", ".join(parts)}.'
+    if images_attached:
+        msg += f' {images_attached} images attached to wiki pages.'
+    flash(msg, 'success')
+    return redirect(url_for('product_reference_list'))
+
+
 @app.route('/reference/import', methods=['POST'])
 @login_required
 def product_reference_import():
@@ -1795,6 +1867,12 @@ def product_reference_import():
     if not has_permission('references'):
         flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
+
+    import_mode = request.form.get('import_mode', 'add')
+
+    # Seed mode: use built-in seed data instead of uploaded file
+    if import_mode == 'seed':
+        return _import_seed_data()
 
     file = request.files.get('import_file')
     if not file or not file.filename:
@@ -1807,7 +1885,7 @@ def product_reference_import():
         return redirect(url_for('product_reference_list'))
 
     try:
-        import_mode = request.form.get('import_mode', 'add')
+
         if import_mode == 'overwrite':
             db.clear_all_product_references()
 

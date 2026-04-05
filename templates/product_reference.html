@@ -183,6 +183,7 @@
                             <option value="">--</option>
                             <option value="Ink" {{ 'selected' if ref.print_technology == 'Ink' }}>Ink</option>
                             <option value="Laser" {{ 'selected' if ref.print_technology == 'Laser' }}>Laser</option>
+                            <option value="Large Format" {{ 'selected' if ref.print_technology == 'Large Format' }}>Large Format</option>
                         </select>
                     </td>
                     <td><input class="cell-edit" data-field="wifi_gen" value="{{ ref.wifi_gen or '' }}" style="width:60px;"></td>
@@ -194,7 +195,7 @@
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size:13px; text-align:center;">
                         {% if ref.print_technology %}
-                        <span style="background:{% if ref.print_technology == 'Laser' %}rgba(139,92,246,0.12){% else %}rgba(59,130,246,0.12){% endif %}; color:{% if ref.print_technology == 'Laser' %}#a78bfa{% else %}#3b82f6{% endif %}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">{{ ref.print_technology }}</span>
+                        <span style="background:{% if ref.print_technology == 'Laser' %}rgba(139,92,246,0.12){% elif ref.print_technology == 'Large Format' %}rgba(245,158,11,0.12){% else %}rgba(59,130,246,0.12){% endif %}; color:{% if ref.print_technology == 'Laser' %}#a78bfa{% elif ref.print_technology == 'Large Format' %}#f59e0b{% else %}#3b82f6{% endif %}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">{{ ref.print_technology }}</span>
                         {% else %}—{% endif %}
                     </td>
                     <td class="font-mono" style="font-size:13px; text-align:center;">{{ ref.wifi_gen or '—' }}</td>
@@ -262,6 +263,10 @@
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
                     <input type="radio" name="import_mode" value="add" checked style="accent-color:var(--accent-blue);">
                     <span><strong>Add</strong> — append to existing products</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary); margin-bottom:6px;">
+                    <input type="radio" name="import_mode" value="seed" style="accent-color:var(--accent-green);">
+                    <span><strong>Seed</strong> — update existing, add missing, attach images</span>
                 </label>
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-primary);">
                     <input type="radio" name="import_mode" value="overwrite" style="accent-color:var(--accent-red);">

@@ -3127,5 +3127,212 @@ class TestProductReferenceSeed(BaseTestCase):
         self.assertEqual(len(attachments), 1)
 
 
+class TestUpsertProductReference(BaseTestCase):
+    """Test upsert_product_reference for seed import mode."""
+
+    def test_upsert_adds_new_entry(self):
+        """Upsert creates a new entry when codename doesn't exist."""
+        ref_id, action = db.upsert_product_reference(
+            codename='NewProd', model_name='Model X', year='2025',
+            print_technology='Ink')
+        self.assertEqual(action, 'added')
+        self.assertIsNotNone(ref_id)
+        refs = db.get_product_reference_by_codename('NewProd')
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0]['model_name'], 'Model X')
+        self.assertEqual(refs[0]['print_technology'], 'Ink')
+
+    def test_upsert_updates_existing_entry(self):
+        """Upsert updates an existing entry matched by codename."""
+        db.add_product_reference(codename='Marconi', model_name='Old Model',
+                                 year='2023', print_technology='Ink')
+        ref_id, action = db.upsert_product_reference(
+            codename='Marconi', model_name='New Model', year='2024')
+        self.assertEqual(action, 'updated')
+        refs = db.get_product_reference_by_codename('Marconi')
+        self.assertEqual(refs[0]['model_name'], 'New Model')
+        self.assertEqual(refs[0]['year'], '2024')
+
+    def test_upsert_preserves_nonempty_fields(self):
+        """Upsert doesn't overwrite existing fields with empty values."""
+        db.add_product_reference(codename='Tesla', model_name='LJ Pro 400',
+                                 year='2024', print_technology='Laser',
+                                 wifi_gen='6')
+        ref_id, action = db.upsert_product_reference(
+            codename='Tesla', model_name='', year='', wifi_gen='')
+        self.assertEqual(action, 'updated')
+        refs = db.get_product_reference_by_codename('Tesla')
+        self.assertEqual(refs[0]['model_name'], 'LJ Pro 400')
+        self.assertEqual(refs[0]['year'], '2024')
+        self.assertEqual(refs[0]['print_technology'], 'Laser')
+        self.assertEqual(refs[0]['wifi_gen'], '6')
+
+    def test_upsert_creates_wiki_page(self):
+        """Upsert add mode auto-creates a wiki page."""
+        ref_id, action = db.upsert_product_reference(codename='WikiTest')
+        self.assertEqual(action, 'added')
+        wiki = db.get_wiki_by_ref_id(ref_id)
+        self.assertIsNotNone(wiki)
+
+
+class TestSeedImportMode(BaseTestCase):
+    """Test the seed import mode via the web UI."""
+
+    def setUp(self):
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        if os.path.isdir(seed_dir):
+            shutil.rmtree(seed_dir)
+        super().setUp()
+
+    def _create_seed_csv(self, seed_dir, rows):
+        os.makedirs(seed_dir, exist_ok=True)
+        csv_path = os.path.join(seed_dir, 'product_reference.csv')
+        import csv
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Codename', 'Model Name', 'Wi-Fi Gen', 'Year',
+                             'Print Technology'])
+            for row in rows:
+                writer.writerow(row)
+        return csv_path
+
+    def _create_seed_zip(self, seed_dir, images):
+        import zipfile
+        zip_path = os.path.join(seed_dir, 'printer_images.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for name, data in images.items():
+                zf.writestr(name, data)
+        return zip_path
+
+    def test_seed_mode_adds_missing_entries(self):
+        """Seed mode adds entries not already present."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'OJ Pro 9120', '6E', '2025', 'Ink'],
+            ['Tesla', 'LJ Pro 400', '6', '2024', 'Laser'],
+        ])
+        self.login_admin()
+        with patch('app.BUNDLE_DIR', _test_dir):
+            resp = self.client.post('/reference/import',
+                                    data={'import_mode': 'seed'},
+                                    content_type='multipart/form-data',
+                                    follow_redirects=True)
+        self.assertIn(b'2 added', resp.data)
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 2)
+
+    def test_seed_mode_updates_existing(self):
+        """Seed mode updates existing entries by codename."""
+        db.add_product_reference(codename='Marconi', model_name='Old Model')
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        self.login_admin()
+        with patch('app.BUNDLE_DIR', _test_dir):
+            resp = self.client.post('/reference/import',
+                                    data={'import_mode': 'seed'},
+                                    content_type='multipart/form-data',
+                                    follow_redirects=True)
+        self.assertIn(b'1 updated', resp.data)
+        refs = db.get_product_reference_by_codename('Marconi')
+        self.assertEqual(refs[0]['model_name'], 'OJ Pro 9120')
+
+    def test_seed_mode_attaches_images(self):
+        """Seed mode attaches images from the seed zip."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'officejet_pro_9120_9120b.jpg': fake_png,
+        })
+        self.login_admin()
+        with patch('app.BUNDLE_DIR', _test_dir):
+            resp = self.client.post('/reference/import',
+                                    data={'import_mode': 'seed'},
+                                    content_type='multipart/form-data',
+                                    follow_redirects=True)
+        self.assertIn(b'1 images attached', resp.data)
+        refs = db.get_product_reference_by_codename('Marconi')
+        attachments = db.get_wiki_attachments(refs[0]['ref_id'])
+        self.assertEqual(len(attachments), 1)
+
+    def test_seed_mode_skips_existing_attachments(self):
+        """Seed mode does not duplicate images on refs that already have attachments."""
+        ref_id = db.add_product_reference(codename='Marconi', model_name='OJ Pro 9120')
+        db.add_wiki_attachment(ref_id=ref_id, filename='existing.png',
+                               original_name='existing.png',
+                               content_type='image/png', size_bytes=100,
+                               uploaded_by='admin')
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Marconi', 'OJ Pro 9120', '6E', '2025', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'officejet_pro_9120_9120b.jpg': fake_png,
+        })
+        self.login_admin()
+        with patch('app.BUNDLE_DIR', _test_dir):
+            resp = self.client.post('/reference/import',
+                                    data={'import_mode': 'seed'},
+                                    content_type='multipart/form-data',
+                                    follow_redirects=True)
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)  # still just the original
+
+    def test_seed_mode_requires_login(self):
+        """Seed mode requires authentication."""
+        resp = self.client.post('/reference/import',
+                                data={'import_mode': 'seed'},
+                                content_type='multipart/form-data')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login', resp.headers['Location'])
+
+    def test_seed_mode_no_seed_data(self):
+        """Seed mode shows error when seed data is missing."""
+        self.login_admin()
+        with patch('app.BUNDLE_DIR', _test_dir):
+            resp = self.client.post('/reference/import',
+                                    data={'import_mode': 'seed'},
+                                    content_type='multipart/form-data',
+                                    follow_redirects=True)
+        self.assertIn(b'Seed data not found', resp.data)
+
+
+class TestLargeFormatPrintTechnology(BaseTestCase):
+    """Test Large Format as a print technology option."""
+
+    def test_large_format_in_dropdown(self):
+        """Large Format appears in the print technology dropdown."""
+        db.add_product_reference(codename='Beam', print_technology='Large Format')
+        self.login_admin()
+        resp = self.client.get('/reference')
+        self.assertIn(b'Large Format', resp.data)
+
+    def test_large_format_badge_styling(self):
+        """Large Format badge uses amber color for non-admin view."""
+        db.add_product_reference(codename='Beam', print_technology='Large Format')
+        resp = self.client.get('/reference')
+        self.assertIn(b'Large Format', resp.data)
+
+    def test_add_product_with_large_format(self):
+        """Can create a product reference with Large Format technology."""
+        ref_id = db.add_product_reference(
+            codename='TestLF', model_name='DesignJet Test',
+            print_technology='Large Format')
+        ref = db.get_product_reference(ref_id)
+        self.assertEqual(ref['print_technology'], 'Large Format')
+
+    def test_upsert_preserves_large_format(self):
+        """Upsert preserves Large Format when incoming value is empty."""
+        db.add_product_reference(codename='Beam', print_technology='Large Format')
+        ref_id, action = db.upsert_product_reference(codename='Beam', model_name='DJ XT950')
+        refs = db.get_product_reference_by_codename('Beam')
+        self.assertEqual(refs[0]['print_technology'], 'Large Format')
+
+
 if __name__ == '__main__':
     unittest.main()

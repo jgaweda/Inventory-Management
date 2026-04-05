@@ -109,7 +109,7 @@ def parse_tsv(filepath):
 def main():
     parser = argparse.ArgumentParser(description='Import product references from Excel or TSV')
     parser.add_argument('file', help='Path to the .xlsx or .tsv file')
-    parser.add_argument('--print-technology', choices=['Ink', 'Laser'], default='',
+    parser.add_argument('--print-technology', choices=['Ink', 'Laser', 'Large Format'], default='',
                         help='Set print technology for all imported rows')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview import without writing to database')

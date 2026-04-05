@@ -410,12 +410,30 @@ def _seed_product_references():
         _audit_logger.info('No printer_images.zip found, skipping image seeding')
         return
 
+    _seed_wiki_images(zip_path)
+
+
+def _seed_wiki_images(zip_path):
+    """Match images in a zip to product references and attach as wiki uploads.
+
+    Uses fuzzy name matching (abbreviation expansion, wildcard support,
+    model-number token overlap).  Skips images already attached to a ref.
+    Returns the number of images attached.
+    """
+    import zipfile
+    import mimetypes
+
     wiki_uploads_dir = os.path.join(DATA_DIR, 'wiki_uploads')
 
-    # Build lookup: model_name (lowercase) -> ref_id
     conn = get_connection()
     try:
         refs = conn.execute('SELECT ref_id, codename, model_name FROM product_reference').fetchall()
+        # Build set of ref_ids that already have attachments (to avoid duplicates)
+        existing = set(
+            r[0] for r in conn.execute(
+                'SELECT DISTINCT ref_id FROM wiki_attachments'
+            ).fetchall()
+        )
     finally:
         conn.close()
 
@@ -430,13 +448,11 @@ def _seed_product_references():
         words = s.split()
         s = ' '.join(_abbrevs.get(w, w) for w in words)
         s = re.sub(r'[\s/,\-]+', '_', s)
-        # Strip noise words (e.g. "gt" in "deskjet_gt_5820")
         s = re.sub(r'_gt_', '_', s)
         s = re.sub(r'_+', '_', s)
         return s.strip('_')
 
     def _extract_model_tokens(name):
-        """Extract alphanumeric tokens containing digits (model numbers)."""
         return set(re.findall(r'[a-z]*\d+[a-z]*', name.lower()))
 
     def _extract_product_line(name):
@@ -448,15 +464,13 @@ def _seed_product_references():
         return None
 
     def _wildcard_match(pattern_token, target_token):
-        """Check if a token with 'x' wildcards matches a target."""
         if 'x' not in pattern_token:
             return pattern_token == target_token
         regex = '^' + pattern_token.replace('x', '.') + '$'
         return bool(re.match(regex, target_token))
 
-    # Build normalized lookups and token data for fuzzy matching
-    norm_to_ref = {}   # normalized model/codename -> ref_id
-    ref_token_data = []  # (ref_id, tokens, wildcard_tokens, product_line)
+    norm_to_ref = {}
+    ref_token_data = []
     for r in refs:
         rid = r['ref_id']
         if r['codename']:
@@ -470,27 +484,17 @@ def _seed_product_references():
             ref_token_data.append((rid, tokens, wilds, _extract_product_line(nm)))
 
     def _match_image(name_without_ext):
-        """Match an image filename to a product reference ref_id."""
         img_norm = _normalize_for_match(name_without_ext)
-
-        # 1. Exact match on normalized name
         if img_norm in norm_to_ref:
             return norm_to_ref[img_norm]
-
-        # 2. Strip trailing year suffix (e.g. _2017) and retry
-        # Strip trailing year suffix (2010-2029 only, not model numbers like 5000)
         img_no_year = re.sub(r'_20(?:[12]\d)$', '', img_norm)
         if img_no_year != img_norm and img_no_year in norm_to_ref:
             return norm_to_ref[img_no_year]
-
-        # 3. Substring containment (check both with and without year suffix)
         for rk, rid in norm_to_ref.items():
             if len(rk) >= 4 and (rk in img_norm or img_norm in rk):
                 return rid
             if img_no_year != img_norm and len(rk) >= 4 and (rk in img_no_year or img_no_year in rk):
                 return rid
-
-        # 4. Token-based fuzzy match with wildcard support
         img_tokens = _extract_model_tokens(img_no_year)
         img_line = _extract_product_line(img_norm)
         best_ref = None
@@ -519,11 +523,8 @@ def _seed_product_references():
         images_seeded = 0
         with zipfile.ZipFile(zip_path, 'r') as zf:
             for entry in zf.namelist():
-                # Skip directories and hidden files
                 if entry.endswith('/') or '/.' in entry or entry.startswith('.'):
                     continue
-
-                # Get just the filename without path and extension
                 basename = os.path.basename(entry)
                 name_without_ext, ext = os.path.splitext(basename)
                 ext = ext.lower()
@@ -531,12 +532,14 @@ def _seed_product_references():
                     continue
 
                 ref_id = _match_image(name_without_ext)
-
                 if not ref_id:
                     _audit_logger.debug('Seed image "%s" did not match any product reference', basename)
                     continue
 
-                # Save the image to wiki_uploads/{ref_id}/
+                # Skip if this ref already has attachments
+                if ref_id in existing:
+                    continue
+
                 ref_upload_dir = os.path.join(wiki_uploads_dir, str(ref_id))
                 os.makedirs(ref_upload_dir, exist_ok=True)
 
@@ -557,10 +560,13 @@ def _seed_product_references():
                     uploaded_by='system',
                 )
                 images_seeded += 1
+                existing.add(ref_id)  # track to avoid dups within same run
 
         _audit_logger.info('Seeded %d wiki images from printer_images.zip', images_seeded)
+        return images_seeded
     except Exception as e:
         _audit_logger.error('Failed to seed wiki images: %s\n%s', e, traceback.format_exc())
+        return 0
 
 
 def generate_device_id():
@@ -2316,6 +2322,48 @@ def add_product_reference(codename, model_name='', wifi_gen='', year='',
             VALUES (?, '', '')
         ''', (ref_id,))
         return ref_id
+
+
+def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
+                             chip_manufacturer='', chip_codename='', fw_codebase='',
+                             print_technology='', variant=''):
+    """Update an existing product reference by codename, or insert if missing.
+
+    For existing entries, only non-empty values are applied (preserves
+    manually-edited fields).  Returns (ref_id, 'updated' | 'added').
+    """
+    existing = get_product_reference_by_codename(codename)
+    if existing:
+        ref = existing[0]  # first match
+        ref_id = ref['ref_id']
+        # Only overwrite fields that are non-empty in the incoming data
+        with db_transaction() as conn:
+            conn.execute('''
+                UPDATE product_reference
+                SET model_name = ?, wifi_gen = ?, year = ?,
+                    chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
+                    print_technology = ?, variant = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE ref_id = ?
+            ''', (
+                model_name or ref['model_name'],
+                wifi_gen or ref['wifi_gen'],
+                year or ref['year'],
+                chip_manufacturer or ref['chip_manufacturer'],
+                chip_codename or ref['chip_codename'],
+                fw_codebase or ref['fw_codebase'],
+                print_technology or ref['print_technology'],
+                variant or ref.get('variant', ''),
+                ref_id,
+            ))
+        return ref_id, 'updated'
+    else:
+        ref_id = add_product_reference(
+            codename=codename, model_name=model_name, wifi_gen=wifi_gen,
+            year=year, chip_manufacturer=chip_manufacturer,
+            chip_codename=chip_codename, fw_codebase=fw_codebase,
+            print_technology=print_technology, variant=variant,
+        )
+        return ref_id, 'added'
 
 
 def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
