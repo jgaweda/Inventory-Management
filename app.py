@@ -1348,8 +1348,15 @@ if _startup_config.get('backup_enabled'):
     if _last_bk:
         _bk_age_hours = (datetime.now() - datetime.strptime(_last_bk, '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600
         if _bk_age_hours > _bk_interval:
-            app_logger.info('Backup overdue on startup (%.1f hours old), scheduling in 30 seconds', _bk_age_hours)
-            _start_backup_timer(30 / 3600)  # ~30 seconds
+            # Only treat as truly overdue if the database has changed since last backup
+            _current_hash = db._compute_db_hash()
+            _last_hash = _startup_config.get('last_backup_hash', '')
+            if _current_hash and _current_hash == _last_hash:
+                app_logger.info('Backup age (%.1f hours) exceeds interval but database unchanged — scheduling at normal interval', _bk_age_hours)
+                _start_backup_timer(_bk_interval)
+            else:
+                app_logger.info('Backup overdue on startup (%.1f hours old, database changed), scheduling in 30 seconds', _bk_age_hours)
+                _start_backup_timer(30 / 3600)  # ~30 seconds
         else:
             _start_backup_timer(_bk_interval - _bk_age_hours)
     else:

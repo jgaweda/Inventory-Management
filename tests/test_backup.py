@@ -31,6 +31,51 @@ class TestBackupSystem(BaseTestCase):
         self.assertEqual(defaults['max_backups'], 10)
         self.assertIn('last_backup_hash', defaults)
 
+class TestBackupHealth(BaseTestCase):
+    """Test backup health reporting and overdue detection."""
+
+    def test_health_no_overdue_when_db_unchanged(self):
+        """Backup should not be flagged overdue if database hasn't changed."""
+        # Create a backup so the hash is saved
+        db.backup_database(performed_by='test', manual=True)
+        # Set last_backup to far in the past (overdue by time)
+        config = db._get_backup_config()
+        config['last_backup'] = '2020-01-01 00:00:00'
+        config['backup_enabled'] = True
+        db.save_backup_config(config)
+        # Health check should NOT flag overdue because hash matches
+        health = db.get_backup_health()
+        overdue_issues = [i for i in health['issues'] if 'overdue' in i.lower()]
+        self.assertEqual(len(overdue_issues), 0,
+                         'Should not show overdue when database is unchanged')
+
+    def test_health_overdue_when_db_changed(self):
+        """Backup should be flagged overdue if database has changed."""
+        db.backup_database(performed_by='test', manual=True)
+        config = db._get_backup_config()
+        config['last_backup'] = '2020-01-01 00:00:00'
+        config['backup_enabled'] = True
+        db.save_backup_config(config)
+        # Modify the database so hash changes
+        db.add_device({'product_name': 'OverdueTestDevice', 'serial_number': 'SN999'}, performed_by='test')
+        health = db.get_backup_health()
+        overdue_issues = [i for i in health['issues'] if 'overdue' in i.lower()]
+        self.assertGreater(len(overdue_issues), 0,
+                           'Should show overdue when database has changed')
+
+    def test_health_overdue_no_hash(self):
+        """Backup flagged overdue if no hash exists (first run / legacy)."""
+        config = db._get_backup_config()
+        config['last_backup'] = '2020-01-01 00:00:00'
+        config['last_backup_hash'] = ''
+        config['backup_enabled'] = True
+        db.save_backup_config(config)
+        health = db.get_backup_health()
+        overdue_issues = [i for i in health['issues'] if 'overdue' in i.lower()]
+        self.assertGreater(len(overdue_issues), 0,
+                           'Should show overdue when no hash is stored')
+
+
 class TestBackupEdgeCases(BaseTestCase):
     """Test backup system edge cases."""
 

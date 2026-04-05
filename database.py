@@ -1369,8 +1369,12 @@ def get_backup_health():
             last_dt = datetime.strptime(last, '%Y-%m-%d %H:%M:%S')
             overdue_hours = config['backup_interval_hours'] * 2
             if (now - last_dt).total_seconds() > overdue_hours * 3600:
-                hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
-                issues.append(f'Backup overdue: last backup was {hours_ago} hours ago (interval: {config["backup_interval_hours"]}h)')
+                # Don't flag as overdue if the database hasn't changed since last backup
+                current_hash = _compute_db_hash()
+                last_hash = config.get('last_backup_hash', '')
+                if not current_hash or current_hash != last_hash:
+                    hours_ago = round((now - last_dt).total_seconds() / 3600, 1)
+                    issues.append(f'Backup overdue: last backup was {hours_ago} hours ago (interval: {config["backup_interval_hours"]}h)')
 
     # Check cloud backup (git push) schedule
     if config['git_enabled'] and config.get('git_repo'):
