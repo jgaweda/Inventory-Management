@@ -56,23 +56,42 @@ MONO_BOLD_FONTS = ["DejaVuSansMono-Bold.ttf", "LiberationMono-Bold.ttf",
 def generate_qr_code(data, size=250):
     """
     Generate a QR code image for the given data string.
-    Returns a PIL Image resized to size x size pixels.
+    Returns a PIL Image at exactly size x size pixels.
 
-    Uses ERROR_CORRECT_M (15% recovery) for a good balance between
-    scannability and module size on printed labels. border=4 meets the
-    QR spec minimum quiet zone. NEAREST interpolation preserves crisp
-    module edges essential for reliable scanning.
+    Calculates a box_size that divides evenly into the target size so
+    no fractional-pixel interpolation occurs — every QR module maps to
+    a whole number of pixels, producing perfectly crisp edges.
     """
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
+        box_size=1,
         border=4,
     )
     qr.add_data(data)
     qr.make(fit=True)
+    # Calculate modules: matrix size + 2*border
+    modules = qr.modules_count + 2 * 4
+    # Find largest box_size that divides evenly into target size
+    box_size = size // modules
+    if box_size < 1:
+        box_size = 1
+    qr.box_size = box_size
     img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
-    return img.resize((size, size), Image.NEAREST)
+    # The native size is box_size * modules — center-crop or pad to exact target
+    native = box_size * modules
+    if native == size:
+        return img
+    elif native < size:
+        # Pad with white to center
+        result = Image.new('RGB', (size, size), 'white')
+        offset = (size - native) // 2
+        result.paste(img, (offset, offset))
+        return result
+    else:
+        # Slightly larger — crop from center
+        offset = (native - size) // 2
+        return img.crop((offset, offset, offset + size, offset + size))
 
 
 def generate_barcode_image(data, width=350, height=80):
@@ -80,36 +99,52 @@ def generate_barcode_image(data, width=350, height=80):
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image sized to width x height.
 
-    Renders at high DPI with wide modules, then scales to fill the exact
-    target dimensions. Bars are stretched to full height for maximum
-    scannability and visual impact.
+    Iterates module_width to find the widest setting whose rendered
+    barcode fits the target width, so bars are as thick as possible and
+    evenly distributed across the full width. Quiet zones are set to the
+    Code 128 minimum (10x module width). NEAREST resize preserves crisp
+    bar edges.
     """
-    writer = ImageWriter()
-    code = Code128(data, writer=writer)
-    buffer = io.BytesIO()
-    code.render(writer_options={
-        'font_size': 0,
-        'text_distance': 0,
-        'quiet_zone': 6.5,
-        'module_width': 0.8,
-        'module_height': 30,
-        'dpi': 300,
-    }).save(buffer, format='PNG')
-    buffer.seek(0)
+    best_img = None
+    best_w = 0
 
-    img = Image.open(buffer).convert('RGB')
+    # Try increasing module widths to find the best fit
+    for mw_tenth in range(5, 25):  # 0.5mm to 2.4mm in 0.1mm steps
+        mw = mw_tenth / 10.0
+        writer = ImageWriter()
+        code = Code128(data, writer=writer)
+        buffer = io.BytesIO()
+        code.render(writer_options={
+            'font_size': 0,
+            'text_distance': 0,
+            'quiet_zone': mw * 10,  # Code 128 spec: 10x narrow bar
+            'module_width': mw,
+            'module_height': 30,
+            'dpi': 300,
+        }).save(buffer, format='PNG')
+        buffer.seek(0)
 
-    # Crop whitespace to just the bars
-    gray = img.convert('L')
-    bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
-    if bbox:
-        img = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+        img = Image.open(buffer).convert('RGB')
+        # Crop to just the bars + quiet zone
+        gray = img.convert('L')
+        bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
+        if bbox:
+            # Keep horizontal quiet zones, crop vertical whitespace
+            img = img.crop((0, bbox[1], img.width, bbox[3]))
 
-    # Scale width to fit, then stretch height to fill entire target
-    # This makes bars as tall as possible — NEAREST preserves crisp edges
-    img = img.resize((width, height), Image.NEAREST)
+        if img.width <= width:
+            best_img = img
+            best_w = img.width
+        else:
+            break  # Too wide — use the previous best
 
-    return img
+    if best_img is None:
+        # Fallback to minimum module width
+        best_img = img
+
+    # Scale: stretch width to fill target exactly, stretch height to fill
+    best_img = best_img.resize((width, height), Image.NEAREST)
+    return best_img
 
 
 def _fit_font(draw, text, font_names, max_width, max_size, min_size=20):
@@ -204,6 +239,9 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     id_x = bc_x + (bc_w - id_tw) // 2
     id_y = bot_y + TEXT_PAD_Y
     draw.text((id_x, id_y), display_id, fill='black', font=font_id)
+
+    # --- Hairline border for cut/peel alignment ---
+    draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=1)
 
     if save:
         _ensure_labels_dir()
