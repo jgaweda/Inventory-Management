@@ -15,7 +15,6 @@ import logging
 import os
 import traceback
 import uuid
-from PIL import Image
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -593,6 +592,7 @@ def serve_label_pdf(device_id):
 
     # Landscape PNG (1050x450 = 3.5x1.5" at 300 DPI)
     import zlib
+    from PIL import Image
     img = Image.open(path).convert('RGB')
     img_w, img_h = img.size
     # Use FlateDecode (lossless) instead of JPEG to preserve crisp barcode edges
