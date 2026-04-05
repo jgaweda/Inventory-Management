@@ -694,5 +694,185 @@ class TestServerSettings(BaseTestCase):
         self.assertNotIn(b'Restart the application', resp.data)
 
 
+class TestDeviceImport(BaseTestCase):
+    """Test Excel/CSV device import."""
+
+    def test_import_csv(self):
+        self.login_admin()
+        csv_data = (
+            'Name,Category,Manufacturer,Status,Location\n'
+            'Test Printer,Printer,HP,available,Lab A\n'
+            'Test Router,Router,Cisco,available,Lab B\n'
+        )
+        from io import BytesIO
+        data = {
+            'import_file': (BytesIO(csv_data.encode()), 'devices.csv')
+        }
+        resp = self.client.post('/import/devices', data=data,
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'Imported 2 device', resp.data)
+
+    def test_import_csv_skip_no_name(self):
+        self.login_admin()
+        csv_data = (
+            'Name,Category\n'
+            ',Printer\n'
+            'Valid Device,Router\n'
+        )
+        from io import BytesIO
+        data = {
+            'import_file': (BytesIO(csv_data.encode()), 'devices.csv')
+        }
+        resp = self.client.post('/import/devices', data=data,
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'Imported 1 device', resp.data)
+        self.assertIn(b'1 rows skipped', resp.data)
+
+    def test_import_bad_filetype(self):
+        self.login_admin()
+        from io import BytesIO
+        data = {
+            'import_file': (BytesIO(b'test'), 'devices.pdf')
+        }
+        resp = self.client.post('/import/devices', data=data,
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'Unsupported file type', resp.data)
+
+    def test_import_requires_editor(self):
+        """Viewers cannot import devices."""
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'viewer1', 'password': 'test', 'role': 'viewer',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={
+            'username': 'viewer1', 'password': 'test',
+        })
+        from io import BytesIO
+        data = {
+            'import_file': (BytesIO(b'Name\nTest'), 'devices.csv')
+        }
+        resp = self.client.post('/import/devices', data=data,
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertNotIn(b'Imported', resp.data)
+
+
+class TestWikiMarkdown(BaseTestCase):
+    """Test wiki Markdown rendering support."""
+
+    def test_wiki_page_includes_marked_js(self):
+        """Wiki page should include marked.js CDN."""
+        self.login_admin()
+        # Create a product reference first
+        db.add_product_reference(codename='TestProd')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertIn(b'marked.min.js', resp.data)
+
+    def test_wiki_content_json_escaped(self):
+        """Wiki content should be embedded as JSON for safe JS rendering."""
+        self.login_admin()
+        db.add_product_reference(codename='MDProd')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        # Save some markdown content
+        self.client.post(f'/wiki/{ref_id}/save', data={
+            'content': '# Hello **World**'
+        }, follow_redirects=True)
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertIn(b'marked.min.js', resp.data)
+
+    def test_wiki_read_only_has_render_target(self):
+        """Non-logged-in view should have wikiReadOnly div for JS rendering."""
+        db.add_product_reference(codename='ReadProd')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertIn(b'wikiReadOnly', resp.data)
+
+
+class TestLaserBarcode(BaseTestCase):
+    """Test barcode optimization for laser scanners."""
+
+    def test_barcode_crisp_edges(self):
+        """Barcode should have zero gray pixels (pure black/white for laser)."""
+        img = barcode_utils.generate_barcode_image('CNX-TEST01', width=350, height=80)
+        pixels = list(img.getdata())
+        gray = 0
+        for r, g, b in pixels:
+            if not (r > 240 and g > 240 and b > 240) and not (r < 15 and g < 15 and b < 15):
+                gray += 1
+        pct = gray / len(pixels) * 100
+        self.assertLess(pct, 1, f'{pct:.1f}% gray pixels — bars not crisp')
+
+    def test_barcode_has_quiet_zones(self):
+        """Barcode should have white quiet zones on left and right edges."""
+        img = barcode_utils.generate_barcode_image('CNX-TEST02', width=400, height=80)
+        # Check leftmost and rightmost 5 columns are predominantly white
+        for x in range(5):
+            white_count = 0
+            for y in range(img.height):
+                r, g, b = img.getpixel((x, y))
+                if r > 200 and g > 200 and b > 200:
+                    white_count += 1
+            self.assertGreater(white_count / img.height, 0.5,
+                               f'Left quiet zone missing at column {x}')
+        for x in range(img.width - 5, img.width):
+            white_count = 0
+            for y in range(img.height):
+                r, g, b = img.getpixel((x, y))
+                if r > 200 and g > 200 and b > 200:
+                    white_count += 1
+            self.assertGreater(white_count / img.height, 0.5,
+                               f'Right quiet zone missing at column {x}')
+
+
+class TestRoleGranularity(BaseTestCase):
+    """Test editor role permissions."""
+
+    def _create_editor(self):
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'editor1', 'password': 'test',
+            'display_name': 'Editor One', 'role': 'editor',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={
+            'username': 'editor1', 'password': 'test',
+        })
+
+    def test_editor_can_add_device(self):
+        self._create_editor()
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'T100',
+            'category': 'Router', 'connectivity': 'Wi-Fi 6',
+        }, follow_redirects=True)
+        self.assertIn(b'added successfully', resp.data)
+
+    def test_editor_cannot_manage_users(self):
+        self._create_editor()
+        resp = self.client.get('/users', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_viewer_cannot_add_device(self):
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'viewer2', 'password': 'test', 'role': 'viewer',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={
+            'username': 'viewer2', 'password': 'test',
+        })
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'category': 'Router',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()

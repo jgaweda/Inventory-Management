@@ -24,12 +24,30 @@
 
     .wiki-content {
         padding: 20px; font-size: 14px; line-height: 1.8;
-        color: var(--text-primary); white-space: pre-wrap; word-wrap: break-word;
+        color: var(--text-primary); word-wrap: break-word;
     }
     .wiki-content:empty::before {
         content: 'No notes have been added for this product yet.';
         color: var(--text-muted); font-style: italic;
     }
+    /* Markdown rendered styles */
+    .wiki-content h1, .wiki-content h2, .wiki-content h3 { margin: 1em 0 0.5em; font-weight: 700; color: var(--text-primary); }
+    .wiki-content h1 { font-size: 1.5em; }
+    .wiki-content h2 { font-size: 1.3em; }
+    .wiki-content h3 { font-size: 1.1em; }
+    .wiki-content p { margin: 0.6em 0; }
+    .wiki-content ul, .wiki-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+    .wiki-content li { margin: 0.3em 0; }
+    .wiki-content code { background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; }
+    .wiki-content pre { background: var(--bg-secondary); padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; }
+    .wiki-content pre code { background: none; padding: 0; }
+    .wiki-content blockquote { border-left: 3px solid var(--accent-blue); padding-left: 12px; margin: 0.8em 0; color: var(--text-secondary); }
+    .wiki-content table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+    .wiki-content th, .wiki-content td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; }
+    .wiki-content th { background: var(--bg-secondary); font-weight: 600; }
+    .wiki-content a { color: var(--accent-blue); }
+    .wiki-content hr { border: none; border-top: 1px solid var(--border-color); margin: 1em 0; }
+    .wiki-content img { max-width: 100%; border-radius: 8px; }
 
     .wiki-toolbar {
         display: flex; gap: 8px; align-items: center;
@@ -146,7 +164,7 @@
     </form>
     {% else %}
     <!-- Read-only view for visitors -->
-    <div class="wiki-content">{{ content }}</div>
+    <div class="wiki-content" id="wikiReadOnly"></div>
     {% endif %}
 
     {% if updated_by %}
@@ -259,7 +277,74 @@
 
 {% if current_user %}
 <p class="format-hint">
-    All logged-in users can edit this wiki. Changes are saved and visible to the entire team.
+    Supports Markdown: **bold**, *italic*, # Heading, - lists, `code`, [links](url), > quotes.
+    All logged-in users can edit. Changes are visible to the entire team.
 </p>
 {% endif %}
+
+<!-- Markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script>
+(function() {
+    // Configure marked for safe rendering
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({ breaks: true, gfm: true });
+    }
+
+    // Raw wiki content from server (escaped for safe embedding)
+    var rawContent = {{ content|tojson }};
+
+    function renderMarkdown(text) {
+        if (typeof marked !== 'undefined' && text) {
+            return marked.parse(text);
+        }
+        // Fallback: simple text with line breaks
+        if (!text) return '';
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML.replace(/\n/g, '<br>');
+    }
+
+    // Render read-only view
+    var readOnly = document.getElementById('wikiReadOnly');
+    if (readOnly) {
+        readOnly.innerHTML = renderMarkdown(rawContent);
+    }
+
+    // Add live preview toggle for editor
+    var editor = document.querySelector('.wiki-editor');
+    var toolbar = document.querySelector('.wiki-toolbar');
+    if (editor && toolbar) {
+        // Add preview button to toolbar
+        var previewBtn = document.createElement('button');
+        previewBtn.type = 'button';
+        previewBtn.className = 'btn btn-secondary btn-sm';
+        previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview';
+        previewBtn.style.marginRight = '8px';
+        toolbar.querySelector('[style="flex: 1;"]').insertAdjacentElement('afterend', previewBtn);
+
+        // Create preview div
+        var previewDiv = document.createElement('div');
+        previewDiv.className = 'wiki-content';
+        previewDiv.style.display = 'none';
+        previewDiv.style.minHeight = '500px';
+        editor.parentNode.insertBefore(previewDiv, editor.nextSibling);
+
+        var previewing = false;
+        previewBtn.addEventListener('click', function() {
+            previewing = !previewing;
+            if (previewing) {
+                previewDiv.innerHTML = renderMarkdown(editor.value);
+                previewDiv.style.display = 'block';
+                editor.style.display = 'none';
+                previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit';
+            } else {
+                previewDiv.style.display = 'none';
+                editor.style.display = '';
+                previewBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview';
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}

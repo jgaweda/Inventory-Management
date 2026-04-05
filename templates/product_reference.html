@@ -103,7 +103,7 @@
         <h2 style="font-size: 24px; font-weight: 700;">Product Reference</h2>
         <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;" id="refCount">{{ refs|length }} product{{ 's' if refs|length != 1 else '' }} in catalog</p>
     </div>
-    {% if current_user and current_user.role == 'admin' %}
+    {% if current_user and current_user.role != 'viewer' %}
     <div style="display: flex; gap: 8px; align-items: center;">
         <button onclick="document.getElementById('importModal').style.display='flex'" class="btn btn-secondary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
@@ -147,7 +147,7 @@
                     <th data-sort="chip_codename">Chipset Codename <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="fw_codebase">FW Codebase <span class="sort-arrow">&#9650;</span></th>
                     <th style="text-align: center;" data-sort="inv">Inv <span class="sort-arrow">&#9650;</span></th>
-                    {% if current_user and current_user.role == 'admin' %}
+                    {% if current_user and current_user.role != 'viewer' %}
                     <th style="width: 40px; cursor: default;"></th>
                     {% endif %}
                 </tr>
@@ -157,13 +157,13 @@
                 <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
-                            <span class="codename-text{% if current_user and current_user.role == 'admin' %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
+                            <span class="codename-text{% if current_user and current_user.role != 'viewer' %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
                             <a href="{{ url_for('product_wiki', ref_id=ref.ref_id) }}" class="wiki-btn" title="Wiki">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
                             </a>
                         </div>
                     </td>
-                    {% if current_user and current_user.role == 'admin' %}
+                    {% if current_user and current_user.role != 'viewer' %}
                     <td><input class="cell-edit" data-field="model_name" value="{{ ref.model_name or '' }}"></td>
                     <td>
                         <select class="cell-edit" data-field="print_technology">
@@ -218,14 +218,14 @@
     {% if not refs %}
     <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 40px;" id="emptyMsg">
         No products yet.
-        {% if current_user and current_user.role == 'admin' %}
+        {% if current_user and current_user.role != 'viewer' %}
         Click Add Product to get started.
         {% endif %}
     </p>
     {% endif %}
 </div>
 
-{% if current_user and current_user.role == 'admin' %}
+{% if current_user and current_user.role != 'viewer' %}
 <button class="add-row-btn" onclick="addNewRow()">+ Add Row</button>
 
 <!-- Import Modal -->

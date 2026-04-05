@@ -143,6 +143,20 @@ def admin_required(f):
     return decorated
 
 
+def editor_required(f):
+    """Decorator: require editor or admin role. Viewers get an error flash."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not g.user:
+            flash('Please log in to continue.', 'warning')
+            return redirect(url_for('login', next=request.path))
+        if g.user['role'] == 'viewer':
+            flash('You do not have permission to perform this action.', 'error')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
 def current_username():
     """Return display name of logged-in user, or 'system'."""
     if g.user:
@@ -262,7 +276,7 @@ def device_list():
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/add', methods=['GET', 'POST'])
-@admin_required
+@editor_required
 def device_add():
     if request.method == 'POST':
         manufacturer = request.form.get('manufacturer', '').strip()
@@ -357,7 +371,7 @@ def device_detail(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/edit', methods=['GET', 'POST'])
-@admin_required
+@editor_required
 def device_edit(device_id):
     device = db.get_device(device_id)
     if not device:
@@ -433,7 +447,7 @@ def device_retire(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/checkout', methods=['POST'])
-@admin_required
+@editor_required
 def device_checkout(device_id):
     assigned_to = request.form.get('assigned_to', '').strip()
     if not assigned_to:
@@ -447,7 +461,7 @@ def device_checkout(device_id):
 
 
 @app.route('/devices/<device_id>/checkin', methods=['POST'])
-@admin_required
+@editor_required
 def device_checkin(device_id):
     db.checkin_device(device_id, performed_by=current_username())
     app_logger.info('Device checked in: id=%s by=%s', device_id, current_username())
@@ -489,12 +503,13 @@ def serve_label_pdf(device_id):
     if not os.path.isfile(path) or os.path.getmtime(path) < datetime.fromisoformat(device['updated_at']).timestamp():
         barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
 
-    # Landscape PNG (1050x450 = 3.5x1.5")
-    img = Image.open(path)
-    img_buffer = io.BytesIO()
-    img.save(img_buffer, 'JPEG', quality=95)
-    img_data = img_buffer.getvalue()
-    img_w, img_h = img.size  # 1050 x 450
+    # Landscape PNG (1050x450 = 3.5x1.5" at 300 DPI)
+    import zlib
+    img = Image.open(path).convert('RGB')
+    img_w, img_h = img.size
+    # Use FlateDecode (lossless) instead of JPEG to preserve crisp barcode edges
+    raw_data = img.tobytes()
+    img_data = zlib.compress(raw_data, 9)
 
     # Landscape page matching label stock: 3.5" wide x 1.5" tall
     page_w = 252   # 3.5 * 72
@@ -515,7 +530,7 @@ def serve_label_pdf(device_id):
     pdf.write(f'3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_w} {page_h}] /Contents 5 0 R /Resources << /XObject << /Img 4 0 R >> >> >>\nendobj\n'.encode())
 
     xref_offsets.append(pdf.tell())
-    pdf.write(f'4 0 obj\n<< /Type /XObject /Subtype /Image /Width {img_w} /Height {img_h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {len(img_data)} >>\nstream\n'.encode())
+    pdf.write(f'4 0 obj\n<< /Type /XObject /Subtype /Image /Width {img_w} /Height {img_h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length {len(img_data)} >>\nstream\n'.encode())
     pdf.write(img_data)
     pdf.write(b'\nendstream\nendobj\n')
 
@@ -546,7 +561,7 @@ def serve_label_pdf(device_id):
 
 
 @app.route('/labels/sheet', methods=['POST'])
-@admin_required
+@editor_required
 def label_sheet():
     """Generate and download a printable sheet of labels for selected devices."""
     device_ids = request.form.getlist('device_ids')
@@ -607,13 +622,11 @@ def api_lookup():
         return jsonify({'found': False}), 404
 
 # ---------------------------------------------------------------------------
-# CSV Export (public)
+# Export (public) — CSV and Excel
 # ---------------------------------------------------------------------------
 
-@app.route('/export')
-def export_csv():
-    """Export devices to CSV with optional filters."""
-    # Read filter params
+def _get_export_devices():
+    """Gather devices based on export filter query params."""
     category = request.args.get('category', '')
     status = request.args.get('status', '')
     connectivity = request.args.get('connectivity', '')
@@ -622,39 +635,38 @@ def export_csv():
     include_retired = request.args.get('include_retired') == '1'
 
     if category or status or connectivity or location or q:
-        # Use search with filters
-        if not status and include_retired:
-            status = ''  # search_devices excludes retired by default
-        devices = db.search_devices(
-            query=q,
-            category=category,
-            status=status if status else ('retired' if include_retired else ''),
-            connectivity=connectivity,
-            location=location,
-        )
-        # If include_retired and no specific status, we need all devices
         if include_retired and not status:
             non_retired = db.search_devices(query=q, category=category, connectivity=connectivity, location=location)
             retired = db.search_devices(query=q, category=category, status='retired', connectivity=connectivity, location=location)
-            # Merge without duplicates
             seen = set()
             devices = []
             for d in non_retired + retired:
                 if d['device_id'] not in seen:
                     seen.add(d['device_id'])
                     devices.append(d)
+        else:
+            devices = db.search_devices(
+                query=q, category=category,
+                status=status if status else '',
+                connectivity=connectivity, location=location,
+            )
     else:
         devices = db.get_all_devices(include_retired=include_retired)
+    return devices
 
-    app_logger.info('CSV export: %d devices (filters: cat=%s status=%s q=%s) ip=%s',
-                    len(devices), category or 'all', status or 'all', q or 'none', request.remote_addr)
+EXPORT_FIELDS = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
+                 'model_number', 'serial_number', 'connectivity', 'vendor_supplied',
+                 'status', 'location', 'assigned_to', 'notes', 'codename', 'variant',
+                 'created_at', 'updated_at']
+
+@app.route('/export')
+def export_csv():
+    """Export devices to CSV."""
+    devices = _get_export_devices()
+    app_logger.info('CSV export: %d devices ip=%s', len(devices), request.remote_addr)
 
     output = io.StringIO()
-    fields = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
-              'model_number', 'serial_number', 'connectivity', 'vendor_supplied',
-              'status', 'location', 'assigned_to', 'notes', 'codename', 'variant',
-              'created_at', 'updated_at']
-    writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
+    writer = csv.DictWriter(output, fieldnames=EXPORT_FIELDS, extrasaction='ignore')
     writer.writeheader()
     for d in devices:
         writer.writerow(d)
@@ -665,6 +677,179 @@ def export_csv():
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=inventory_export.csv'}
     )
+
+
+@app.route('/export/xlsx')
+def export_xlsx():
+    """Export devices to Excel (.xlsx)."""
+    devices = _get_export_devices()
+    app_logger.info('Excel export: %d devices ip=%s', len(devices), request.remote_addr)
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        flash('openpyxl is required for Excel export. Install with: pip install openpyxl', 'error')
+        return redirect(url_for('device_list'))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Inventory'
+
+    # Header row
+    headers = [f.replace('_', ' ').title() for f in EXPORT_FIELDS]
+    ws.append(headers)
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+
+    # Data rows
+    for d in devices:
+        row = [d.get(f, '') if d.get(f) is not None else '' for f in EXPORT_FIELDS]
+        ws.append(row)
+
+    # Auto-width columns
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or '')) for cell in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+    # Freeze header row
+    ws.freeze_panes = 'A2'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=inventory_export.xlsx'}
+    )
+
+# ---------------------------------------------------------------------------
+# Import devices from Excel/CSV (editor+)
+# ---------------------------------------------------------------------------
+
+DEVICE_HEADER_MAP = {
+    'name': 'name', 'device name': 'name',
+    'category': 'category',
+    'manufacturer': 'manufacturer', 'mfg': 'manufacturer',
+    'model number': 'model_number', 'model_number': 'model_number', 'model': 'model_number',
+    'serial number': 'serial_number', 'serial_number': 'serial_number', 'serial': 'serial_number',
+    'connectivity': 'connectivity', 'connectivity type/version': 'connectivity',
+    'vendor supplied': 'vendor_supplied', 'vendor_supplied': 'vendor_supplied', 'source': 'vendor_supplied',
+    'status': 'status',
+    'location': 'location',
+    'assigned to': 'assigned_to', 'assigned_to': 'assigned_to',
+    'notes': 'notes',
+    'codename': 'codename',
+    'variant': 'variant',
+}
+
+
+@app.route('/import/devices', methods=['POST'])
+@editor_required
+def import_devices():
+    """Import devices from an uploaded .xlsx or .csv file."""
+    file = request.files.get('import_file')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('device_list'))
+
+    filename = file.filename.lower()
+    if not filename.endswith(('.xlsx', '.csv')):
+        flash('Unsupported file type. Use .xlsx or .csv', 'error')
+        return redirect(url_for('device_list'))
+
+    try:
+        imported = 0
+        skipped = 0
+        errors = []
+
+        if filename.endswith('.xlsx'):
+            import openpyxl
+            wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
+            ws = wb.active
+            rows_iter = ws.iter_rows()
+            raw_headers = [cell.value or '' for cell in next(rows_iter)]
+            headers = [DEVICE_HEADER_MAP.get(str(h).strip().lower()) for h in raw_headers]
+
+            for row in rows_iter:
+                values = [cell.value for cell in row]
+                if not any(v is not None and str(v).strip() for v in values):
+                    continue
+                record = {}
+                for i, val in enumerate(values):
+                    if i < len(headers) and headers[i]:
+                        record[headers[i]] = str(val).strip() if val is not None else ''
+                _import_device_record(record, imported, skipped, errors)
+                if record.get('_imported'):
+                    imported += 1
+                else:
+                    skipped += 1
+            wb.close()
+        else:
+            raw = file.read()
+            text = raw.decode('utf-8-sig')
+            delimiter = '\t' if '\t' in text[:2048] else ','
+            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+            raw_headers = next(reader)
+            headers = [DEVICE_HEADER_MAP.get(h.strip().lower()) for h in raw_headers]
+
+            for row in reader:
+                if not any(cell.strip() for cell in row):
+                    continue
+                record = {}
+                for i, val in enumerate(row):
+                    if i < len(headers) and headers[i]:
+                        record[headers[i]] = val.strip()
+                _import_device_record(record, imported, skipped, errors)
+                if record.get('_imported'):
+                    imported += 1
+                else:
+                    skipped += 1
+
+        msg = f'Imported {imported} device{"s" if imported != 1 else ""}.'
+        if skipped:
+            msg += f' {skipped} rows skipped (no name).'
+        flash(msg, 'success')
+        app_logger.info('Device import: %d imported, %d skipped by=%s', imported, skipped, current_username())
+    except Exception as e:
+        app_logger.error('Device import failed: %s\n%s', e, traceback.format_exc())
+        flash(f'Import failed: {e}', 'error')
+
+    return redirect(url_for('device_list'))
+
+
+def _import_device_record(record, imported_count, skipped_count, errors):
+    """Process a single import row, add device if valid."""
+    name = record.get('name', '').strip()
+    if not name:
+        return
+    # Handle vendor_supplied mapping
+    vs = record.get('vendor_supplied', '').lower()
+    if vs in ('1', 'yes', 'true', 'vendor supplied', 'vendor'):
+        record['vendor_supplied'] = 1
+    else:
+        record['vendor_supplied'] = 0
+    # Validate status
+    valid_statuses = ('available', 'checked_out', 'lost', 'retired')
+    if record.get('status', '').lower() not in valid_statuses:
+        record['status'] = 'available'
+    else:
+        record['status'] = record['status'].lower()
+    # Skip serial number duplicate check — just import
+    record.pop('_imported', None)
+    try:
+        device_id = db.add_device(record, performed_by=current_username())
+        device = db.get_device(device_id)
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
+        record['_imported'] = True
+    except Exception:
+        record['_imported'] = False
+
 
 # ---------------------------------------------------------------------------
 # User management (admin only)

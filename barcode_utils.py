@@ -99,10 +99,12 @@ def generate_barcode_image(data, width=350, height=80):
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image sized to width x height.
 
-    Renders with minimal quiet zone (2mm), crops to tight bounding box,
-    then scales to fill the exact target. This maximizes bar thickness
-    and minimizes whitespace. The label layout provides additional quiet
-    zone via the gap between the QR code and label edge.
+    Optimised for old-school laser barcode scanners:
+    - module_width 0.76mm (3 mil) — well above the 0.5mm minimum for laser
+    - module_height 40mm — taller bars are easier for hand-held scanners
+    - quiet_zone 6mm — laser scanners need ≥10× module width of whitespace
+    - Crops to bounding box + proportional quiet zone, then scales with
+      NEAREST to preserve crisp bar edges at any target size.
     """
     writer = ImageWriter()
     code = Code128(data, writer=writer)
@@ -110,22 +112,23 @@ def generate_barcode_image(data, width=350, height=80):
     code.render(writer_options={
         'font_size': 0,
         'text_distance': 0,
-        'quiet_zone': 2.0,       # minimal — label edges provide the rest
-        'module_width': 0.5,     # render small, then scale up
-        'module_height': 30,
+        'quiet_zone': 6.0,      # 6mm — laser scanners need ≥10× module width
+        'module_width': 0.76,   # 0.76mm (3 mil) — thick bars for laser readability
+        'module_height': 40,    # tall bars for easy scanning
         'dpi': 300,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
     img = Image.open(buffer).convert('RGB')
 
-    # Crop to tight bounding box around the actual bars, then add back
-    # a small quiet zone (10px each side). This ensures bars fill most
-    # of the target width rather than having oversized quiet zones.
+    # Crop to bounding box but keep proportional quiet zones.
+    # Laser scanners need quiet zones on left/right of the barcode.
     gray = img.convert('L')
     bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
     if bbox:
-        qz = 10  # minimal quiet zone in pixels
+        bar_width = bbox[2] - bbox[0]
+        # Keep quiet zone = 10% of bar width on each side (min 15px)
+        qz = max(15, int(bar_width * 0.10))
         x0 = max(0, bbox[0] - qz)
         x1 = min(img.width, bbox[2] + qz)
         img = img.crop((x0, bbox[1], x1, bbox[3]))
@@ -272,7 +275,7 @@ def generate_label_sheet(devices, cols=3, rows=6):
         scale = min(cell_w / label_img.width, cell_h / label_img.height)
         scaled_w = int(label_img.width * scale)
         scaled_h = int(label_img.height * scale)
-        scaled_img = label_img.resize((scaled_w, scaled_h), Image.LANCZOS)
+        scaled_img = label_img.resize((scaled_w, scaled_h), Image.NEAREST)
 
         cell_x = margin + col * cell_w
         cell_y = margin + row * cell_h

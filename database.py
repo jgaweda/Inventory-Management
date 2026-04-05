@@ -131,7 +131,7 @@ def init_db():
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer'
-                    CHECK(role IN ('admin','viewer')),
+                    CHECK(role IN ('admin','editor','viewer')),
                 display_name TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_login DATETIME
@@ -212,6 +212,34 @@ def init_db():
             conn.execute("ALTER TABLE devices ADD COLUMN codename TEXT DEFAULT ''")
         if 'variant' not in device_cols:
             conn.execute("ALTER TABLE devices ADD COLUMN variant TEXT DEFAULT ''")
+
+        # Migrate: expand user role CHECK constraint to include 'editor'
+        # SQLite can't ALTER CHECK constraints, so rebuild the table
+        role_check = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        if role_check and 'editor' not in role_check[0]:
+            conn.execute('ALTER TABLE users RENAME TO _users_old')
+            conn.execute('''
+                CREATE TABLE users (
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'viewer'
+                        CHECK(role IN ('admin','editor','viewer')),
+                    display_name TEXT DEFAULT '',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME
+                )
+            ''')
+            conn.execute('''
+                INSERT INTO users (user_id, username, password_hash, salt, role, display_name, created_at, last_login)
+                SELECT user_id, username, password_hash, salt, role, display_name, created_at, last_login
+                FROM _users_old
+            ''')
+            conn.execute('DROP TABLE _users_old')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
 
         # Seed default categories
         for name, desc, sort_ord in DEFAULT_CATEGORIES:

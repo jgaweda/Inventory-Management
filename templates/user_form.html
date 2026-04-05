@@ -36,7 +36,14 @@
             <input type="password" name="password" {% if not is_edit %}required{% endif %} placeholder="{% if is_edit %}Leave blank to keep current{% else %}Min 4 characters{% endif %}" autocomplete="new-password">
         </div>
 
-        <input type="hidden" name="role" value="admin">
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Role</label>
+            <select name="role">
+                <option value="admin" {% if user and (user.get('role', '') if user is mapping else user.role) == 'admin' %}selected{% endif %}>Admin — Full access</option>
+                <option value="editor" {% if user and (user.get('role', '') if user is mapping else user.role) == 'editor' %}selected{% endif %}>Editor — Add, edit, checkout devices</option>
+                <option value="viewer" {% if user and (user.get('role', '') if user is mapping else user.role) == 'viewer' %}selected{% endif %}>Viewer — Read-only</option>
+            </select>
+        </div>
     </div>
 
     <div style="display: flex; gap: 12px; justify-content: flex-end;">

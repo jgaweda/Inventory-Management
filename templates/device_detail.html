@@ -23,13 +23,13 @@
         <a href="{{ url_for('device_list') }}" style="color: var(--text-muted); text-decoration: none; font-size: 13px;">← Back to Devices</a>
         <h2 style="font-size: 24px; font-weight: 700; margin-top: 8px;">{{ device.name }}</h2>
     </div>
-    {% if current_user and current_user.role == 'admin' %}
+    {% if current_user and current_user.role != 'viewer' %}
     <div style="display: flex; gap: 8px;">
         <a href="{{ url_for('device_edit', device_id=device.device_id) }}" class="btn btn-secondary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Edit
         </a>
-        {% if device.status != 'retired' %}
+        {% if device.status != 'retired' and current_user.role == 'admin' %}
         <form method="POST" action="{{ url_for('device_retire', device_id=device.device_id) }}" onsubmit="return confirm('Are you sure you want to retire this device? It will be hidden from the default device list.')">
             <button type="submit" class="btn btn-danger btn-sm">Retire</button>
         </form>
@@ -111,7 +111,7 @@
         </div>
 
         <!-- Check-out / Check-in (admin only) -->
-        {% if current_user and current_user.role == 'admin' %}
+        {% if current_user and current_user.role != 'viewer' %}
         {% if device.status == 'available' %}
         <div class="card" style="margin-bottom: 16px; cursor: default; border: 1px solid rgba(16,185,129,0.3);">
             <div class="section-label" style="color: var(--accent-green);">Check Out Device</div>
@@ -199,6 +199,42 @@
                     <div class="font-mono" style="font-size: 14px;">{{ prod_ref.chip_codename }}</div>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Checkout History -->
+        {% set checkout_events = audit|selectattr('action', 'in', ['checked_out', 'returned'])|list %}
+        {% if checkout_events %}
+        <div class="card" style="cursor: default;">
+            <div class="section-label">Checkout History</div>
+            <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Action</th>
+                        <th>Person</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in checkout_events %}
+                    <tr>
+                        <td class="font-mono" style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">{{ entry.timestamp }}</td>
+                        <td>
+                            {% if entry.action == 'checked_out' %}
+                            <span style="background: rgba(245,158,11,0.12); color: #f59e0b; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Checked Out</span>
+                            {% else %}
+                            <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Returned</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 13px;">{{ entry.details|replace('Assigned to ', '')|replace('Returned from ', '') }}</td>
+                        <td style="font-size: 12px; color: var(--text-muted);">{{ entry.performed_by or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
             </div>
         </div>
         {% endif %}
