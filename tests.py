@@ -1854,5 +1854,579 @@ class TestPowerUserPermissions(BaseTestCase):
         self.assertIn(b'do not have permission', resp.data)
 
 
+# ==========================================================================
+# Full functional coverage — every route and critical DB function tested
+# ==========================================================================
+
+class TestDeviceEditRoute(BaseTestCase):
+    """Test /devices/<id>/edit GET and POST."""
+
+    def test_edit_form_loads(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP TestRouter', 'category': 'Router/AP', 'manufacturer': 'HP', 'model_number': 'TestRouter'})
+        resp = self.client.get(f'/devices/{did}/edit')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Edit Device', resp.data)
+
+    def test_edit_updates_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP OldRouter', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'Cisco', 'model_number': 'AX9000',
+            'category': 'Router/AP', 'location': 'Lab B',
+        }, follow_redirects=True)
+        self.assertIn(b'updated successfully', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['manufacturer'], 'Cisco')
+        self.assertEqual(device['location'], 'Lab B')
+
+    def test_edit_nonexistent_device(self):
+        self.login_admin()
+        resp = self.client.get('/devices/nonexistent999/edit', follow_redirects=True)
+        self.assertIn(b'Device not found', resp.data)
+
+    def test_edit_requires_manufacturer_for_non_printer(self):
+        self.login_admin()
+        did = db.add_device({'name': 'HP Router', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': '', 'category': 'Router/AP',
+        }, follow_redirects=True)
+        self.assertIn(b'Manufacturer is required', resp.data)
+
+    def test_edit_printer_requires_codename(self):
+        self.login_admin()
+        did = db.add_device({'name': 'TestPrn (HP LJ)', 'category': 'Printer',
+                             'manufacturer': 'HP', 'codename': 'TestPrn'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'category': 'Printer', 'codename': '',
+        }, follow_redirects=True)
+        self.assertIn(b'Codename is required', resp.data)
+
+    def test_edit_viewer_blocked(self):
+        """Viewer cannot edit devices."""
+        db.create_user('viewer1', 'pass1234', role='viewer')
+        did = db.add_device({'name': 'Locked Device'})
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'category': 'Router/AP',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
+class TestCheckoutCheckinFlow(BaseTestCase):
+    """Test the full checkout/checkin lifecycle via web routes."""
+
+    def test_checkout_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Checkout Router'})
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'John Doe',
+        }, follow_redirects=True)
+        self.assertIn(b'checked out to John Doe', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+        self.assertEqual(device['assigned_to'], 'John Doe')
+
+    def test_checkin_device(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Checkin Router'})
+        db.checkout_device(did, 'Jane Doe', performed_by='admin')
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        self.assertIn(b'checked in', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+        self.assertEqual(device['assigned_to'], '')
+
+    def test_checkout_empty_assignee_rejected(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Empty Assign'})
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': '',
+        }, follow_redirects=True)
+        self.assertIn(b'enter who', resp.data.lower())
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+
+    def test_checkout_creates_audit_log(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Audit Router'})
+        self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'Auditor',
+        }, follow_redirects=True)
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('checked_out', actions)
+
+    def test_checkin_creates_audit_log(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Log Router'})
+        db.checkout_device(did, 'Someone', performed_by='admin')
+        self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('returned', actions)
+
+
+class TestUserEditDeleteRoutes(BaseTestCase):
+    """Test /users/<id>/edit and /users/<id>/delete routes."""
+
+    def test_edit_user_form_loads(self):
+        self.login_admin()
+        uid = db.create_user('editme', 'pass1234', role='viewer', display_name='Edit Me')
+        resp = self.client.get(f'/users/{uid}/edit')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'editme', resp.data)
+
+    def test_edit_user_updates_role(self):
+        self.login_admin()
+        uid = db.create_user('rolechange', 'pass1234', role='viewer')
+        resp = self.client.post(f'/users/{uid}/edit', data={
+            'display_name': 'Role Changed', 'role': 'editor',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        user = db.get_user(uid)
+        self.assertEqual(user['role'], 'editor')
+        self.assertEqual(user['display_name'], 'Role Changed')
+
+    def test_edit_user_updates_password(self):
+        self.login_admin()
+        uid = db.create_user('pwchange', 'oldpass1', role='viewer')
+        self.client.post(f'/users/{uid}/edit', data={
+            'display_name': 'PW Changed', 'role': 'viewer', 'password': 'newpass1',
+        }, follow_redirects=True)
+        self.assertIsNone(db.authenticate_user('pwchange', 'oldpass1'))
+        self.assertIsNotNone(db.authenticate_user('pwchange', 'newpass1'))
+
+    def test_edit_user_short_password_rejected(self):
+        self.login_admin()
+        uid = db.create_user('shortpw', 'pass1234', role='viewer')
+        resp = self.client.post(f'/users/{uid}/edit', data={
+            'display_name': 'Short PW', 'role': 'viewer', 'password': 'ab',
+        }, follow_redirects=True)
+        self.assertIn(b'4 characters', resp.data)
+
+    def test_edit_nonexistent_user(self):
+        self.login_admin()
+        resp = self.client.get('/users/99999/edit', follow_redirects=True)
+        self.assertIn(b'User not found', resp.data)
+
+    def test_delete_user_via_web(self):
+        self.login_admin()
+        uid = db.create_user('deleteme', 'pass1234', role='viewer')
+        resp = self.client.post(f'/users/{uid}/delete', follow_redirects=True)
+        self.assertIn(b'deleted', resp.data.lower())
+        self.assertIsNone(db.get_user(uid))
+
+    def test_delete_last_admin_via_web(self):
+        self.login_admin()
+        admin = db.get_user_by_username('admin')
+        resp = self.client.post(f'/users/{admin["user_id"]}/delete', follow_redirects=True)
+        self.assertIn(b'last admin', resp.data.lower())
+        # Admin should still exist
+        self.assertIsNotNone(db.get_user_by_username('admin'))
+
+
+class TestProductReferenceDeleteExport(BaseTestCase):
+    """Test product reference delete and export routes."""
+
+    def test_delete_reference_via_web(self):
+        self.login_admin()
+        db.add_product_reference(codename='DeleteMe')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        resp = self.client.post(f'/reference/{ref_id}/delete', follow_redirects=True)
+        self.assertIn(b'deleted', resp.data.lower())
+        self.assertIsNone(db.get_product_reference(ref_id))
+
+    def test_export_references_csv(self):
+        self.login_admin()
+        db.add_product_reference(codename='ExportProd', model_name='X100', wifi_gen='6E')
+        resp = self.client.get('/reference/export')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('text/csv', resp.content_type)
+        self.assertIn(b'ExportProd', resp.data)
+        self.assertIn(b'X100', resp.data)
+        self.assertIn(b'6E', resp.data)
+
+    def test_viewer_cannot_delete_reference(self):
+        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.add_product_reference(codename='Protected')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
+        resp = self.client.post(f'/reference/{ref_id}/delete', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+        self.assertIsNotNone(db.get_product_reference(ref_id))
+
+    def test_viewer_cannot_export_references(self):
+        db.create_user('viewer1', 'pass1234', role='viewer')
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
+        resp = self.client.get('/reference/export', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
+class TestLabelRoutes(BaseTestCase):
+    """Test label serving and PDF generation."""
+
+    def test_serve_label_png(self):
+        did = db.add_device({'name': 'Label PNG'})
+        device = db.get_device(did)
+        barcode_utils.generate_label(did, device['barcode_value'], device['name'])
+        resp = self.client.get(f'/labels/{did}.png')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('image/png', resp.content_type)
+
+    def test_serve_label_pdf(self):
+        did = db.add_device({'name': 'Label PDF'})
+        device = db.get_device(did)
+        barcode_utils.generate_label(did, device['barcode_value'], device['name'])
+        resp = self.client.get(f'/labels/{did}.pdf')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('pdf', resp.content_type)
+        self.assertTrue(resp.data.startswith(b'%PDF'))
+
+    def test_serve_label_nonexistent(self):
+        resp = self.client.get('/labels/nonexistent.png')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_label_sheet_post(self):
+        self.login_admin()
+        d1 = db.add_device({'name': 'Sheet Device 1'})
+        d2 = db.add_device({'name': 'Sheet Device 2'})
+        resp = self.client.post('/labels/sheet', data={
+            'device_ids': [d1, d2],
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('image/png', resp.content_type)
+
+
+class TestLogRoutes(BaseTestCase):
+    """Test log viewing, clearing, and config routes."""
+
+    def test_logs_page_loads(self):
+        self.login_admin()
+        resp = self.client.get('/logs')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_clear_logs(self):
+        self.login_admin()
+        resp = self.client.post('/logs/clear', follow_redirects=True)
+        self.assertIn(b'cleared', resp.data.lower())
+
+    def test_update_log_config(self):
+        self.login_admin()
+        resp = self.client.post('/logs/config', data={
+            'max_size_mb': '5',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_logs_requires_admin(self):
+        db.create_user('viewer1', 'pass1234', role='viewer')
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
+        resp = self.client.get('/logs', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
+class TestSearchAndFilters(BaseTestCase):
+    """Test device search and filter functions."""
+
+    def test_search_by_name(self):
+        db.add_device({'name': 'HP LaserJet 200', 'category': 'Printer', 'codename': 'LJ200'})
+        db.add_device({'name': 'Cisco Router X', 'category': 'Router/AP', 'manufacturer': 'Cisco'})
+        results = db.search_devices(query='LaserJet')
+        self.assertEqual(len(results), 1)
+        self.assertIn('LaserJet', results[0]['name'])
+
+    def test_search_by_category_filter(self):
+        db.add_device({'name': 'Printer A', 'category': 'Printer', 'codename': 'PA'})
+        db.add_device({'name': 'Cisco Router', 'category': 'Router/AP', 'manufacturer': 'Cisco'})
+        results = db.search_devices(category='Router/AP')
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['category'], 'Router/AP')
+
+    def test_search_by_status_filter(self):
+        did = db.add_device({'name': 'Lost Device'})
+        db.update_device(did, {'status': 'lost'})
+        results = db.search_devices(status='lost')
+        self.assertEqual(len(results), 1)
+
+    def test_search_excludes_retired_by_default(self):
+        did = db.add_device({'name': 'Retired Device'})
+        db.retire_device(did)
+        results = db.search_devices()
+        names = [d['name'] for d in results]
+        self.assertNotIn('Retired Device', names)
+
+    def test_search_can_show_retired(self):
+        did = db.add_device({'name': 'Retired Show'})
+        db.retire_device(did)
+        results = db.search_devices(status='retired')
+        names = [d['name'] for d in results]
+        self.assertIn('Retired Show', names)
+
+    def test_search_by_location(self):
+        db.add_device({'name': 'Lab A Device', 'location': 'Lab A'})
+        db.add_device({'name': 'Lab B Device', 'location': 'Lab B'})
+        results = db.search_devices(location='Lab A')
+        self.assertEqual(len(results), 1)
+
+    def test_search_by_connectivity(self):
+        db.add_device({'name': 'WiFi 6 Device', 'connectivity': 'Wi-Fi 6'})
+        db.add_device({'name': 'WiFi 7 Device', 'connectivity': 'Wi-Fi 7'})
+        results = db.search_devices(connectivity='Wi-Fi 6')
+        self.assertEqual(len(results), 1)
+
+    def test_get_distinct_values(self):
+        db.add_device({'name': 'Dev A', 'location': 'Lab A'})
+        db.add_device({'name': 'Dev B', 'location': 'Lab B'})
+        db.add_device({'name': 'Dev C', 'location': 'Lab A'})
+        values = db.get_distinct_values('location')
+        self.assertEqual(set(values), {'Lab A', 'Lab B'})
+
+    def test_get_distinct_values_rejects_invalid_column(self):
+        values = db.get_distinct_values('password_hash')
+        self.assertEqual(values, [])
+
+    def test_get_categories(self):
+        cats = db.get_categories()
+        names = [c['name'] for c in cats]
+        self.assertIn('Printer', names)
+        self.assertIn('Router/AP', names)
+
+
+class TestAuditLog(BaseTestCase):
+    """Test audit logging functions."""
+
+    def test_device_add_creates_audit_entry(self):
+        did = db.add_device({'name': 'Audited Device'}, performed_by='testuser')
+        logs = db.get_audit_log(device_id=did)
+        self.assertGreater(len(logs), 0)
+        self.assertEqual(logs[0]['action'], 'added')
+        self.assertEqual(logs[0]['performed_by'], 'testuser')
+
+    def test_device_update_creates_audit_entry(self):
+        did = db.add_device({'name': 'Before Update'})
+        db.update_device(did, {'name': 'After Update'}, performed_by='editor1')
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('updated', actions)
+
+    def test_retire_creates_audit_entry(self):
+        did = db.add_device({'name': 'Retire Audit'})
+        db.retire_device(did, performed_by='admin')
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('retired', actions)
+
+    def test_audit_log_global(self):
+        d1 = db.add_device({'name': 'Global 1'})
+        d2 = db.add_device({'name': 'Global 2'})
+        logs = db.get_audit_log()
+        self.assertGreaterEqual(len(logs), 2)
+
+    def test_audit_log_limit(self):
+        for i in range(5):
+            db.add_device({'name': f'Limit {i}'})
+        logs = db.get_audit_log(limit=3)
+        self.assertEqual(len(logs), 3)
+
+
+class TestDashboardStats(BaseTestCase):
+    """Test dashboard statistics function."""
+
+    def test_stats_empty_db(self):
+        stats = db.get_stats()
+        self.assertEqual(stats['total'], 0)
+        self.assertEqual(stats['available'], 0)
+        self.assertEqual(stats['checked_out'], 0)
+
+    def test_stats_with_devices(self):
+        db.add_device({'name': 'Available 1'})
+        d2 = db.add_device({'name': 'Checked Out 1'})
+        db.checkout_device(d2, 'User A')
+        d3 = db.add_device({'name': 'Retired 1'})
+        db.retire_device(d3)
+        stats = db.get_stats()
+        # total excludes retired devices
+        self.assertEqual(stats['total'], 2)
+        self.assertEqual(stats['available'], 1)
+        self.assertEqual(stats['checked_out'], 1)
+        self.assertEqual(stats['retired'], 1)
+
+    def test_stats_by_category(self):
+        db.add_device({'name': 'P1 (HP LJ)', 'category': 'Printer', 'codename': 'P1'})
+        db.add_device({'name': 'HP Router', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        stats = db.get_stats()
+        cat_names = [c['category'] for c in stats['by_category']]
+        self.assertIn('Printer', cat_names)
+        self.assertIn('Router/AP', cat_names)
+
+    def test_dashboard_page_loads_with_data(self):
+        db.add_device({'name': 'Dashboard Device'})
+        resp = self.client.get('/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Dashboard', resp.data)
+
+
+class TestBackupConfigRoutes(BaseTestCase):
+    """Test backup configuration routes."""
+
+    def test_save_backup_config(self):
+        self.login_admin()
+        resp = self.client.post('/backups/config', data={
+            'backup_enabled': 'on',
+            'backup_interval_hours': '6',
+            'max_backups': '15',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_reset_backup_config(self):
+        self.login_admin()
+        resp = self.client.post('/backups/config/reset', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_upload_backup(self):
+        """Upload a backup file and restore."""
+        self.login_admin()
+        # Create a valid backup to upload
+        result = db.backup_database(performed_by='test', manual=True)
+        backup_path = os.path.join(db._get_backup_dir(), result['filename'])
+        with open(backup_path, 'rb') as f:
+            backup_data = f.read()
+        from io import BytesIO
+        resp = self.client.post('/backups/upload', data={
+            'backup_file': (BytesIO(backup_data), 'uploaded_backup.db'),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+
+class TestDeviceLifecycleFull(BaseTestCase):
+    """Test complete device lifecycle: add → edit → checkout → checkin → retire."""
+
+    def test_full_lifecycle(self):
+        self.login_admin()
+        # 1. Add
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'model_number': 'LaserJet 600',
+            'category': 'Router/AP', 'location': 'Lab A',
+        }, follow_redirects=True)
+        self.assertIn(b'added successfully', resp.data)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        did = devices[0]['device_id']
+
+        # 2. Edit
+        resp = self.client.post(f'/devices/{did}/edit', data={
+            'manufacturer': 'HP', 'model_number': 'LaserJet 601',
+            'category': 'Router/AP', 'location': 'Lab B',
+        }, follow_redirects=True)
+        self.assertIn(b'updated successfully', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['location'], 'Lab B')
+
+        # 3. Checkout
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'Josh G',
+        }, follow_redirects=True)
+        self.assertIn(b'checked out', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'checked_out')
+
+        # 4. Checkin
+        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
+        self.assertIn(b'checked in', resp.data)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'available')
+
+        # 5. Add note
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': 'Ready for retirement',
+        }, follow_redirects=True)
+        self.assertIn(b'Note added', resp.data)
+
+        # 6. Retire
+        resp = self.client.post(f'/devices/{did}/retire', follow_redirects=True)
+        device = db.get_device(did)
+        self.assertEqual(device['status'], 'retired')
+
+        # 7. Verify full audit trail
+        logs = db.get_audit_log(device_id=did)
+        actions = [l['action'] for l in logs]
+        self.assertIn('added', actions)
+        self.assertIn('updated', actions)
+        self.assertIn('checked_out', actions)
+        self.assertIn('returned', actions)
+        self.assertIn('retired', actions)
+
+    def test_device_detail_shows_history(self):
+        """Device detail page should show audit history."""
+        self.login_admin()
+        did = db.add_device({'name': 'History Device'})
+        db.checkout_device(did, 'TestUser', performed_by='admin')
+        resp = self.client.get(f'/devices/{did}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'History Device', resp.data)
+
+
+class TestGetAllDevices(BaseTestCase):
+    """Test get_all_devices include_retired flag."""
+
+    def test_excludes_retired_by_default(self):
+        db.add_device({'name': 'Active'})
+        did2 = db.add_device({'name': 'Gone'})
+        db.retire_device(did2)
+        devices = db.get_all_devices()
+        names = [d['name'] for d in devices]
+        self.assertIn('Active', names)
+        self.assertNotIn('Gone', names)
+
+    def test_includes_retired_when_requested(self):
+        db.add_device({'name': 'Active'})
+        did2 = db.add_device({'name': 'Gone'})
+        db.retire_device(did2)
+        devices = db.get_all_devices(include_retired=True)
+        names = [d['name'] for d in devices]
+        self.assertIn('Active', names)
+        self.assertIn('Gone', names)
+
+
+class TestScannerPage(BaseTestCase):
+    """Test barcode scanner page and API lookup."""
+
+    def test_scan_page_loads(self):
+        resp = self.client.get('/scan')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_api_lookup_by_barcode(self):
+        did = db.add_device({'name': 'Scan Test'})
+        device = db.get_device(did)
+        resp = self.client.get(f'/api/lookup?barcode={device["barcode_value"]}')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertTrue(data['found'])
+        self.assertEqual(data['device_id'], did)
+
+    def test_api_lookup_case_insensitive(self):
+        did = db.add_device({'name': 'Case Scan'})
+        device = db.get_device(did)
+        resp = self.client.get(f'/api/lookup?barcode={device["barcode_value"].lower()}')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.data)
+        self.assertTrue(data['found'])
+
+
+class TestDeviceExport(BaseTestCase):
+    """Test device CSV export."""
+
+    def test_export_csv(self):
+        db.add_device({'name': 'Export Test 1', 'manufacturer': 'HP', 'category': 'Printer', 'codename': 'EP1'})
+        db.add_device({'name': 'Export Test 2', 'manufacturer': 'Cisco', 'category': 'Router/AP'})
+        resp = self.client.get('/export')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('text/csv', resp.content_type)
+        self.assertIn(b'Export Test 1', resp.data)
+        self.assertIn(b'Export Test 2', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()
