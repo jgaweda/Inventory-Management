@@ -148,7 +148,26 @@
                     </button>
                 </form>
             </div>
+
+            {% if config.git_enabled and config.git_repo %}
+            {% if not scheduler_alive %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
+                Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
             </div>
+            {% endif %}
+            {% set cloud_ok = not backup_health.issues|select('match', '.*[Cc]loud.*')|list %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
+                {% if not cloud_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
+                {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
+                Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
+                {% if next_git_push_time %}
+                <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
+                {% endif %}
+                {% for issue in backup_health.issues if 'loud' in issue %}
+                <br><strong>Warning:</strong> {{ issue }}
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
 
         <!-- Status + Save -->
@@ -167,29 +186,6 @@
             </button>
         </form>
     </div>
-
-    <!-- Cloud backup status indicator -->
-    {% if config.git_enabled and config.git_repo %}
-    <div style="margin-top: 12px;">
-        {% if not scheduler_alive %}
-        <div style="margin-bottom: 6px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
-            Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
-        </div>
-        {% endif %}
-        {% set cloud_ok = not backup_health.issues|select('match', '.*[Cc]loud.*')|list %}
-        <div style="padding: 8px 14px; border-radius: 8px; font-size: 12px;
-            {% if not cloud_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
-            {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
-            Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
-            {% if next_git_push_time %}
-            <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
-            {% endif %}
-            {% for issue in backup_health.issues if 'loud' in issue %}
-            <br><strong>Warning:</strong> {{ issue }}
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
 </div>
 
 <!-- Local Restore Modal -->
