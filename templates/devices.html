@@ -32,13 +32,6 @@
             </div>
         </div>
         {% if has_permission('devices') %}
-        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('importFile').click()">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            Import
-        </button>
-        <form id="importForm" method="POST" action="{{ url_for('import_devices') }}" enctype="multipart/form-data" style="display:none;">
-            <input type="file" id="importFile" name="import_file" accept=".xlsx,.csv" onchange="document.getElementById('importForm').submit()">
-        </form>
         <a href="{{ url_for('device_add') }}" class="btn btn-primary">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
             Add Device

@@ -21,7 +21,7 @@ os.environ['INVENTORY_DATA_DIR'] = _test_dir
 
 import database as db
 import barcode_utils
-from app import app, ROLE_PERMISSIONS, has_permission
+from app import app, ROLE_PERMISSIONS, has_permission, get_user_permissions
 
 
 class BaseTestCase(unittest.TestCase):
@@ -646,7 +646,7 @@ class TestServerSettings(BaseTestCase):
     """Tests for admin server port settings."""
 
     def _login_viewer(self):
-        db.create_user('viewer1', 'pass1234', role='viewer', display_name='Viewer')
+        db.create_user('viewer1', 'pass1234', role='custom', display_name='Viewer')
         return self.client.post('/login', data={
             'username': 'viewer1', 'password': 'pass1234',
         }, follow_redirects=True)
@@ -693,72 +693,6 @@ class TestServerSettings(BaseTestCase):
                                 follow_redirects=True)
         self.assertNotIn(b'Restart the application', resp.data)
 
-
-class TestDeviceImport(BaseTestCase):
-    """Test Excel/CSV device import."""
-
-    def test_import_csv(self):
-        self.login_admin()
-        csv_data = (
-            'Name,Category,Manufacturer,Status,Location\n'
-            'Test Printer,Printer,HP,available,Lab A\n'
-            'Test Router,Router,Cisco,available,Lab B\n'
-        )
-        from io import BytesIO
-        data = {
-            'import_file': (BytesIO(csv_data.encode()), 'devices.csv')
-        }
-        resp = self.client.post('/import/devices', data=data,
-                                content_type='multipart/form-data',
-                                follow_redirects=True)
-        self.assertIn(b'Imported 2 device', resp.data)
-
-    def test_import_csv_skip_no_name(self):
-        self.login_admin()
-        csv_data = (
-            'Name,Category\n'
-            ',Printer\n'
-            'Valid Device,Router\n'
-        )
-        from io import BytesIO
-        data = {
-            'import_file': (BytesIO(csv_data.encode()), 'devices.csv')
-        }
-        resp = self.client.post('/import/devices', data=data,
-                                content_type='multipart/form-data',
-                                follow_redirects=True)
-        self.assertIn(b'Imported 1 device', resp.data)
-        self.assertIn(b'1 rows skipped', resp.data)
-
-    def test_import_bad_filetype(self):
-        self.login_admin()
-        from io import BytesIO
-        data = {
-            'import_file': (BytesIO(b'test'), 'devices.pdf')
-        }
-        resp = self.client.post('/import/devices', data=data,
-                                content_type='multipart/form-data',
-                                follow_redirects=True)
-        self.assertIn(b'Unsupported file type', resp.data)
-
-    def test_import_requires_editor(self):
-        """Viewers cannot import devices."""
-        self.login_admin()
-        self.client.post('/users/add', data={
-            'username': 'viewer1', 'password': 'test', 'role': 'viewer',
-        })
-        self.client.get('/logout')
-        self.client.post('/login', data={
-            'username': 'viewer1', 'password': 'test',
-        })
-        from io import BytesIO
-        data = {
-            'import_file': (BytesIO(b'Name\nTest'), 'devices.csv')
-        }
-        resp = self.client.post('/import/devices', data=data,
-                                content_type='multipart/form-data',
-                                follow_redirects=True)
-        self.assertNotIn(b'Imported', resp.data)
 
 
 class TestWikiMarkdown(BaseTestCase):
@@ -839,7 +773,8 @@ class TestRoleGranularity(BaseTestCase):
         self.login_admin()
         self.client.post('/users/add', data={
             'username': 'editor1', 'password': 'test',
-            'display_name': 'Editor One', 'role': 'editor',
+            'display_name': 'Editor One', 'role': 'custom',
+            'permissions': ['devices', 'wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={
@@ -862,7 +797,8 @@ class TestRoleGranularity(BaseTestCase):
     def test_viewer_cannot_add_device(self):
         self.login_admin()
         self.client.post('/users/add', data={
-            'username': 'viewer2', 'password': 'test', 'role': 'viewer',
+            'username': 'viewer2', 'password': 'test', 'role': 'custom',
+            'permissions': ['wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={
@@ -1035,34 +971,6 @@ class TestExportImportFunctional(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('spreadsheetml', resp.content_type)
 
-    def test_import_xlsx(self):
-        """Test importing devices from xlsx file."""
-        self.login_admin()
-        try:
-            import openpyxl
-        except ImportError:
-            self.skipTest('openpyxl not installed')
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.append(['Name', 'Category', 'Manufacturer', 'Location'])
-        ws.append(['XLSX Import Dev', 'Router', 'Cisco', 'Lab C'])
-        ws.append(['XLSX Import Dev 2', 'Printer', 'HP', 'Lab D'])
-        from io import BytesIO
-        buf = BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        resp = self.client.post('/import/devices', data={
-            'import_file': (buf, 'test.xlsx')
-        }, content_type='multipart/form-data', follow_redirects=True)
-        self.assertIn(b'Imported 2', resp.data)
-
-    def test_import_no_file(self):
-        """Import with no file should show error."""
-        self.login_admin()
-        resp = self.client.post('/import/devices', data={},
-                                content_type='multipart/form-data',
-                                follow_redirects=True)
-        self.assertIn(b'No file selected', resp.data)
 
 
 class TestLabelPDF(BaseTestCase):
@@ -1207,7 +1115,8 @@ class TestPowerUserRole(BaseTestCase):
         self.login_admin()
         self.client.post('/users/add', data={
             'username': 'pu1', 'password': 'test',
-            'display_name': 'Power User 1', 'role': 'power_user',
+            'display_name': 'Power User 1', 'role': 'custom',
+            'permissions': ['references', 'wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={
@@ -1290,7 +1199,8 @@ class TestPowerUserRole(BaseTestCase):
         """Viewer cannot add product references."""
         self.login_admin()
         self.client.post('/users/add', data={
-            'username': 'v1', 'password': 'test', 'role': 'viewer',
+            'username': 'v1', 'password': 'test', 'role': 'custom',
+            'permissions': ['wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'v1', 'password': 'test'})
@@ -1300,10 +1210,11 @@ class TestPowerUserRole(BaseTestCase):
         self.assertIn(b'do not have permission', resp.data)
 
     def test_editor_cannot_manage_references(self):
-        """Editor cannot manage product references (only power_user and admin can)."""
+        """Editor (devices/wiki only) cannot manage product references."""
         self.login_admin()
         self.client.post('/users/add', data={
-            'username': 'ed1', 'password': 'test', 'role': 'editor',
+            'username': 'ed1', 'password': 'test', 'role': 'custom',
+            'permissions': ['devices', 'wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'ed1', 'password': 'test'})
@@ -1574,7 +1485,7 @@ class TestAuthEdgeCases(BaseTestCase):
 
     def test_duplicate_username_rejected(self):
         with self.assertRaises(ValueError):
-            db.create_user('admin', 'pass', role='viewer')
+            db.create_user('admin', 'pass', role='custom')
 
 
 class TestCascadeDeletes(BaseTestCase):
@@ -1708,7 +1619,8 @@ class TestDeviceNotesEdgeCases(BaseTestCase):
         notes = db.get_device_notes(did)
         note_id = notes[0]['note_id']
         self.client.post('/users/add', data={
-            'username': 'viewer1', 'password': 'test', 'role': 'viewer',
+            'username': 'viewer1', 'password': 'test', 'role': 'custom',
+            'permissions': ['wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'viewer1', 'password': 'test'})
@@ -1722,19 +1634,23 @@ class TestUserManagementEdgeCases(BaseTestCase):
     """Test user management edge cases."""
 
     def test_create_user_with_all_roles(self):
-        for role in ['admin', 'editor', 'power_user', 'viewer']:
-            uid = db.create_user(f'test_{role}', 'pass1234', role=role)
-            user = db.get_user(uid)
-            self.assertEqual(user['role'], role)
+        uid_admin = db.create_user('test_admin2', 'pass1234', role='admin')
+        user = db.get_user(uid_admin)
+        self.assertEqual(user['role'], 'admin')
+
+        uid_custom = db.create_user('test_custom', 'pass1234', role='custom',
+                                    permissions=['devices', 'wiki'])
+        user = db.get_user(uid_custom)
+        self.assertEqual(user['role'], 'custom')
 
     def test_update_user_role(self):
-        uid = db.create_user('roletest', 'pass1234', role='viewer')
-        db.update_user(uid, {'role': 'editor'})
+        uid = db.create_user('roletest', 'pass1234', role='admin')
+        db.update_user(uid, {'role': 'custom'})
         user = db.get_user(uid)
-        self.assertEqual(user['role'], 'editor')
+        self.assertEqual(user['role'], 'custom')
 
     def test_update_user_password(self):
-        uid = db.create_user('pwtest', 'oldpass1', role='viewer')
+        uid = db.create_user('pwtest', 'oldpass1', role='custom')
         db.update_user(uid, {'password': 'newpass1'})
         self.assertIsNone(db.authenticate_user('pwtest', 'oldpass1'))
         self.assertIsNotNone(db.authenticate_user('pwtest', 'newpass1'))
@@ -1758,12 +1674,13 @@ class TestUserManagementEdgeCases(BaseTestCase):
         self.login_admin()
         resp = self.client.post('/users/add', data={
             'username': 'newuser', 'password': 'pass1234',
-            'display_name': 'New User', 'role': 'editor',
+            'display_name': 'New User', 'role': 'custom',
+            'permissions': ['devices', 'wiki'],
         }, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         user = db.get_user_by_username('newuser')
         self.assertIsNotNone(user)
-        self.assertEqual(user['role'], 'editor')
+        self.assertEqual(user['role'], 'custom')
 
 
 class TestBackupEdgeCases(BaseTestCase):
@@ -1797,7 +1714,7 @@ class TestBackupEdgeCases(BaseTestCase):
         self.assertGreater(len(resp.data), 0)
 
     def test_backup_requires_admin(self):
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         self.client.post('/login', data={
             'username': 'viewer1', 'password': 'pass1234',
         })
@@ -1811,7 +1728,8 @@ class TestPowerUserPermissions(BaseTestCase):
     def _create_power_user(self):
         self.login_admin()
         self.client.post('/users/add', data={
-            'username': 'puser', 'password': 'test1234', 'role': 'power_user',
+            'username': 'puser', 'password': 'test1234', 'role': 'custom',
+            'permissions': ['references', 'wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'puser', 'password': 'test1234'})
@@ -1844,7 +1762,8 @@ class TestPowerUserPermissions(BaseTestCase):
         self.login_admin()
         did = db.add_device({'name': 'Checkout Test'})
         self.client.post('/users/add', data={
-            'username': 'puser', 'password': 'test1234', 'role': 'power_user',
+            'username': 'puser', 'password': 'test1234', 'role': 'custom',
+            'permissions': ['references', 'wiki'],
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'puser', 'password': 'test1234'})
@@ -1858,44 +1777,67 @@ class TestPermissionModel(BaseTestCase):
     """Test the centralized ROLE_PERMISSIONS system."""
 
     def test_all_roles_defined(self):
-        """Every role in the DB constraint must be in ROLE_PERMISSIONS."""
-        for role in ['admin', 'editor', 'power_user', 'viewer']:
+        """Only 'admin' and 'custom' roles must be in ROLE_PERMISSIONS."""
+        for role in ['admin', 'custom']:
             self.assertIn(role, ROLE_PERMISSIONS, f'{role} missing from ROLE_PERMISSIONS')
+        self.assertEqual(set(ROLE_PERMISSIONS.keys()), {'admin', 'custom'})
 
     def test_admin_has_all_permissions(self):
-        """Admin should have every permission."""
-        all_perms = set()
-        for perms in ROLE_PERMISSIONS.values():
-            all_perms |= perms
-        for perm in all_perms:
-            self.assertIn(perm, ROLE_PERMISSIONS['admin'], f'Admin missing permission: {perm}')
+        """Admin should have every permission defined in ROLE_PERMISSIONS."""
+        admin_perms = ROLE_PERMISSIONS['admin']
+        self.assertIn('devices', admin_perms)
+        self.assertIn('references', admin_perms)
+        self.assertIn('users', admin_perms)
+        self.assertIn('backups', admin_perms)
+        self.assertIn('logs', admin_perms)
+        self.assertIn('settings', admin_perms)
+        self.assertIn('wiki', admin_perms)
 
-    def test_viewer_cannot_manage(self):
-        """Viewer should not have devices, references, users, backups, or logs."""
-        for perm in ['devices', 'references', 'users', 'backups', 'logs', 'settings']:
-            self.assertNotIn(perm, ROLE_PERMISSIONS['viewer'], f'Viewer should not have: {perm}')
+    def test_custom_user_gets_per_user_permissions(self):
+        """Custom users should get permissions from their permissions list."""
+        uid = db.create_user('custom1', 'pass1234', role='custom',
+                             permissions=['devices', 'wiki'])
+        user = db.get_user(uid)
+        perms = get_user_permissions(user)
+        self.assertIn('devices', perms)
+        self.assertIn('wiki', perms)
+        self.assertNotIn('references', perms)
+        self.assertNotIn('users', perms)
 
-    def test_editor_has_devices_only(self):
-        """Editor should have devices and wiki, not references or admin features."""
-        self.assertIn('devices', ROLE_PERMISSIONS['editor'])
-        self.assertIn('wiki', ROLE_PERMISSIONS['editor'])
-        self.assertNotIn('references', ROLE_PERMISSIONS['editor'])
-        self.assertNotIn('users', ROLE_PERMISSIONS['editor'])
-        self.assertNotIn('backups', ROLE_PERMISSIONS['editor'])
+    def test_custom_user_references_permissions(self):
+        """Custom user with references/wiki permissions."""
+        uid = db.create_user('custom2', 'pass1234', role='custom',
+                             permissions=['references', 'wiki'])
+        user = db.get_user(uid)
+        perms = get_user_permissions(user)
+        self.assertIn('references', perms)
+        self.assertIn('wiki', perms)
+        self.assertNotIn('devices', perms)
+        self.assertNotIn('users', perms)
 
-    def test_power_user_has_references_only(self):
-        """Power user should have references and wiki, not devices or admin features."""
-        self.assertIn('references', ROLE_PERMISSIONS['power_user'])
-        self.assertIn('wiki', ROLE_PERMISSIONS['power_user'])
-        self.assertNotIn('devices', ROLE_PERMISSIONS['power_user'])
-        self.assertNotIn('users', ROLE_PERMISSIONS['power_user'])
-        self.assertNotIn('backups', ROLE_PERMISSIONS['power_user'])
+    def test_custom_user_no_permissions(self):
+        """Custom user with empty permissions list has no permissions."""
+        uid = db.create_user('custom3', 'pass1234', role='custom',
+                             permissions=[])
+        user = db.get_user(uid)
+        perms = get_user_permissions(user)
+        self.assertNotIn('devices', perms)
+        self.assertNotIn('references', perms)
+        self.assertNotIn('users', perms)
 
-    def test_has_permission_with_user(self):
-        """has_permission should check ROLE_PERMISSIONS dict."""
+    def test_get_user_permissions_admin(self):
+        """get_user_permissions returns full set for admin."""
+        user = db.get_user_by_username('admin')
+        perms = get_user_permissions(user)
+        self.assertIn('devices', perms)
+        self.assertIn('users', perms)
+        self.assertIn('backups', perms)
+
+    def test_has_permission_with_custom_user(self):
+        """has_permission should check per-user permissions for custom role."""
         with self.app.test_request_context():
             from flask import g
-            g.user = {'role': 'editor'}
+            g.user = {'role': 'custom', 'permissions': ['devices', 'wiki']}
             self.assertTrue(has_permission('devices'))
             self.assertFalse(has_permission('backups'))
 
@@ -1964,7 +1906,7 @@ class TestDeviceEditRoute(BaseTestCase):
 
     def test_edit_viewer_blocked(self):
         """Viewer cannot edit devices."""
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         did = db.add_device({'name': 'Locked Device'})
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.post(f'/devices/{did}/edit', data={
@@ -2032,36 +1974,36 @@ class TestUserEditDeleteRoutes(BaseTestCase):
 
     def test_edit_user_form_loads(self):
         self.login_admin()
-        uid = db.create_user('editme', 'pass1234', role='viewer', display_name='Edit Me')
+        uid = db.create_user('editme', 'pass1234', role='custom', display_name='Edit Me')
         resp = self.client.get(f'/users/{uid}/edit')
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b'editme', resp.data)
 
     def test_edit_user_updates_role(self):
         self.login_admin()
-        uid = db.create_user('rolechange', 'pass1234', role='viewer')
+        uid = db.create_user('rolechange', 'pass1234', role='custom')
         resp = self.client.post(f'/users/{uid}/edit', data={
-            'display_name': 'Role Changed', 'role': 'editor',
+            'display_name': 'Role Changed', 'role': 'admin',
         }, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         user = db.get_user(uid)
-        self.assertEqual(user['role'], 'editor')
+        self.assertEqual(user['role'], 'admin')
         self.assertEqual(user['display_name'], 'Role Changed')
 
     def test_edit_user_updates_password(self):
         self.login_admin()
-        uid = db.create_user('pwchange', 'oldpass1', role='viewer')
+        uid = db.create_user('pwchange', 'oldpass1', role='custom')
         self.client.post(f'/users/{uid}/edit', data={
-            'display_name': 'PW Changed', 'role': 'viewer', 'password': 'newpass1',
+            'display_name': 'PW Changed', 'role': 'custom', 'password': 'newpass1',
         }, follow_redirects=True)
         self.assertIsNone(db.authenticate_user('pwchange', 'oldpass1'))
         self.assertIsNotNone(db.authenticate_user('pwchange', 'newpass1'))
 
     def test_edit_user_short_password_rejected(self):
         self.login_admin()
-        uid = db.create_user('shortpw', 'pass1234', role='viewer')
+        uid = db.create_user('shortpw', 'pass1234', role='custom')
         resp = self.client.post(f'/users/{uid}/edit', data={
-            'display_name': 'Short PW', 'role': 'viewer', 'password': 'ab',
+            'display_name': 'Short PW', 'role': 'custom', 'password': 'ab',
         }, follow_redirects=True)
         self.assertIn(b'4 characters', resp.data)
 
@@ -2072,7 +2014,7 @@ class TestUserEditDeleteRoutes(BaseTestCase):
 
     def test_delete_user_via_web(self):
         self.login_admin()
-        uid = db.create_user('deleteme', 'pass1234', role='viewer')
+        uid = db.create_user('deleteme', 'pass1234', role='custom')
         resp = self.client.post(f'/users/{uid}/delete', follow_redirects=True)
         self.assertIn(b'deleted', resp.data.lower())
         self.assertIsNone(db.get_user(uid))
@@ -2109,7 +2051,7 @@ class TestProductReferenceDeleteExport(BaseTestCase):
         self.assertIn(b'6E', resp.data)
 
     def test_viewer_cannot_delete_reference(self):
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         db.add_product_reference(codename='Protected')
         refs = db.get_all_product_references()
         ref_id = refs[0]['ref_id']
@@ -2119,7 +2061,7 @@ class TestProductReferenceDeleteExport(BaseTestCase):
         self.assertIsNotNone(db.get_product_reference(ref_id))
 
     def test_viewer_cannot_export_references(self):
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.get('/reference/export', follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
@@ -2181,7 +2123,7 @@ class TestLogRoutes(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
 
     def test_logs_requires_admin(self):
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.get('/logs', follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
@@ -2486,6 +2428,12 @@ class TestDeviceExport(BaseTestCase):
         self.assertIn('text/csv', resp.content_type)
         self.assertIn(b'Export Test 1', resp.data)
         self.assertIn(b'Export Test 2', resp.data)
+        # Verify user-friendly headers
+        self.assertIn(b'Connectivity Type/Version', resp.data)
+        self.assertIn(b'Source', resp.data)
+        self.assertIn(b'Assigned To', resp.data)
+        # Verify vendor_supplied is shown as readable text
+        self.assertIn(b'HP Owned', resp.data)
 
 
 class TestBackupImprovements(BaseTestCase):
@@ -2595,7 +2543,7 @@ class TestBackupImprovements(BaseTestCase):
 
     def test_verify_now_requires_permission(self):
         """Verify endpoint blocked for viewers."""
-        db.create_user('viewer1', 'pass1234', role='viewer')
+        db.create_user('viewer1', 'pass1234', role='custom')
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.post('/backups/verify', follow_redirects=True)
         self.assertIn(b'permission', resp.data.lower())

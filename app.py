@@ -140,18 +140,45 @@ def login_required(f):
 # Centralized permission model — single source of truth for all role access.
 # To change what a role can do, edit this dict. To add a role, add a line.
 ROLE_PERMISSIONS = {
-    'admin':      {'devices', 'references', 'wiki', 'wiki_admin', 'users', 'backups', 'logs', 'settings', 'notes_delete', 'retire'},
-    'editor':     {'devices', 'wiki'},
-    'power_user': {'references', 'wiki'},
-    'viewer':     {'wiki'},
+    'admin':  {'devices', 'references', 'wiki', 'wiki_admin', 'users', 'backups', 'logs', 'settings', 'notes_delete', 'retire'},
+    'custom': set(),  # custom users get permissions from their user record
 }
+
+# Assignable permissions shown as checkboxes when creating/editing custom users.
+# Admin-only permissions (users, backups, logs, settings) are not assignable.
+ASSIGNABLE_PERMISSIONS = [
+    ('devices',      'Devices — Add, edit, checkout/checkin devices'),
+    ('references',   'References — Manage product reference catalog'),
+    ('wiki',         'Wiki — View and edit product wiki pages'),
+    ('wiki_admin',   'Wiki Admin — Upload/delete wiki attachments'),
+    ('retire',       'Retire — Retire and unretire devices'),
+    ('notes_delete', 'Notes — Delete device notes'),
+]
+
+
+def get_user_permissions(user):
+    """Return the effective permission set for a user dict."""
+    if not user:
+        return set()
+    if user['role'] == 'admin':
+        return ROLE_PERMISSIONS['admin']
+    # Custom users: permissions is a pre-parsed list from _parse_user_row
+    perms = user.get('permissions')
+    if isinstance(perms, list):
+        return set(perms)
+    if isinstance(perms, str):
+        try:
+            return set(json.loads(perms))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return set()
 
 
 def has_permission(permission):
     """Check if the current user has a specific permission."""
     if not g.user:
         return False
-    return permission in ROLE_PERMISSIONS.get(g.user['role'], set())
+    return permission in get_user_permissions(g.user)
 
 
 def permission_required(permission):
@@ -715,6 +742,26 @@ EXPORT_FIELDS = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer
                  'status', 'location', 'assigned_to', 'notes', 'codename', 'variant',
                  'created_at', 'updated_at']
 
+EXPORT_HEADERS = {
+    'device_id': 'Device ID',
+    'barcode_value': 'Barcode',
+    'name': 'Name',
+    'category': 'Category',
+    'manufacturer': 'Manufacturer',
+    'model_number': 'Model Number',
+    'serial_number': 'Serial Number',
+    'connectivity': 'Connectivity Type/Version',
+    'vendor_supplied': 'Source',
+    'status': 'Status',
+    'location': 'Location',
+    'assigned_to': 'Assigned To',
+    'notes': 'Notes',
+    'codename': 'Codename',
+    'variant': 'Variant',
+    'created_at': 'Created',
+    'updated_at': 'Updated',
+}
+
 @app.route('/export')
 def export_csv():
     """Export devices to CSV."""
@@ -722,10 +769,17 @@ def export_csv():
     app_logger.info('CSV export: %d devices ip=%s', len(devices), request.remote_addr)
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=EXPORT_FIELDS, extrasaction='ignore')
-    writer.writeheader()
+    headers = [EXPORT_HEADERS.get(f, f) for f in EXPORT_FIELDS]
+    writer = csv.writer(output)
+    writer.writerow(headers)
     for d in devices:
-        writer.writerow(d)
+        row = []
+        for f in EXPORT_FIELDS:
+            val = d.get(f, '')
+            if f == 'vendor_supplied':
+                val = 'Vendor Supplied' if val else 'HP Owned'
+            row.append(val if val is not None else '')
+        writer.writerow(row)
 
     output.seek(0)
     return Response(
@@ -753,7 +807,7 @@ def export_xlsx():
     ws.title = 'Inventory'
 
     # Header row
-    headers = [f.replace('_', ' ').title() for f in EXPORT_FIELDS]
+    headers = [EXPORT_HEADERS.get(f, f) for f in EXPORT_FIELDS]
     ws.append(headers)
     header_font = Font(bold=True, size=11)
     header_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
@@ -764,7 +818,12 @@ def export_xlsx():
 
     # Data rows
     for d in devices:
-        row = [d.get(f, '') if d.get(f) is not None else '' for f in EXPORT_FIELDS]
+        row = []
+        for f in EXPORT_FIELDS:
+            val = d.get(f, '')
+            if f == 'vendor_supplied':
+                val = 'Vendor Supplied' if val else 'HP Owned'
+            row.append(val if val is not None else '')
         ws.append(row)
 
     # Auto-width columns
@@ -784,128 +843,6 @@ def export_xlsx():
         headers={'Content-Disposition': 'attachment; filename=inventory_export.xlsx'}
     )
 
-# ---------------------------------------------------------------------------
-# Import devices from Excel/CSV (editor+)
-# ---------------------------------------------------------------------------
-
-DEVICE_HEADER_MAP = {
-    'name': 'name', 'device name': 'name',
-    'category': 'category',
-    'manufacturer': 'manufacturer', 'mfg': 'manufacturer',
-    'model number': 'model_number', 'model_number': 'model_number', 'model': 'model_number',
-    'serial number': 'serial_number', 'serial_number': 'serial_number', 'serial': 'serial_number',
-    'connectivity': 'connectivity', 'connectivity type/version': 'connectivity',
-    'vendor supplied': 'vendor_supplied', 'vendor_supplied': 'vendor_supplied', 'source': 'vendor_supplied',
-    'status': 'status',
-    'location': 'location',
-    'assigned to': 'assigned_to', 'assigned_to': 'assigned_to',
-    'notes': 'notes',
-    'codename': 'codename',
-    'variant': 'variant',
-}
-
-
-@app.route('/import/devices', methods=['POST'])
-@permission_required('devices')
-def import_devices():
-    """Import devices from an uploaded .xlsx or .csv file."""
-    file = request.files.get('import_file')
-    if not file or not file.filename:
-        flash('No file selected.', 'error')
-        return redirect(url_for('device_list'))
-
-    filename = file.filename.lower()
-    if not filename.endswith(('.xlsx', '.csv')):
-        flash('Unsupported file type. Use .xlsx or .csv', 'error')
-        return redirect(url_for('device_list'))
-
-    try:
-        imported = 0
-        skipped = 0
-        errors = []
-
-        if filename.endswith('.xlsx'):
-            import openpyxl
-            wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
-            ws = wb.active
-            rows_iter = ws.iter_rows()
-            raw_headers = [cell.value or '' for cell in next(rows_iter)]
-            headers = [DEVICE_HEADER_MAP.get(str(h).strip().lower()) for h in raw_headers]
-
-            for row in rows_iter:
-                values = [cell.value for cell in row]
-                if not any(v is not None and str(v).strip() for v in values):
-                    continue
-                record = {}
-                for i, val in enumerate(values):
-                    if i < len(headers) and headers[i]:
-                        record[headers[i]] = str(val).strip() if val is not None else ''
-                _import_device_record(record, imported, skipped, errors)
-                if record.get('_imported'):
-                    imported += 1
-                else:
-                    skipped += 1
-            wb.close()
-        else:
-            raw = file.read()
-            text = raw.decode('utf-8-sig')
-            delimiter = '\t' if '\t' in text[:2048] else ','
-            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-            raw_headers = next(reader)
-            headers = [DEVICE_HEADER_MAP.get(h.strip().lower()) for h in raw_headers]
-
-            for row in reader:
-                if not any(cell.strip() for cell in row):
-                    continue
-                record = {}
-                for i, val in enumerate(row):
-                    if i < len(headers) and headers[i]:
-                        record[headers[i]] = val.strip()
-                _import_device_record(record, imported, skipped, errors)
-                if record.get('_imported'):
-                    imported += 1
-                else:
-                    skipped += 1
-
-        msg = f'Imported {imported} device{"s" if imported != 1 else ""}.'
-        if skipped:
-            msg += f' {skipped} rows skipped (no name).'
-        flash(msg, 'success')
-        app_logger.info('Device import: %d imported, %d skipped by=%s', imported, skipped, current_username())
-    except Exception as e:
-        app_logger.error('Device import failed: %s\n%s', e, traceback.format_exc())
-        flash(f'Import failed: {e}', 'error')
-
-    return redirect(url_for('device_list'))
-
-
-def _import_device_record(record, imported_count, skipped_count, errors):
-    """Process a single import row, add device if valid."""
-    name = record.get('name', '').strip()
-    if not name:
-        return
-    # Handle vendor_supplied mapping
-    vs = record.get('vendor_supplied', '').lower()
-    if vs in ('1', 'yes', 'true', 'vendor supplied', 'vendor'):
-        record['vendor_supplied'] = 1
-    else:
-        record['vendor_supplied'] = 0
-    # Validate status
-    valid_statuses = ('available', 'checked_out', 'lost', 'retired')
-    if record.get('status', '').lower() not in valid_statuses:
-        record['status'] = 'available'
-    else:
-        record['status'] = record['status'].lower()
-    # Skip serial number duplicate check — just import
-    record.pop('_imported', None)
-    try:
-        device_id = db.add_device(record, performed_by=current_username())
-        device = db.get_device(device_id)
-        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
-        record['_imported'] = True
-    except Exception:
-        record['_imported'] = False
-
 
 # ---------------------------------------------------------------------------
 # User management (admin only)
@@ -924,27 +861,37 @@ def user_add():
     if request.method == 'POST':
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
-        role = request.form.get('role', 'admin')
+        role = request.form.get('role', 'custom')
         display_name = request.form.get('display_name', '').strip()
+
+        # Collect permissions from checkboxes (only for custom role)
+        permissions = None
+        if role == 'custom':
+            permissions = request.form.getlist('permissions')
 
         if not username or not password:
             flash('Username and password are required.', 'error')
-            return render_template('user_form.html', user={}, is_edit=False)
+            return render_template('user_form.html', user={}, is_edit=False,
+                                   assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
         if len(password) < 4:
             flash('Password must be at least 4 characters.', 'error')
-            return render_template('user_form.html', user=request.form, is_edit=False)
+            return render_template('user_form.html', user=request.form, is_edit=False,
+                                   assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
         try:
-            db.create_user(username, password, role, display_name)
-            app_logger.info('User created: username=%s role=%s by=%s', username, role, current_username())
+            db.create_user(username, password, role, display_name, permissions=permissions)
+            app_logger.info('User created: username=%s role=%s permissions=%s by=%s',
+                            username, role, permissions, current_username())
             flash(f'User "{username}" created successfully.', 'success')
             return redirect(url_for('user_list'))
         except ValueError as e:
             flash(str(e), 'error')
-            return render_template('user_form.html', user=request.form, is_edit=False)
+            return render_template('user_form.html', user=request.form, is_edit=False,
+                                   assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
-    return render_template('user_form.html', user={}, is_edit=False)
+    return render_template('user_form.html', user={}, is_edit=False,
+                           assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
 
 @app.route('/users/<int:user_id>/edit', methods=['GET', 'POST'])
@@ -956,23 +903,32 @@ def user_edit(user_id):
         return redirect(url_for('user_list'))
 
     if request.method == 'POST':
+        role = request.form.get('role', user['role'])
         data = {
             'display_name': request.form.get('display_name', '').strip(),
-            'role': request.form.get('role', user['role']),
+            'role': role,
         }
+        if role == 'custom':
+            data['permissions'] = request.form.getlist('permissions')
+        else:
+            data['permissions'] = None  # admin uses role defaults
+
         password = request.form.get('password', '').strip()
         if password:
             if len(password) < 4:
                 flash('Password must be at least 4 characters.', 'error')
-                return render_template('user_form.html', user=user, is_edit=True)
+                return render_template('user_form.html', user=user, is_edit=True,
+                                       assignable_permissions=ASSIGNABLE_PERMISSIONS)
             data['password'] = password
 
         db.update_user(user_id, data)
-        app_logger.info('User updated: username=%s by=%s', user['username'], current_username())
+        app_logger.info('User updated: username=%s role=%s by=%s',
+                        user['username'], role, current_username())
         flash(f'User "{user["username"]}" updated.', 'success')
         return redirect(url_for('user_list'))
 
-    return render_template('user_form.html', user=user, is_edit=True)
+    return render_template('user_form.html', user=user, is_edit=True,
+                           assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
 
 @app.route('/users/<int:user_id>/delete', methods=['POST'])

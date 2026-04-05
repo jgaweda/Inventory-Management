@@ -130,8 +130,9 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'viewer'
-                    CHECK(role IN ('admin','editor','power_user','viewer')),
+                role TEXT NOT NULL DEFAULT 'custom'
+                    CHECK(role IN ('admin','custom')),
+                permissions TEXT DEFAULT NULL,
                 display_name TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_login DATETIME
@@ -231,7 +232,14 @@ def init_db():
         role_check = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
         ).fetchone()
-        if role_check and 'power_user' not in role_check[0]:
+
+        # Migration: consolidate all non-admin roles into 'custom' with per-user permissions
+        needs_custom_migration = role_check and 'custom' not in role_check[0]
+        if needs_custom_migration:
+            # Remember old roles before rebuilding
+            old_users = conn.execute(
+                'SELECT user_id, role FROM users WHERE role != ?', ('admin',)
+            ).fetchall()
             conn.execute('ALTER TABLE users RENAME TO _users_old')
             conn.execute('''
                 CREATE TABLE users (
@@ -239,8 +247,9 @@ def init_db():
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'viewer'
-                        CHECK(role IN ('admin','editor','power_user','viewer')),
+                    role TEXT NOT NULL DEFAULT 'custom'
+                        CHECK(role IN ('admin','custom')),
+                    permissions TEXT DEFAULT NULL,
                     display_name TEXT DEFAULT '',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_login DATETIME
@@ -248,9 +257,21 @@ def init_db():
             ''')
             conn.execute('''
                 INSERT INTO users (user_id, username, password_hash, salt, role, display_name, created_at, last_login)
-                SELECT user_id, username, password_hash, salt, role, display_name, created_at, last_login
+                SELECT user_id, username, password_hash, salt,
+                       CASE WHEN role = 'admin' THEN 'admin' ELSE 'custom' END,
+                       display_name, created_at, last_login
                 FROM _users_old
             ''')
+            # Migrate old role permissions to per-user permissions
+            _legacy_perms = {
+                'editor':     '["devices", "wiki"]',
+                'power_user': '["references", "wiki"]',
+                'viewer':     '["wiki"]',
+            }
+            for uid, old_role in old_users:
+                perms_json = _legacy_perms.get(old_role, '["wiki"]')
+                conn.execute('UPDATE users SET permissions = ? WHERE user_id = ?',
+                             (perms_json, uid))
             conn.execute('DROP TABLE _users_old')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
 
@@ -656,6 +677,22 @@ def _hash_password(password, salt=None):
     return pw_hash, salt
 
 
+def _parse_user_row(row):
+    """Convert a user row to a dict, parsing the permissions JSON field."""
+    if not row:
+        return None
+    user = dict(row)
+    perms_raw = user.get('permissions')
+    if perms_raw and isinstance(perms_raw, str):
+        try:
+            user['permissions'] = json.loads(perms_raw)
+        except (json.JSONDecodeError, TypeError):
+            user['permissions'] = []
+    elif not perms_raw:
+        user['permissions'] = []
+    return user
+
+
 def authenticate_user(username, password):
     """Verify username/password. Returns user dict on success, None on failure."""
     with db_transaction() as conn:
@@ -672,40 +709,42 @@ def authenticate_user(username, password):
             'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?',
             (row['user_id'],)
         )
-        return dict(row)
+        return _parse_user_row(row)
 
 
 def get_user(user_id):
     """Get a user by ID."""
     with db_transaction() as conn:
         row = conn.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
-        return dict(row) if row else None
+        return _parse_user_row(row)
 
 
 def get_user_by_username(username):
     """Get a user by username."""
     with db_transaction() as conn:
         row = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-        return dict(row) if row else None
+        return _parse_user_row(row)
 
 
 def get_all_users():
     """Get all users ordered by username."""
     with db_transaction() as conn:
         rows = conn.execute(
-            'SELECT user_id, username, role, display_name, created_at, last_login FROM users ORDER BY username'
+            'SELECT user_id, username, role, permissions, display_name, created_at, last_login FROM users ORDER BY username'
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_parse_user_row(r) for r in rows]
 
 
-def create_user(username, password, role='viewer', display_name=''):
-    """Create a new user. Returns user_id. Raises ValueError if username taken."""
+def create_user(username, password, role='custom', display_name='', permissions=None):
+    """Create a new user. Returns user_id. Raises ValueError if username taken.
+    permissions: optional list of permission strings for custom role."""
     pw_hash, salt = _hash_password(password)
+    perms_json = json.dumps(sorted(permissions)) if permissions else None
     with db_transaction() as conn:
         try:
             conn.execute(
-                'INSERT INTO users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)',
-                (username, pw_hash, salt, role, display_name or username)
+                'INSERT INTO users (username, password_hash, salt, role, permissions, display_name) VALUES (?, ?, ?, ?, ?, ?)',
+                (username, pw_hash, salt, role, perms_json, display_name or username)
             )
             return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
         except sqlite3.IntegrityError:
@@ -713,7 +752,7 @@ def create_user(username, password, role='viewer', display_name=''):
 
 
 def update_user(user_id, data):
-    """Update user fields (display_name, role). Optionally update password."""
+    """Update user fields (display_name, role, permissions). Optionally update password."""
     with db_transaction() as conn:
         if 'password' in data and data['password']:
             pw_hash, salt = _hash_password(data['password'])
@@ -730,6 +769,13 @@ def update_user(user_id, data):
             conn.execute(
                 'UPDATE users SET role = ? WHERE user_id = ?',
                 (data['role'], user_id)
+            )
+        if 'permissions' in data:
+            perms = data['permissions']
+            perms_json = json.dumps(sorted(perms)) if perms else None
+            conn.execute(
+                'UPDATE users SET permissions = ? WHERE user_id = ?',
+                (perms_json, user_id)
             )
 
 

@@ -38,12 +38,35 @@
 
         <div style="margin-bottom: 16px;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Role</label>
-            <select name="role">
-                <option value="admin" {% if user and (user.get('role', '') if user is mapping else user.role) == 'admin' %}selected{% endif %}>Admin �� Full access</option>
-                <option value="editor" {% if user and (user.get('role', '') if user is mapping else user.role) == 'editor' %}selected{% endif %}>Editor — Add, edit, checkout devices</option>
-                <option value="power_user" {% if user and (user.get('role', '') if user is mapping else user.role) == 'power_user' %}selected{% endif %}>Power User — Manage product references</option>
-                <option value="viewer" {% if user and (user.get('role', '') if user is mapping else user.role) == 'viewer' %}selected{% endif %}>Viewer — Read-only</option>
+            {% set current_role = (user.get('role', 'custom') if user is mapping else user.role if user else 'custom') %}
+            <select name="role" id="roleSelect" onchange="togglePermissions()">
+                <option value="admin" {% if current_role == 'admin' %}selected{% endif %}>Admin — Full access</option>
+                <option value="custom" {% if current_role != 'admin' %}selected{% endif %}>Custom — Select permissions below</option>
             </select>
+        </div>
+    </div>
+
+    <!-- Permissions card (shown only for custom role) -->
+    <div class="card" id="permissionsCard" style="margin-bottom: 16px; cursor: default; {% if current_role == 'admin' %}display: none;{% endif %}">
+        <div class="section-label">Permissions</div>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            Select which areas this user can access.
+        </p>
+        {% set user_perms = [] %}
+        {% if is_edit and user.permissions %}
+            {% set user_perms = user.permissions | tojson | default('[]') %}
+        {% endif %}
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            {% for perm_key, perm_label in assignable_permissions %}
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); transition: all 0.15s;"
+                   onmouseover="this.style.borderColor='var(--accent-blue)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                <input type="checkbox" name="permissions" value="{{ perm_key }}"
+                       style="width: 16px; height: 16px; margin-top: 1px; flex-shrink: 0;"
+                       {% if is_edit and user.permissions and perm_key in user.permissions %}checked{% endif %}
+                       {% if not is_edit and perm_key in ['devices', 'references', 'wiki'] %}checked{% endif %}>
+                <span>{{ perm_label }}</span>
+            </label>
+            {% endfor %}
         </div>
     </div>
 
@@ -54,4 +77,12 @@
         </button>
     </div>
 </form>
+
+<script>
+function togglePermissions() {
+    var role = document.getElementById('roleSelect').value;
+    var card = document.getElementById('permissionsCard');
+    card.style.display = role === 'custom' ? '' : 'none';
+}
+</script>
 {% endblock %}
