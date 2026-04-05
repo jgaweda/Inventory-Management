@@ -40,6 +40,10 @@ HEADER_MAP = {
     'chip codename': 'chip_codename',
     'fw codebase': 'fw_codebase',
     'print technology': 'print_technology',
+    'cartridge/toner': 'cartridge_toner',
+    'cartridge_toner': 'cartridge_toner',
+    'cartridge': 'cartridge_toner',
+    'toner': 'cartridge_toner',
     'variant': 'variant',
 }
 
@@ -164,6 +168,7 @@ def main():
                 chip_codename=record.get('chip_codename', ''),
                 fw_codebase=record.get('fw_codebase', ''),
                 print_technology=record.get('print_technology', ''),
+                cartridge_toner=record.get('cartridge_toner', ''),
             )
         imported += 1
 

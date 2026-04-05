@@ -3317,5 +3317,92 @@ class TestLargeFormatPrintTechnology(BaseTestCase):
         self.assertEqual(refs[0]['print_technology'], 'Large Format')
 
 
+class TestCartridgeToner(BaseTestCase):
+    """Test the Cartridge/Toner field across the application."""
+
+    def test_add_product_with_cartridge_toner(self):
+        """Can create a product reference with cartridge_toner."""
+        ref_id = db.add_product_reference(
+            codename='TestCart', model_name='OJ Pro 9120',
+            print_technology='Ink', cartridge_toner='HP 936/937/938')
+        ref = db.get_product_reference(ref_id)
+        self.assertEqual(ref['cartridge_toner'], 'HP 936/937/938')
+
+    def test_update_product_cartridge_toner(self):
+        """Can update cartridge_toner on an existing product."""
+        ref_id = db.add_product_reference(codename='UpdateCart', cartridge_toner='HP 67/67XL')
+        db.update_product_reference(ref_id=ref_id, codename='UpdateCart',
+                                    cartridge_toner='HP 67XL/305XL')
+        ref = db.get_product_reference(ref_id)
+        self.assertEqual(ref['cartridge_toner'], 'HP 67XL/305XL')
+
+    def test_upsert_preserves_cartridge_toner(self):
+        """Upsert preserves cartridge_toner when incoming value is empty."""
+        db.add_product_reference(codename='UpsertCart', cartridge_toner='HP 230A/230X')
+        ref_id, action = db.upsert_product_reference(codename='UpsertCart', model_name='LJ Pro 400')
+        refs = db.get_product_reference_by_codename('UpsertCart')
+        self.assertEqual(refs[0]['cartridge_toner'], 'HP 230A/230X')
+
+    def test_upsert_updates_cartridge_toner(self):
+        """Upsert updates cartridge_toner when incoming value is non-empty."""
+        db.add_product_reference(codename='UpsertCart2', cartridge_toner='HP 78A')
+        ref_id, action = db.upsert_product_reference(codename='UpsertCart2', cartridge_toner='HP 78A/78X')
+        refs = db.get_product_reference_by_codename('UpsertCart2')
+        self.assertEqual(refs[0]['cartridge_toner'], 'HP 78A/78X')
+
+    def test_search_by_cartridge_toner(self):
+        """Search finds products by cartridge_toner value."""
+        db.add_product_reference(codename='SearchCart', cartridge_toner='HP 936/937/938')
+        results = db.get_all_product_references(search='936')
+        codenames = [r['codename'] for r in results]
+        self.assertIn('SearchCart', codenames)
+
+    def test_inline_edit_cartridge_toner(self):
+        """Inline edit API accepts cartridge_toner field."""
+        ref_id = db.add_product_reference(codename='InlineCart')
+        self.login_admin()
+        resp = self.client.patch(f'/api/reference/{ref_id}',
+                                 json={'cartridge_toner': 'HP 67/67XL'},
+                                 content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        ref = db.get_product_reference(ref_id)
+        self.assertEqual(ref['cartridge_toner'], 'HP 67/67XL')
+
+    def test_export_includes_cartridge_toner(self):
+        """CSV export includes Cartridge/Toner column."""
+        db.add_product_reference(codename='ExportCart', cartridge_toner='HP 230A')
+        self.login_admin()
+        resp = self.client.get('/reference/export')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Cartridge/Toner', resp.data)
+        self.assertIn(b'HP 230A', resp.data)
+
+    def test_form_shows_cartridge_toner(self):
+        """Product reference form includes cartridge_toner field."""
+        self.login_admin()
+        resp = self.client.get('/reference/add')
+        self.assertIn(b'cartridge_toner', resp.data)
+        self.assertIn(b'Cartridge/Toner', resp.data)
+
+    def test_add_via_form_with_cartridge_toner(self):
+        """Adding a product via POST includes cartridge_toner."""
+        self.login_admin()
+        resp = self.client.post('/reference/add', data={
+            'codename': 'FormCart',
+            'cartridge_toner': 'HP 962/962XL',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        refs = db.get_product_reference_by_codename('FormCart')
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0]['cartridge_toner'], 'HP 962/962XL')
+
+    def test_table_shows_cartridge_toner_column(self):
+        """Product reference table has Cartridge/Toner header."""
+        db.add_product_reference(codename='TableCart', cartridge_toner='HP 67/67XL')
+        resp = self.client.get('/reference')
+        self.assertIn(b'Cartridge/Toner', resp.data)
+        self.assertIn(b'HP 67/67XL', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()

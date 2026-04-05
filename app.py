@@ -1663,6 +1663,7 @@ def product_reference_add():
             chip_codename=request.form.get('chip_codename', '').strip(),
             fw_codebase=request.form.get('fw_codebase', '').strip(),
             print_technology=request.form.get('print_technology', '').strip(),
+            cartridge_toner=request.form.get('cartridge_toner', '').strip(),
         )
         flash(f'Product reference "{codename}" added.', 'success')
         return redirect(url_for('product_reference_list'))
@@ -1698,6 +1699,7 @@ def product_reference_edit(ref_id):
             chip_codename=request.form.get('chip_codename', '').strip(),
             fw_codebase=request.form.get('fw_codebase', '').strip(),
             print_technology=request.form.get('print_technology', '').strip(),
+            cartridge_toner=request.form.get('cartridge_toner', '').strip(),
         )
         flash(f'Product reference "{codename}" updated.', 'success')
         return redirect(url_for('product_reference_list'))
@@ -1718,7 +1720,7 @@ def api_reference_update(ref_id):
     if not data:
         return jsonify({'error': 'No data'}), 400
     allowed = {'codename', 'model_name', 'wifi_gen', 'year', 'chip_manufacturer',
-               'chip_codename', 'fw_codebase', 'print_technology'}
+               'chip_codename', 'fw_codebase', 'print_technology', 'cartridge_toner'}
     updates = {k: v.strip() for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({'error': 'No valid fields'}), 400
@@ -1783,6 +1785,12 @@ HEADER_MAP = {
     'print technology': 'print_technology',
     'print_technology': 'print_technology',
     'technology': 'print_technology',
+    # Cartridge/Toner
+    'cartridge/toner': 'cartridge_toner',
+    'cartridge_toner': 'cartridge_toner',
+    'cartridge': 'cartridge_toner',
+    'toner': 'cartridge_toner',
+    'cartridge / toner': 'cartridge_toner',
     # Variant
     'variant': 'variant',
 }
@@ -1824,6 +1832,7 @@ def _import_seed_data():
                                   norm.get('chip codename', norm.get('chip_codename', ''))),
                     fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
                     print_technology=norm.get('print technology', norm.get('print_technology', '')),
+                    cartridge_toner=norm.get('cartridge/toner', norm.get('cartridge_toner', '')),
                     variant=norm.get('variant', ''),
                 )
                 if action == 'added':
@@ -1974,13 +1983,14 @@ def product_reference_export():
     refs = db.get_all_product_references()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
+    writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner', 'Wi-Fi Gen', 'Year',
                      'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
                      'Variant'])
     for r in refs:
         writer.writerow([r['codename'], r['model_name'], r['print_technology'],
-                         r['wifi_gen'], r['year'], r['chip_manufacturer'],
-                         r['chip_codename'], r['fw_codebase'], r.get('variant', '')])
+                         r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
+                         r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
+                         r.get('variant', '')])
     csv_bytes = output.getvalue().encode('utf-8-sig')
     return Response(csv_bytes, mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
@@ -2006,7 +2016,7 @@ def product_reference_export_xlsx():
     ws = wb.active
     ws.title = 'Product Reference'
 
-    headers = ['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
+    headers = ['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner', 'Wi-Fi Gen', 'Year',
                'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
                'Variant']
     ws.append(headers)
@@ -2019,8 +2029,9 @@ def product_reference_export_xlsx():
 
     for r in refs:
         ws.append([r['codename'], r['model_name'], r['print_technology'],
-                   r['wifi_gen'], r['year'], r['chip_manufacturer'],
-                   r['chip_codename'], r['fw_codebase'], r.get('variant', '')])
+                   r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
+                   r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
+                   r.get('variant', '')])
 
     for col in ws.columns:
         max_len = max((len(str(cell.value or '')) for cell in col), default=10)
@@ -2195,6 +2206,7 @@ def api_reference_search():
         'chip_codename': r['chip_codename'],
         'fw_codebase': r['fw_codebase'],
         'print_technology': r['print_technology'],
+        'cartridge_toner': r.get('cartridge_toner', ''),
     } for r in refs])
 
 

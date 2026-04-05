@@ -154,6 +154,7 @@
                     <th data-sort="codename">Codename <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="model_name">Model Name <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="print_technology">Type <span class="sort-arrow">&#9650;</span></th>
+                    <th data-sort="cartridge_toner">Cartridge/Toner <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="wifi_gen">Wi-Fi Gen <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="year">Year <span class="sort-arrow">&#9650;</span></th>
                     <th data-sort="chip_manufacturer">Chipset Mfr <span class="sort-arrow">&#9650;</span></th>
@@ -167,7 +168,7 @@
             </thead>
             <tbody id="refBody">
                 {% for ref in refs %}
-                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
+                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
                             <span class="codename-text{% if has_permission('references') %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
@@ -186,6 +187,7 @@
                             <option value="Large Format" {{ 'selected' if ref.print_technology == 'Large Format' }}>Large Format</option>
                         </select>
                     </td>
+                    <td><input class="cell-edit" data-field="cartridge_toner" value="{{ ref.cartridge_toner or '' }}"></td>
                     <td><input class="cell-edit" data-field="wifi_gen" value="{{ ref.wifi_gen or '' }}" style="width:60px;"></td>
                     <td><input class="cell-edit" data-field="year" value="{{ ref.year or '' }}" style="width:60px;"></td>
                     <td><input class="cell-edit" data-field="chip_manufacturer" value="{{ ref.chip_manufacturer or '' }}"></td>
@@ -198,6 +200,7 @@
                         <span style="background:{% if ref.print_technology == 'Laser' %}rgba(139,92,246,0.12){% elif ref.print_technology == 'Large Format' %}rgba(245,158,11,0.12){% else %}rgba(59,130,246,0.12){% endif %}; color:{% if ref.print_technology == 'Laser' %}#a78bfa{% elif ref.print_technology == 'Large Format' %}#f59e0b{% else %}#3b82f6{% endif %}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">{{ ref.print_technology }}</span>
                         {% else %}—{% endif %}
                     </td>
+                    <td style="font-size:13px; color:var(--text-secondary);">{{ ref.cartridge_toner or '—' }}</td>
                     <td class="font-mono" style="font-size:13px; text-align:center;">{{ ref.wifi_gen or '—' }}</td>
                     <td class="font-mono" style="font-size:13px; color:var(--text-muted);">{{ ref.year or '—' }}</td>
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
@@ -382,6 +385,7 @@ function saveCell(el) {
     // Update data attributes for sorting/filtering
     if (field === 'codename') row.dataset.codename = value;
     if (field === 'print_technology') row.dataset.type = value;
+    if (field === 'cartridge_toner') row.dataset.cartridge = value;
     if (field === 'model_name') row.dataset.model = value;
     if (field === 'wifi_gen') row.dataset.wifi = value;
     if (field === 'year') row.dataset.year = value;
@@ -439,7 +443,8 @@ function addNewRow() {
     tr.innerHTML =
         '<td><input class="cell-edit" data-field="codename" placeholder="Codename..." value="" style="font-weight:600;"></td>' +
         '<td><input class="cell-edit" data-field="model_name" placeholder="Model name..." value=""></td>' +
-        '<td><select class="cell-edit" data-field="print_technology"><option value="">--</option><option value="Ink">Ink</option><option value="Laser">Laser</option></select></td>' +
+        '<td><select class="cell-edit" data-field="print_technology"><option value="">--</option><option value="Ink">Ink</option><option value="Laser">Laser</option><option value="Large Format">Large Format</option></select></td>' +
+        '<td><input class="cell-edit" data-field="cartridge_toner" value="" placeholder="Cartridge..."></td>' +
         '<td><input class="cell-edit" data-field="wifi_gen" value="" style="width:60px;" placeholder="6E"></td>' +
         '<td><input class="cell-edit" data-field="year" value="" style="width:60px;" placeholder="2025"></td>' +
         '<td><input class="cell-edit" data-field="chip_manufacturer" value="" placeholder="Manufacturer..."></td>' +
@@ -499,8 +504,8 @@ function submitNewRow(row) {
             if (q) {
                 var text = [
                     row.dataset.codename, row.dataset.model, row.dataset.type,
-                    row.dataset.wifi, row.dataset.year, row.dataset.chipmfr,
-                    row.dataset.chipcode, row.dataset.fw
+                    row.dataset.cartridge, row.dataset.wifi, row.dataset.year,
+                    row.dataset.chipmfr, row.dataset.chipcode, row.dataset.fw
                 ].join(' ').toLowerCase();
                 if (text.indexOf(q) === -1) {
                     row.classList.add('hidden-row');
@@ -550,8 +555,9 @@ function submitNewRow(row) {
                 } else {
                     var keyMap = {
                         codename: 'codename', model_name: 'model', print_technology: 'type',
-                        wifi_gen: 'wifi', chip_manufacturer: 'chipmfr',
-                        chip_codename: 'chipcode', fw_codebase: 'fw'
+                        cartridge_toner: 'cartridge', wifi_gen: 'wifi',
+                        chip_manufacturer: 'chipmfr', chip_codename: 'chipcode',
+                        fw_codebase: 'fw'
                     };
                     va = (a.dataset[keyMap[field]] || '').toLowerCase();
                     vb = (b.dataset[keyMap[field]] || '').toLowerCase();

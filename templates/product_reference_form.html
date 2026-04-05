@@ -52,8 +52,13 @@
                         <option value="">Select...</option>
                         <option value="Ink" {% if ref and ref.print_technology == 'Ink' %}selected{% endif %}>Ink</option>
                         <option value="Laser" {% if ref and ref.print_technology == 'Laser' %}selected{% endif %}>Laser</option>
+                        <option value="Large Format" {% if ref and ref.print_technology == 'Large Format' %}selected{% endif %}>Large Format</option>
                     </select>
                 </div>
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Cartridge/Toner</label>
+                <input type="text" name="cartridge_toner" value="{{ ref.cartridge_toner if ref else '' }}" placeholder="e.g. HP 936/937/938, HP 230A/230X">
             </div>
         </div>
     </div>

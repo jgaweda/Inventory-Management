@@ -161,6 +161,7 @@ def init_db():
                 chip_codename TEXT DEFAULT '',
                 fw_codebase TEXT DEFAULT '',
                 print_technology TEXT DEFAULT '',
+                cartridge_toner TEXT DEFAULT '',
                 variant TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -223,7 +224,7 @@ def init_db():
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
                              ('chip_codename', ''), ('fw_codebase', ''), ('print_technology', ''),
-                             ('variant', '')]:
+                             ('cartridge_toner', ''), ('variant', '')]:
             if col not in pr_cols:
                 conn.execute(f"ALTER TABLE product_reference ADD COLUMN {col} TEXT DEFAULT ''")
 
@@ -395,6 +396,7 @@ def _seed_product_references():
                                   norm.get('chip codename', norm.get('chip_codename', ''))),
                     fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
                     print_technology=norm.get('print technology', norm.get('print_technology', '')),
+                    cartridge_toner=norm.get('cartridge/toner', norm.get('cartridge_toner', '')),
                     variant=norm.get('variant', ''),
                 )
                 imported += 1
@@ -2246,8 +2248,9 @@ def get_all_product_references(search=''):
                 SELECT * FROM product_reference
                 WHERE codename LIKE ? OR model_name LIKE ? OR year LIKE ?
                     OR chip_manufacturer LIKE ? OR chip_codename LIKE ? OR wifi_gen LIKE ?
+                    OR cartridge_toner LIKE ?
                 ORDER BY year DESC, codename ASC
-            ''', (like, like, like, like, like, like)).fetchall()
+            ''', (like, like, like, like, like, like, like)).fetchall()
         else:
             rows = conn.execute(
                 'SELECT * FROM product_reference ORDER BY year DESC, codename ASC'
@@ -2307,14 +2310,14 @@ def get_product_reference_by_codename(codename):
 
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
-                          print_technology='', variant=''):
+                          print_technology='', cartridge_toner='', variant=''):
     """Add a single product reference entry. Returns the new ref_id."""
     with db_transaction() as conn:
         cursor = conn.execute('''
             INSERT INTO product_reference
-                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant))
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, variant)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, variant))
         ref_id = cursor.lastrowid
         # Auto-create a wiki page for the new product
         conn.execute('''
@@ -2326,7 +2329,7 @@ def add_product_reference(codename, model_name='', wifi_gen='', year='',
 
 def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                              chip_manufacturer='', chip_codename='', fw_codebase='',
-                             print_technology='', variant=''):
+                             print_technology='', cartridge_toner='', variant=''):
     """Update an existing product reference by codename, or insert if missing.
 
     For existing entries, only non-empty values are applied (preserves
@@ -2342,7 +2345,8 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                 UPDATE product_reference
                 SET model_name = ?, wifi_gen = ?, year = ?,
                     chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
-                    print_technology = ?, variant = ?, updated_at = CURRENT_TIMESTAMP
+                    print_technology = ?, cartridge_toner = ?, variant = ?,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE ref_id = ?
             ''', (
                 model_name or ref['model_name'],
@@ -2352,6 +2356,7 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                 chip_codename or ref['chip_codename'],
                 fw_codebase or ref['fw_codebase'],
                 print_technology or ref['print_technology'],
+                cartridge_toner or ref.get('cartridge_toner', ''),
                 variant or ref.get('variant', ''),
                 ref_id,
             ))
@@ -2361,23 +2366,24 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
             codename=codename, model_name=model_name, wifi_gen=wifi_gen,
             year=year, chip_manufacturer=chip_manufacturer,
             chip_codename=chip_codename, fw_codebase=fw_codebase,
-            print_technology=print_technology, variant=variant,
+            print_technology=print_technology, cartridge_toner=cartridge_toner,
+            variant=variant,
         )
         return ref_id, 'added'
 
 
 def update_product_reference(ref_id, codename, model_name='', wifi_gen='', year='',
                              chip_manufacturer='', chip_codename='', fw_codebase='',
-                             print_technology=''):
+                             print_technology='', cartridge_toner=''):
     """Update an existing product reference entry."""
     with db_transaction() as conn:
         conn.execute('''
             UPDATE product_reference
             SET codename = ?, model_name = ?, wifi_gen = ?, year = ?,
                 chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
-                print_technology = ?, updated_at = CURRENT_TIMESTAMP
+                print_technology = ?, cartridge_toner = ?, updated_at = CURRENT_TIMESTAMP
             WHERE ref_id = ?
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, ref_id))
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, ref_id))
 
 
 def delete_product_reference(ref_id):
