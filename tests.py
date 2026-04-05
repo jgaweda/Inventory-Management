@@ -1369,5 +1369,490 @@ class TestEdgeCase(BaseTestCase):
         self.assertNotIn(b'<img onerror', resp.data)
 
 
+class TestAdminPasswordRecovery(BaseTestCase):
+    """Test admin password reset and emergency user creation."""
+
+    def test_reset_admin_password(self):
+        """reset_admin_password should change the admin's password."""
+        username, created = db.reset_admin_password('newpass123')
+        self.assertEqual(username, 'admin')
+        self.assertFalse(created)
+        self.assertIsNone(db.authenticate_user('admin', 'admin'))
+        user = db.authenticate_user('admin', 'newpass123')
+        self.assertIsNotNone(user)
+        self.assertEqual(user['role'], 'admin')
+
+    def test_reset_creates_admin_when_none_exist(self):
+        """If no admin user exists, reset should create one."""
+        conn = sqlite3.connect(db.DB_PATH)
+        conn.execute('DELETE FROM users')
+        conn.commit()
+        conn.close()
+        username, created = db.reset_admin_password('rescue123')
+        self.assertEqual(username, 'admin')
+        self.assertTrue(created)
+        user = db.authenticate_user('admin', 'rescue123')
+        self.assertIsNotNone(user)
+        self.assertEqual(user['role'], 'admin')
+
+    def test_reset_targets_first_admin(self):
+        """If multiple admins exist, reset should target the first one."""
+        db.create_user('admin2', 'pass2', role='admin', display_name='Admin 2')
+        username, _ = db.reset_admin_password('reset999')
+        self.assertEqual(username, 'admin')
+        self.assertIsNotNone(db.authenticate_user('admin2', 'pass2'))
+
+    def test_login_after_reset(self):
+        """Full integration: reset password then log in via web."""
+        db.reset_admin_password('weblogin')
+        resp = self.client.post('/login', data={
+            'username': 'admin', 'password': 'weblogin',
+        }, follow_redirects=True)
+        self.assertIn(b'Dashboard', resp.data)
+
+
+class TestEmergencyBackup(BaseTestCase):
+    """Test emergency backup and SQL export."""
+
+    def test_emergency_backup_creates_file(self):
+        path = db.emergency_backup()
+        self.assertTrue(os.path.isfile(path))
+        self.assertIn('emergency_', os.path.basename(path))
+        conn = sqlite3.connect(path)
+        result = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        conn.close()
+        self.assertEqual(result, 'ok')
+
+    def test_emergency_backup_custom_path(self):
+        dest = os.path.join(_test_dir, 'custom_backup.db')
+        path = db.emergency_backup(dest)
+        self.assertEqual(path, dest)
+        self.assertTrue(os.path.isfile(dest))
+
+    def test_emergency_backup_contains_data(self):
+        db.add_device({'name': 'Backup Test Device'})
+        path = db.emergency_backup()
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM devices WHERE name = 'Backup Test Device'").fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+
+    def test_export_database_to_sql(self):
+        db.add_device({'name': 'Export Device'})
+        out_path = os.path.join(_test_dir, 'dump.sql')
+        result = db.export_database_to_sql(out_path)
+        self.assertTrue(result)
+        self.assertTrue(os.path.isfile(out_path))
+        with open(out_path, 'r') as f:
+            content = f.read()
+        self.assertIn('CREATE TABLE', content)
+        self.assertIn('Export Device', content)
+
+
+class TestDatabaseRecovery(BaseTestCase):
+    """Test backup restore and database integrity edge cases."""
+
+    def test_restore_from_backup(self):
+        db.add_device({'name': 'Before Backup'})
+        result = db.backup_database(performed_by='test', manual=True)
+        filename = result['filename']
+        db.add_device({'name': 'After Backup'})
+        self.assertEqual(len(db.get_all_devices()), 2)
+        db.restore_database(filename)
+        db.init_db()
+        devices = db.get_all_devices()
+        names = [d['name'] for d in devices]
+        self.assertIn('Before Backup', names)
+
+    def test_restore_nonexistent_backup(self):
+        with self.assertRaises(Exception):
+            db.restore_database('does_not_exist.db')
+
+    def test_integrity_check_on_valid_db(self):
+        result = db.check_database_integrity()
+        self.assertTrue(result['ok'])
+
+    def test_checkpoint_wal(self):
+        result = db.checkpoint_wal()
+        self.assertTrue(result['success'])
+
+    def test_database_status(self):
+        status = db.get_database_status()
+        self.assertTrue(status['exists'])
+        self.assertGreater(status['size_bytes'], 0)
+        self.assertIn('devices', status['table_counts'])
+        self.assertEqual(status['integrity'], 'ok')
+
+    def test_verify_latest_backup(self):
+        db.backup_database(performed_by='test', manual=True)
+        result = db.verify_latest_backup()
+        self.assertTrue(result['ok'])
+
+    def test_verify_no_backups(self):
+        backup_dir = db._get_backup_dir()
+        for f in os.listdir(backup_dir):
+            if f.endswith('.db'):
+                os.remove(os.path.join(backup_dir, f))
+        result = db.verify_latest_backup()
+        self.assertFalse(result['ok'])
+
+
+class TestAuthEdgeCases(BaseTestCase):
+    """Test authentication edge cases."""
+
+    def test_empty_username_login(self):
+        resp = self.client.post('/login', data={
+            'username': '', 'password': 'admin',
+        }, follow_redirects=True)
+        self.assertIn(b'Invalid', resp.data)
+
+    def test_empty_password_login(self):
+        resp = self.client.post('/login', data={
+            'username': 'admin', 'password': '',
+        }, follow_redirects=True)
+        self.assertIn(b'Invalid', resp.data)
+
+    def test_nonexistent_user_login(self):
+        resp = self.client.post('/login', data={
+            'username': 'nobody', 'password': 'pass',
+        }, follow_redirects=True)
+        self.assertIn(b'Invalid username or password', resp.data)
+
+    def test_session_invalid_user_id(self):
+        with self.client.session_transaction() as sess:
+            sess['user_id'] = 99999
+        resp = self.client.get('/devices/add', follow_redirects=True)
+        self.assertIn(b'login', resp.data.lower())
+
+    def test_change_password_wrong_current(self):
+        self.login_admin()
+        resp = self.client.post('/account', data={
+            'current_password': 'wrongpass',
+            'new_password': 'newpass',
+            'confirm_password': 'newpass',
+        }, follow_redirects=True)
+        self.assertIn(b'incorrect', resp.data.lower())
+
+    def test_change_password_mismatch(self):
+        self.login_admin()
+        resp = self.client.post('/account', data={
+            'current_password': 'admin',
+            'new_password': 'newpass1',
+            'confirm_password': 'newpass2',
+        }, follow_redirects=True)
+        self.assertIn(b'match', resp.data.lower())
+
+    def test_change_password_too_short(self):
+        self.login_admin()
+        resp = self.client.post('/account', data={
+            'current_password': 'admin',
+            'new_password': 'ab',
+            'confirm_password': 'ab',
+        }, follow_redirects=True)
+        self.assertIn(b'4', resp.data)
+
+    def test_change_password_success(self):
+        self.login_admin()
+        resp = self.client.post('/account', data={
+            'current_password': 'admin',
+            'new_password': 'newadmin1',
+            'confirm_password': 'newadmin1',
+        }, follow_redirects=True)
+        self.assertIn(b'changed', resp.data.lower())
+        self.client.get('/logout')
+        resp = self.client.post('/login', data={
+            'username': 'admin', 'password': 'newadmin1',
+        }, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+
+    def test_cannot_delete_last_admin(self):
+        with self.assertRaises(ValueError) as ctx:
+            user = db.get_user_by_username('admin')
+            db.delete_user(user['user_id'])
+        self.assertIn('last admin', str(ctx.exception))
+
+    def test_duplicate_username_rejected(self):
+        with self.assertRaises(ValueError):
+            db.create_user('admin', 'pass', role='viewer')
+
+
+class TestCascadeDeletes(BaseTestCase):
+    """Test that deleting records properly cascades."""
+
+    def test_delete_product_reference_cascades(self):
+        self.login_admin()
+        db.add_product_reference(codename='CascadeTest')
+        refs = db.get_all_product_references()
+        ref_id = refs[0]['ref_id']
+        self.client.post(f'/wiki/{ref_id}/save', data={'content': 'Test wiki'}, follow_redirects=True)
+        import io
+        self.client.post(f'/wiki/{ref_id}/upload',
+                         data={'attachment': (io.BytesIO(b'test'), 'file.txt')},
+                         content_type='multipart/form-data')
+        self.assertIsNotNone(db.get_wiki_by_ref_id(ref_id))
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 1)
+        db.delete_product_reference(ref_id)
+        self.assertIsNone(db.get_product_reference(ref_id))
+        self.assertIsNone(db.get_wiki_by_ref_id(ref_id))
+        self.assertEqual(len(db.get_wiki_attachments(ref_id)), 0)
+
+    def test_delete_device_preserves_notes(self):
+        """Retiring a device should not delete notes."""
+        did = db.add_device({'name': 'Note Device'})
+        db.add_device_note(did, 'Tester', 'Important note')
+        db.retire_device(did)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+
+
+class TestSQLInjectionPrevention(BaseTestCase):
+    """Verify parameterized queries prevent SQL injection."""
+
+    def test_sql_injection_in_search(self):
+        db.add_device({'name': 'Normal Device'})
+        results = db.search_devices("'; DROP TABLE devices; --")
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+
+    def test_sql_injection_in_username(self):
+        resp = self.client.post('/login', data={
+            'username': "' OR 1=1 --",
+            'password': 'anything',
+        }, follow_redirects=True)
+        self.assertIn(b'Invalid username or password', resp.data)
+
+    def test_sql_injection_in_device_name(self):
+        self.login_admin()
+        malicious = "'; DROP TABLE devices; --"
+        self.client.post('/devices/add', data={
+            'manufacturer': malicious, 'model_number': 'Test',
+            'category': 'Router/AP',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertGreater(len(devices), 0)
+
+    def test_sql_injection_in_note(self):
+        did = db.add_device({'name': 'Test'})
+        note_id = db.add_device_note(did, 'Test', "'; DROP TABLE device_notes; --")
+        self.assertIsNotNone(note_id)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+
+
+class TestUnicodeHandling(BaseTestCase):
+    """Test unicode characters in various fields."""
+
+    def test_unicode_device_name(self):
+        did = db.add_device({'name': 'Printer \u2014 \u00e9l\u00e8ve'})
+        device = db.get_device(did)
+        self.assertIn('\u2014', device['name'])
+
+    def test_unicode_note(self):
+        did = db.add_device({'name': 'Unicode Note Test'})
+        db.add_device_note(did, '\u5f20\u4e09', '\U0001f4e8 \u4e2d\u6587\u6d4b\u8bd5')
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+        self.assertIn('\u4e2d\u6587', notes[0]['content'])
+
+    def test_unicode_in_web_form(self):
+        self.login_admin()
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP \u00ae', 'model_number': 'M\u00f6del',
+            'category': 'Router/AP', 'notes': 'C\u00e9sar\u2019s printer',
+        }, follow_redirects=True)
+        self.assertIn(b'added successfully', resp.data)
+
+    def test_unicode_username(self):
+        uid = db.create_user('\u00fcser1', 'pass1234', display_name='Ren\u00e9')
+        user = db.get_user(uid)
+        self.assertEqual(user['display_name'], 'Ren\u00e9')
+
+
+class TestDeviceNotesEdgeCases(BaseTestCase):
+    """Test device notes edge cases."""
+
+    def test_note_on_nonexistent_device(self):
+        resp = self.client.post('/devices/nonexistent/notes', data={
+            'note_content': 'Test',
+        }, follow_redirects=True)
+        self.assertIn(b'not found', resp.data.lower())
+
+    def test_delete_nonexistent_note(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Test Device'})
+        resp = self.client.post(f'/devices/{did}/notes/99999/delete',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_empty_note_rejected(self):
+        did = db.add_device({'name': 'Test Device'})
+        resp = self.client.post(f'/devices/{did}/notes', data={
+            'note_content': '',
+        }, follow_redirects=True)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 0)
+
+    def test_very_long_note(self):
+        did = db.add_device({'name': 'Long Note Test'})
+        long_content = 'A' * 10000
+        db.add_device_note(did, 'Tester', long_content)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(len(notes[0]['content']), 10000)
+
+    def test_non_admin_cannot_delete_note(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Note Delete Test'})
+        db.add_device_note(did, 'Someone', 'A note')
+        notes = db.get_device_notes(did)
+        note_id = notes[0]['note_id']
+        self.client.post('/users/add', data={
+            'username': 'viewer1', 'password': 'test', 'role': 'viewer',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'viewer1', 'password': 'test'})
+        resp = self.client.post(f'/devices/{did}/notes/{note_id}/delete',
+                                follow_redirects=True)
+        notes = db.get_device_notes(did)
+        self.assertEqual(len(notes), 1)
+
+
+class TestUserManagementEdgeCases(BaseTestCase):
+    """Test user management edge cases."""
+
+    def test_create_user_with_all_roles(self):
+        for role in ['admin', 'editor', 'power_user', 'viewer']:
+            uid = db.create_user(f'test_{role}', 'pass1234', role=role)
+            user = db.get_user(uid)
+            self.assertEqual(user['role'], role)
+
+    def test_update_user_role(self):
+        uid = db.create_user('roletest', 'pass1234', role='viewer')
+        db.update_user(uid, {'role': 'editor'})
+        user = db.get_user(uid)
+        self.assertEqual(user['role'], 'editor')
+
+    def test_update_user_password(self):
+        uid = db.create_user('pwtest', 'oldpass1', role='viewer')
+        db.update_user(uid, {'password': 'newpass1'})
+        self.assertIsNone(db.authenticate_user('pwtest', 'oldpass1'))
+        self.assertIsNotNone(db.authenticate_user('pwtest', 'newpass1'))
+
+    def test_delete_non_last_admin(self):
+        uid2 = db.create_user('admin2', 'pass1234', role='admin')
+        db.delete_user(uid2)
+        self.assertIsNone(db.get_user(uid2))
+
+    def test_delete_nonexistent_user(self):
+        with self.assertRaises(ValueError):
+            db.delete_user(99999)
+
+    def test_admin_user_list_page(self):
+        self.login_admin()
+        resp = self.client.get('/account')
+        self.assertIn(b'User Management', resp.data)
+        self.assertIn(b'admin', resp.data)
+
+    def test_add_user_via_web(self):
+        self.login_admin()
+        resp = self.client.post('/users/add', data={
+            'username': 'newuser', 'password': 'pass1234',
+            'display_name': 'New User', 'role': 'editor',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        user = db.get_user_by_username('newuser')
+        self.assertIsNotNone(user)
+        self.assertEqual(user['role'], 'editor')
+
+
+class TestBackupEdgeCases(BaseTestCase):
+    """Test backup system edge cases."""
+
+    def test_backup_web_endpoint(self):
+        self.login_admin()
+        resp = self.client.post('/backups/create', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_backup_list_page(self):
+        self.login_admin()
+        resp = self.client.get('/backups')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_delete_backup(self):
+        result = db.backup_database(performed_by='test', manual=True)
+        filename = result['filename']
+        self.login_admin()
+        resp = self.client.post(f'/backups/{filename}/delete', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        backup_path = os.path.join(db._get_backup_dir(), filename)
+        self.assertFalse(os.path.exists(backup_path))
+
+    def test_download_backup(self):
+        result = db.backup_database(performed_by='test', manual=True)
+        filename = result['filename']
+        self.login_admin()
+        resp = self.client.get(f'/backups/{filename}/download')
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreater(len(resp.data), 0)
+
+    def test_backup_requires_admin(self):
+        db.create_user('viewer1', 'pass1234', role='viewer')
+        self.client.post('/login', data={
+            'username': 'viewer1', 'password': 'pass1234',
+        })
+        resp = self.client.get('/backups', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
+class TestPowerUserPermissions(BaseTestCase):
+    """Test power_user role boundary cases."""
+
+    def _create_power_user(self):
+        self.login_admin()
+        self.client.post('/users/add', data={
+            'username': 'puser', 'password': 'test1234', 'role': 'power_user',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'puser', 'password': 'test1234'})
+
+    def test_power_user_can_add_reference(self):
+        self._create_power_user()
+        resp = self.client.post('/reference/add', data={
+            'codename': 'PowerTest',
+        }, follow_redirects=True)
+        self.assertNotIn(b'do not have permission', resp.data)
+
+    def test_power_user_cannot_add_device(self):
+        self._create_power_user()
+        resp = self.client.post('/devices/add', data={
+            'manufacturer': 'HP', 'category': 'Router/AP',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_power_user_cannot_manage_users(self):
+        self._create_power_user()
+        resp = self.client.get('/users', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_power_user_cannot_access_backups(self):
+        self._create_power_user()
+        resp = self.client.get('/backups', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_power_user_cannot_checkout(self):
+        self.login_admin()
+        did = db.add_device({'name': 'Checkout Test'})
+        self.client.post('/users/add', data={
+            'username': 'puser', 'password': 'test1234', 'role': 'power_user',
+        })
+        self.client.get('/logout')
+        self.client.post('/login', data={'username': 'puser', 'password': 'test1234'})
+        resp = self.client.post(f'/devices/{did}/checkout', data={
+            'assigned_to': 'Someone',
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()

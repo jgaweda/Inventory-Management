@@ -1079,19 +1079,22 @@ def account():
         new_pw = request.form.get('new_password', '')
         confirm_pw = request.form.get('confirm_password', '')
 
+        users = db.get_all_users() if g.user['role'] == 'admin' else []
+        server_config = _load_server_config()
+
         # Verify current password
         user = db.authenticate_user(g.user['username'], current_pw)
         if not user:
             flash('Current password is incorrect.', 'error')
-            return render_template('account.html')
+            return render_template('account.html', users=users, server_config=server_config)
 
         if len(new_pw) < 4:
             flash('New password must be at least 4 characters.', 'error')
-            return render_template('account.html')
+            return render_template('account.html', users=users, server_config=server_config)
 
         if new_pw != confirm_pw:
             flash('New passwords do not match.', 'error')
-            return render_template('account.html')
+            return render_template('account.html', users=users, server_config=server_config)
 
         db.update_user(g.user['user_id'], {'password': new_pw})
         app_logger.info('Password changed: user=%s', g.user['username'])
@@ -2039,7 +2042,44 @@ if __name__ == '__main__':
     parser.add_argument('--host', default=default_host, help=f'Host to bind to (default: {default_host})')
     parser.add_argument('--port', type=int, default=default_port, help=f'Port to listen on (default: {default_port})')
     parser.add_argument('--dev', action='store_true', help='Run in development mode with debug enabled')
+    parser.add_argument('--reset-admin', metavar='PASSWORD',
+                        help='Reset admin password to PASSWORD and exit. Requires server access. Creates admin if none exists.')
+    parser.add_argument('--export-sql', metavar='FILE', help='Export database to SQL dump file and exit')
+    parser.add_argument('--emergency-backup', nargs='?', const=True, metavar='PATH',
+                        help='Create an emergency database backup and exit')
     args = parser.parse_args()
+
+    # --- Recovery CLI commands (run and exit) ---
+    if args.reset_admin:
+        new_pw = args.reset_admin
+        if len(new_pw) < 4:
+            print('  ERROR: Password must be at least 4 characters.')
+            exit(1)
+        db.init_db()
+        username, created = db.reset_admin_password(new_pw)
+        if created:
+            print(f'  Admin user created: {username}')
+        else:
+            print(f'  Password reset for admin user: {username}')
+        print('  You can now log in with the new credentials.')
+        exit(0)
+
+    if args.export_sql:
+        db.init_db()
+        success = db.export_database_to_sql(args.export_sql)
+        if success:
+            print(f'  Database exported to: {args.export_sql}')
+        else:
+            print('  Export failed. Check logs for details.')
+            exit(1)
+        exit(0)
+
+    if args.emergency_backup:
+        db.init_db()
+        dest = args.emergency_backup if args.emergency_backup is not True else None
+        path = db.emergency_backup(dest)
+        print(f'  Emergency backup created: {path}')
+        exit(0)
 
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
