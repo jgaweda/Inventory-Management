@@ -92,6 +92,29 @@
                 </div>
                 {% endif %}
             </div>
+
+            <!-- Auto-backup / prune / scheduler status -->
+            {% if not scheduler_alive and (config.backup_enabled or config.prune_enabled) %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
+                Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
+            </div>
+            {% endif %}
+            {% if config.backup_enabled %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
+                Auto-backup <strong>active</strong> — every {{ config.backup_interval_hours }} hour{{ 's' if config.backup_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} backup{{ 's' if config.max_backups != 1 else '' }}
+                {% if next_backup_time %}
+                <br>Next backup: <strong>{{ next_backup_time }}</strong>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if config.prune_enabled %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); font-size: 12px; color: var(--accent-amber);">
+                Auto-prune <strong>active</strong> — every {{ config.prune_interval_hours }} hour{{ 's' if config.prune_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} auto-backup{{ 's' if config.max_backups != 1 else '' }}
+                {% if next_prune_time %}
+                <br>Next prune: <strong>{{ next_prune_time }}</strong>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
 
         <!-- Git Push Settings -->
@@ -173,39 +196,20 @@
         </form>
     </div>
 
-    <!-- Active status indicators -->
-    {% if not scheduler_alive and (config.backup_enabled or config.prune_enabled or config.git_enabled) %}
-    <div style="margin-top: 12px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
-        Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
-    </div>
-    {% endif %}
-
-    {% if config.backup_enabled or config.prune_enabled or config.git_enabled %}
-    <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
-        {% if config.backup_enabled %}
-        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
-            Auto-backup <strong>active</strong> — every {{ config.backup_interval_hours }} hour{{ 's' if config.backup_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} backup{{ 's' if config.max_backups != 1 else '' }}
-            {% if next_backup_time %}
-            <br>Next backup: <strong>{{ next_backup_time }}</strong>
-            {% endif %}
+    <!-- Cloud backup status indicator -->
+    {% if config.git_enabled and config.git_repo %}
+    <div style="margin-top: 12px;">
+        {% if not scheduler_alive %}
+        <div style="margin-bottom: 6px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
+            Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
         </div>
         {% endif %}
-        {% if config.prune_enabled %}
-        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); font-size: 12px; color: var(--accent-amber);">
-            Auto-prune <strong>active</strong> — every {{ config.prune_interval_hours }} hour{{ 's' if config.prune_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} auto-backup{{ 's' if config.max_backups != 1 else '' }}
-            {% if next_prune_time %}
-            <br>Next prune: <strong>{{ next_prune_time }}</strong>
-            {% endif %}
-        </div>
-        {% endif %}
-        {% if config.git_enabled and config.git_repo %}
         <div style="padding: 8px 14px; border-radius: 8px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15); font-size: 12px; color: var(--accent-blue, #6366f1);">
             Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
             {% if next_git_push_time %}
             <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
             {% endif %}
         </div>
-        {% endif %}
     </div>
     {% endif %}
 </div>
