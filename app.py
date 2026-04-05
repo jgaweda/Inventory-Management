@@ -34,6 +34,14 @@ app = Flask(__name__,
             template_folder=os.path.join(BUNDLE_DIR, 'templates'))
 app.secret_key = os.environ.get('SECRET_KEY', 'hp-connectivity-inventory-system-change-me')
 
+# Application version (read from VERSION file)
+_version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
+try:
+    with open(_version_path) as _vf:
+        _app_version = _vf.read().strip()
+except FileNotFoundError:
+    _app_version = 'dev'
+
 # ---------------------------------------------------------------------------
 # Application logging (rotating file, single file that overwrites at limit)
 # ---------------------------------------------------------------------------
@@ -129,37 +137,37 @@ def login_required(f):
     return decorated
 
 
-def admin_required(f):
-    """Decorator: require admin role. Viewers get an error flash."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not g.user:
-            flash('Please log in to continue.', 'warning')
-            return redirect(url_for('login', next=request.path))
-        if g.user['role'] != 'admin':
-            flash('You do not have permission to perform this action.', 'error')
-            return redirect(url_for('dashboard'))
-        return f(*args, **kwargs)
-    return decorated
+# Centralized permission model — single source of truth for all role access.
+# To change what a role can do, edit this dict. To add a role, add a line.
+ROLE_PERMISSIONS = {
+    'admin':      {'devices', 'references', 'wiki', 'wiki_admin', 'users', 'backups', 'logs', 'settings', 'notes_delete', 'retire'},
+    'editor':     {'devices', 'wiki'},
+    'power_user': {'references', 'wiki'},
+    'viewer':     {'wiki'},
+}
 
 
-def editor_required(f):
-    """Decorator: require editor or admin role. Viewers and power_users get an error flash."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not g.user:
-            flash('Please log in to continue.', 'warning')
-            return redirect(url_for('login', next=request.path))
-        if g.user['role'] not in ('admin', 'editor'):
-            flash('You do not have permission to perform this action.', 'error')
-            return redirect(url_for('dashboard'))
-        return f(*args, **kwargs)
-    return decorated
+def has_permission(permission):
+    """Check if the current user has a specific permission."""
+    if not g.user:
+        return False
+    return permission in ROLE_PERMISSIONS.get(g.user['role'], set())
 
 
-def _can_manage_references():
-    """Check if the current user can manage product references (admin or power_user)."""
-    return g.user and g.user['role'] in ('admin', 'power_user')
+def permission_required(permission):
+    """Decorator: require a specific permission. Redirects to login or dashboard."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not g.user:
+                flash('Please log in to continue.', 'warning')
+                return redirect(url_for('login', next=request.path))
+            if not has_permission(permission):
+                flash('You do not have permission to perform this action.', 'error')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 
 def current_username():
@@ -178,6 +186,8 @@ def inject_globals():
         'categories': db.get_categories(),
         'now': datetime.now(timezone.utc),
         'current_user': g.user,
+        'has_permission': has_permission,
+        'app_version': _app_version,
     }
 
 # ---------------------------------------------------------------------------
@@ -281,7 +291,7 @@ def device_list():
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/add', methods=['GET', 'POST'])
-@editor_required
+@permission_required('devices')
 def device_add():
     if request.method == 'POST':
         manufacturer = request.form.get('manufacturer', '').strip()
@@ -405,7 +415,7 @@ def add_device_note(device_id):
 
 
 @app.route('/devices/<device_id>/notes/<int:note_id>/delete', methods=['POST'])
-@admin_required
+@permission_required('notes_delete')
 def delete_device_note_route(device_id, note_id):
     """Delete a device note (admin only)."""
     db.delete_device_note(note_id)
@@ -417,7 +427,7 @@ def delete_device_note_route(device_id, note_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/edit', methods=['GET', 'POST'])
-@editor_required
+@permission_required('devices')
 def device_edit(device_id):
     device = db.get_device(device_id)
     if not device:
@@ -481,7 +491,7 @@ def device_edit(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/retire', methods=['POST'])
-@admin_required
+@permission_required('retire')
 def device_retire(device_id):
     db.retire_device(device_id, performed_by=current_username())
     app_logger.info('Device retired: id=%s by=%s', device_id, current_username())
@@ -493,7 +503,7 @@ def device_retire(device_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/checkout', methods=['POST'])
-@editor_required
+@permission_required('devices')
 def device_checkout(device_id):
     assigned_to = request.form.get('assigned_to', '').strip()
     if not assigned_to:
@@ -507,7 +517,7 @@ def device_checkout(device_id):
 
 
 @app.route('/devices/<device_id>/checkin', methods=['POST'])
-@editor_required
+@permission_required('devices')
 def device_checkin(device_id):
     db.checkin_device(device_id, performed_by=current_username())
     app_logger.info('Device checked in: id=%s by=%s', device_id, current_username())
@@ -607,7 +617,7 @@ def serve_label_pdf(device_id):
 
 
 @app.route('/labels/sheet', methods=['POST'])
-@editor_required
+@permission_required('devices')
 def label_sheet():
     """Generate and download a printable sheet of labels for selected devices."""
     device_ids = request.form.getlist('device_ids')
@@ -796,7 +806,7 @@ DEVICE_HEADER_MAP = {
 
 
 @app.route('/import/devices', methods=['POST'])
-@editor_required
+@permission_required('devices')
 def import_devices():
     """Import devices from an uploaded .xlsx or .csv file."""
     file = request.files.get('import_file')
@@ -902,14 +912,14 @@ def _import_device_record(record, imported_count, skipped_count, errors):
 # ---------------------------------------------------------------------------
 
 @app.route('/users')
-@admin_required
+@permission_required('users')
 def user_list():
     users = db.get_all_users()
     return render_template('users.html', users=users)
 
 
 @app.route('/users/add', methods=['GET', 'POST'])
-@admin_required
+@permission_required('users')
 def user_add():
     if request.method == 'POST':
         username = request.form.get('username', '').strip().lower()
@@ -938,7 +948,7 @@ def user_add():
 
 
 @app.route('/users/<int:user_id>/edit', methods=['GET', 'POST'])
-@admin_required
+@permission_required('users')
 def user_edit(user_id):
     user = db.get_user(user_id)
     if not user:
@@ -966,7 +976,7 @@ def user_edit(user_id):
 
 
 @app.route('/users/<int:user_id>/delete', methods=['POST'])
-@admin_required
+@permission_required('users')
 def user_delete(user_id):
     try:
         db.delete_user(user_id)
@@ -982,7 +992,7 @@ def user_delete(user_id):
 # ---------------------------------------------------------------------------
 
 @app.route('/logs')
-@admin_required
+@permission_required('logs')
 def app_logs():
     """View application log entries with pagination. Most recent first."""
     per_page = 200
@@ -1029,7 +1039,7 @@ def app_logs():
 
 
 @app.route('/logs/clear', methods=['POST'])
-@admin_required
+@permission_required('logs')
 def clear_logs():
     """Clear the application log file."""
     try:
@@ -1048,7 +1058,7 @@ def clear_logs():
 
 
 @app.route('/logs/config', methods=['POST'])
-@admin_required
+@permission_required('logs')
 def update_log_config():
     """Update application log max size."""
     try:
@@ -1079,7 +1089,7 @@ def account():
         new_pw = request.form.get('new_password', '')
         confirm_pw = request.form.get('confirm_password', '')
 
-        users = db.get_all_users() if g.user['role'] == 'admin' else []
+        users = db.get_all_users() if has_permission('users') else []
         server_config = _load_server_config()
 
         # Verify current password
@@ -1101,13 +1111,13 @@ def account():
         flash('Password changed successfully.', 'success')
         return redirect(url_for('account'))
 
-    users = db.get_all_users() if g.user['role'] == 'admin' else []
+    users = db.get_all_users() if has_permission('users') else []
     server_config = _load_server_config()
     return render_template('account.html', users=users, server_config=server_config)
 
 
 @app.route('/settings/server', methods=['POST'])
-@admin_required
+@permission_required('settings')
 def save_server_config():
     try:
         port = int(request.form.get('port', 8080))
@@ -1289,7 +1299,7 @@ _verify_timer.start()
 
 
 @app.route('/backups')
-@admin_required
+@permission_required('backups')
 def backup_list():
     """View backup management page."""
     backups = db.list_backups()
@@ -1303,7 +1313,7 @@ def backup_list():
 
 
 @app.route('/backups/create', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_create():
     """Trigger a manual database backup."""
     try:
@@ -1319,7 +1329,7 @@ def backup_create():
 
 
 @app.route('/backups/upload', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_upload():
     """Restore database from an uploaded .db file."""
     file = request.files.get('backup_file')
@@ -1352,7 +1362,7 @@ def backup_upload():
 
 
 @app.route('/backups/config', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_config():
     """Update all backup configuration settings."""
     config = db._get_backup_config()
@@ -1422,7 +1432,7 @@ def backup_config():
 
 
 @app.route('/backups/config/reset', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_config_reset():
     """Reset backup configuration to factory defaults (preserves git credentials)."""
     current = db._get_backup_config()
@@ -1445,7 +1455,7 @@ def backup_config_reset():
 
 
 @app.route('/backups/push', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_push_git():
     """Manually trigger a git push of backup bundle."""
     try:
@@ -1460,7 +1470,7 @@ def backup_push_git():
 
 
 @app.route('/backups/local/list')
-@admin_required
+@permission_required('backups')
 def backup_local_list():
     """API: list .db files in the local backup directory."""
     try:
@@ -1472,7 +1482,7 @@ def backup_local_list():
 
 
 @app.route('/backups/git/list')
-@admin_required
+@permission_required('backups')
 def backup_git_list():
     """API: list .db files available in the git backup zip."""
     try:
@@ -1484,7 +1494,7 @@ def backup_git_list():
 
 
 @app.route('/backups/git/restore', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_git_restore():
     """Restore database from a file in the git backup zip."""
     filename = request.form.get('filename', '').strip()
@@ -1503,7 +1513,7 @@ def backup_git_restore():
 
 
 @app.route('/backups/<filename>/delete', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_delete(filename):
     """Delete a backup file."""
     try:
@@ -1517,7 +1527,7 @@ def backup_delete(filename):
 
 
 @app.route('/backups/<filename>/download')
-@admin_required
+@permission_required('backups')
 def backup_download(filename):
     """Download a backup file."""
     if not db._is_backup_file(filename) or '..' in filename:
@@ -1533,7 +1543,7 @@ def backup_download(filename):
 
 
 @app.route('/backups/<filename>/restore', methods=['POST'])
-@admin_required
+@permission_required('backups')
 def backup_restore(filename):
     """Restore the database from a backup file."""
     try:
@@ -1566,8 +1576,8 @@ def product_reference_list():
 @app.route('/reference/add', methods=['GET', 'POST'])
 @login_required
 def product_reference_add():
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
 
     if request.method == 'POST':
@@ -1595,8 +1605,8 @@ def product_reference_add():
 @app.route('/reference/<int:ref_id>/edit', methods=['GET', 'POST'])
 @login_required
 def product_reference_edit(ref_id):
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
 
     ref = db.get_product_reference(ref_id)
@@ -1631,7 +1641,7 @@ def product_reference_edit(ref_id):
 @login_required
 def api_reference_update(ref_id):
     """Inline edit API — update a single field on a product reference."""
-    if not _can_manage_references():
+    if not has_permission('references'):
         return jsonify({'error': 'Permission denied'}), 403
     ref = db.get_product_reference(ref_id)
     if not ref:
@@ -1657,8 +1667,8 @@ def api_reference_update(ref_id):
 @app.route('/reference/<int:ref_id>/delete', methods=['POST'])
 @login_required
 def product_reference_delete(ref_id):
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
     db.delete_product_reference(ref_id)
     flash('Product reference deleted.', 'success')
@@ -1685,8 +1695,8 @@ HEADER_MAP = {
 @login_required
 def product_reference_import():
     """Import product references from an uploaded .xlsx or .csv file."""
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
 
     file = request.files.get('import_file')
@@ -1767,8 +1777,8 @@ def product_reference_import():
 @login_required
 def product_reference_export():
     """Export all product references as a .csv download."""
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
     import csv, io
     refs = db.get_all_product_references()
@@ -1789,8 +1799,8 @@ def product_reference_export():
 @login_required
 def product_reference_export_xlsx():
     """Export all product references as an .xlsx download."""
-    if not _can_manage_references():
-        flash('You do not have permission to manage product references.', 'error')
+    if not has_permission('references'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
 
     try:
@@ -1884,9 +1894,9 @@ def product_wiki_save(ref_id):
 @app.route('/wiki/<int:ref_id>/upload', methods=['POST'])
 @login_required
 def wiki_upload(ref_id):
-    """Upload an attachment to a product wiki (admin only)."""
-    if g.user['role'] != 'admin':
-        flash('Admin access required to upload files.', 'error')
+    """Upload an attachment to a product wiki."""
+    if not has_permission('wiki_admin'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_wiki', ref_id=ref_id))
 
     file = request.files.get('attachment')
@@ -1953,9 +1963,9 @@ def wiki_attachment_preview(attachment_id):
 @app.route('/wiki/attachment/<int:attachment_id>/delete', methods=['POST'])
 @login_required
 def wiki_delete_attachment(attachment_id):
-    """Delete a wiki attachment (admin only)."""
-    if g.user['role'] != 'admin':
-        flash('Admin access required.', 'error')
+    """Delete a wiki attachment."""
+    if not has_permission('wiki_admin'):
+        flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
     att = db.get_wiki_attachment(attachment_id)
     if not att:
