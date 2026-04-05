@@ -94,17 +94,6 @@
 
     .table-scroll { overflow-x: auto; max-height: calc(100vh - 200px); overflow-y: auto; }
 
-    /* Filter pills */
-    .filter-pills { display: flex; gap: 6px; align-items: center; }
-    .filter-pill {
-        padding: 4px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600;
-        cursor: pointer; border: 1px solid var(--border-color); background: transparent;
-        color: var(--text-muted); transition: all 0.15s;
-    }
-    .filter-pill:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
-    .filter-pill.active {
-        background: var(--accent-blue); border-color: var(--accent-blue); color: #fff;
-    }
 </style>
 {% endblock %}
 
@@ -134,17 +123,12 @@
     {% endif %}
 </div>
 
-<!-- Search + Type Filter -->
+<!-- Search -->
 <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
     <div style="position: relative; flex: 1; max-width: 400px;">
         <svg style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); opacity: 0.4;" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
         <input type="text" id="refSearch" value="{{ search }}" placeholder="Search codename, model, chipset..."
                autocomplete="off" style="font-size: 13px; padding: 8px 12px 8px 34px; width: 100%;">
-    </div>
-    <div class="filter-pills">
-        <button class="filter-pill active" data-type="">All</button>
-        <button class="filter-pill" data-type="Ink">Ink</button>
-        <button class="filter-pill" data-type="Laser">Laser</button>
     </div>
 </div>
 
@@ -453,24 +437,12 @@ function submitNewRow(row) {
 (function() {
     var searchInput = document.getElementById('refSearch');
     var tbody = document.getElementById('refBody');
-    var pills = document.querySelectorAll('.filter-pill');
     var headers = document.querySelectorAll('.ref-table th[data-sort]');
-    var activeType = '';
     var sortField = '';
     var sortAsc = true;
 
     // --- Real-time search ---
     searchInput.addEventListener('input', applyFilters);
-
-    // --- Type filter pills ---
-    pills.forEach(function(pill) {
-        pill.addEventListener('click', function() {
-            pills.forEach(function(p) { p.classList.remove('active'); });
-            pill.classList.add('active');
-            activeType = pill.dataset.type;
-            applyFilters();
-        });
-    });
 
     function applyFilters() {
         var q = searchInput.value.trim().toLowerCase();
@@ -478,13 +450,6 @@ function submitNewRow(row) {
         var visible = 0;
 
         rows.forEach(function(row) {
-            // Type filter
-            var rowType = (row.dataset.type || '').trim();
-            if (activeType && rowType !== activeType) {
-                row.classList.add('hidden-row');
-                return;
-            }
-            // Text search across all data attributes
             if (q) {
                 var text = [
                     row.dataset.codename, row.dataset.model, row.dataset.type,
@@ -500,11 +465,10 @@ function submitNewRow(row) {
             visible++;
         });
 
-        // Update count
         var countEl = document.getElementById('refCount');
         if (countEl) {
             countEl.textContent = visible + ' product' + (visible !== 1 ? 's' : '') +
-                (q || activeType ? ' shown' : ' in catalog');
+                (q ? ' shown' : ' in catalog');
         }
     }
 
