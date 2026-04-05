@@ -100,15 +100,21 @@
             </div>
             {% endif %}
             {% if config.backup_enabled %}
-            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 12px; color: var(--accent-green);">
+            {% set backup_ok = backup_health.healthy or not backup_health.issues|select('match', '.*[Bb]ackup.*')|list %}
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
+                {% if not backup_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
+                {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
                 Auto-backup <strong>active</strong> — every {{ config.backup_interval_hours }} hour{{ 's' if config.backup_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} backup{{ 's' if config.max_backups != 1 else '' }}
                 {% if next_backup_time %}
                 <br>Next backup: <strong>{{ next_backup_time }}</strong>
                 {% endif %}
+                {% for issue in backup_health.issues if 'ackup' in issue and 'loud' not in issue %}
+                <br><strong>Warning:</strong> {{ issue }}
+                {% endfor %}
             </div>
             {% endif %}
             {% if config.prune_enabled %}
-            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); font-size: 12px; color: var(--accent-amber);">
+            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);">
                 Auto-prune <strong>active</strong> — every {{ config.prune_interval_hours }} hour{{ 's' if config.prune_interval_hours != 1 else '' }}, keeping {{ config.max_backups }} auto-backup{{ 's' if config.max_backups != 1 else '' }}
                 {% if next_prune_time %}
                 <br>Next prune: <strong>{{ next_prune_time }}</strong>
@@ -204,11 +210,17 @@
             Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
         </div>
         {% endif %}
-        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15); font-size: 12px; color: var(--accent-blue, #6366f1);">
+        {% set cloud_ok = not backup_health.issues|select('match', '.*[Cc]loud.*')|list %}
+        <div style="padding: 8px 14px; border-radius: 8px; font-size: 12px;
+            {% if not cloud_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
+            {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
             Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
             {% if next_git_push_time %}
             <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
             {% endif %}
+            {% for issue in backup_health.issues if 'loud' in issue %}
+            <br><strong>Warning:</strong> {{ issue }}
+            {% endfor %}
         </div>
     </div>
     {% endif %}

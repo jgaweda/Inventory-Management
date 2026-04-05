@@ -1365,9 +1365,11 @@ def backup_list():
         next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
         next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
     scheduler_alive = _scheduler_thread is not None and _scheduler_thread.is_alive()
+    health = db.get_backup_health()
     return render_template('backups.html', backups=backups, config=config,
                            next_backup_time=next_backup, next_git_push_time=next_push,
-                           next_prune_time=next_prune, scheduler_alive=scheduler_alive)
+                           next_prune_time=next_prune, scheduler_alive=scheduler_alive,
+                           backup_health=health)
 
 
 @app.route('/backups/create', methods=['POST'])
