@@ -140,6 +140,15 @@
                     <span style="font-size: 13px; color: var(--text-muted);">hours</span>
                 </div>
             </div>
+            <div style="margin-top: 12px;">
+                <form method="POST" action="{{ url_for('backup_push_git') }}" style="display: inline;">
+                    <button type="submit" class="btn btn-secondary btn-sm">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
+                        Push to Cloud Now
+                    </button>
+                </form>
+            </div>
+            </div>
         </div>
 
         <!-- Status + Save -->
@@ -155,16 +164,6 @@
               onsubmit="return confirm('Reset all backup settings to defaults?\n\nThis will disable auto-backup, auto-prune, and auto-push.\nGit credentials and backup history will be preserved.');">
             <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 11px; opacity: 0.7;">
                 Reset to Defaults
-            </button>
-        </form>
-    </div>
-
-    <!-- Manual git push button (separate form) -->
-    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
-        <form method="POST" action="{{ url_for('backup_push_git') }}" style="display: inline;">
-            <button type="submit" class="btn btn-secondary btn-sm">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
-                Push to Cloud Now
             </button>
         </form>
     </div>
