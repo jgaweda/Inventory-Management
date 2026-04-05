@@ -1322,6 +1322,12 @@ def backup_list():
         next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
     scheduler_alive = _scheduler_thread is not None and _scheduler_thread.is_alive()
     health = db.get_backup_health()
+    # Show verification failure as an error flash (only when failed)
+    if config.get('last_verify_time') and not config.get('last_verify_ok'):
+        verify_msg = f'Backup verification FAILED: {config.get("last_verify_file", "unknown")}'
+        if config.get('last_verify_result'):
+            verify_msg += f' — {config["last_verify_result"]}'
+        flash(verify_msg, 'error')
     return render_template('backups.html', backups=backups, config=config,
                            next_backup_time=next_backup, next_git_push_time=next_push,
                            next_prune_time=next_prune, scheduler_alive=scheduler_alive,
@@ -1377,11 +1383,27 @@ def backup_upload():
         dest_path = os.path.join(backup_dir, dest_filename)
         file.save(dest_path)
 
+        # Run compatibility check before restore
+        compat = db.validate_backup_compatibility(dest_path)
+        if not compat['compatible']:
+            error_detail = '; '.join(compat['errors'])
+            flash(f'Backup is not compatible: {error_detail}', 'error')
+            try:
+                os.remove(dest_path)
+            except OSError:
+                pass
+            return redirect(url_for('backup_list'))
+
         # Restore from the uploaded file
         result = db.restore_database(dest_filename)
         app_logger.info('Database restored from upload: %s (safety: %s) by=%s',
                         dest_filename, result['safety_backup'], current_username())
-        flash(f'Database restored from uploaded file. Safety backup: {result["safety_backup"]}', 'success')
+        msg = f'Database restored from uploaded file. Safety backup: {result["safety_backup"]}'
+        if result.get('warnings'):
+            msg += f' ({len(result["warnings"])} compatibility warning{"s" if len(result["warnings"]) != 1 else ""})'
+        flash(msg, 'success')
+        for w in result.get('warnings', []):
+            flash(w, 'warning')
     except ValueError as e:
         app_logger.error('Upload restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore failed: {e}', 'error')
@@ -1606,7 +1628,12 @@ def backup_restore(filename):
         result = db.restore_database(filename)
         app_logger.info('Database restored from %s (safety backup: %s) by=%s',
                         result['restored_from'], result['safety_backup'], current_username())
-        flash(f'Database restored from {filename}. A safety backup was created: {result["safety_backup"]}', 'success')
+        msg = f'Database restored from {filename}. A safety backup was created: {result["safety_backup"]}'
+        if result.get('warnings'):
+            msg += f' ({len(result["warnings"])} compatibility warning{"s" if len(result["warnings"]) != 1 else ""})'
+        flash(msg, 'success')
+        for w in result.get('warnings', []):
+            flash(w, 'warning')
     except FileNotFoundError:
         flash('Backup file not found.', 'error')
     except ValueError as e:
@@ -1732,18 +1759,47 @@ def product_reference_delete(ref_id):
 
 
 HEADER_MAP = {
+    # Codename (required field)
     'codename': 'codename',
+    'code name': 'codename',
+    'product codename': 'codename',
+    'product': 'codename',
+    # Model name
     'model name': 'model_name',
+    'model_name': 'model_name',
+    'model': 'model_name',
+    # Wi-Fi generation
     'wi-fi gen': 'wifi_gen',
     'wifi gen': 'wifi_gen',
+    'wifi_gen': 'wifi_gen',
+    'wi-fi generation': 'wifi_gen',
+    'wifi generation': 'wifi_gen',
+    'wireless gen': 'wifi_gen',
+    # Year
     'year': 'year',
+    'release year': 'year',
+    # Chip manufacturer
     'wireless chip set manufacturer': 'chip_manufacturer',
     'wireless chipset manufacturer': 'chip_manufacturer',
     'chip manufacturer': 'chip_manufacturer',
+    'chip_manufacturer': 'chip_manufacturer',
+    'chip vendor': 'chip_manufacturer',
+    'wireless chip vendor': 'chip_manufacturer',
+    # Chip codename
     'wireless chipset codename': 'chip_codename',
     'chip codename': 'chip_codename',
+    'chip_codename': 'chip_codename',
+    # Firmware codebase
     'fw codebase': 'fw_codebase',
+    'fw_codebase': 'fw_codebase',
+    'firmware codebase': 'fw_codebase',
+    'codebase': 'fw_codebase',
+    # Print technology
     'print technology': 'print_technology',
+    'print_technology': 'print_technology',
+    'technology': 'print_technology',
+    # Variant
+    'variant': 'variant',
 }
 
 
@@ -1773,13 +1829,24 @@ def product_reference_import():
         imported = 0
         skipped = 0
 
+        def _map_headers(raw):
+            """Map raw header names to DB columns, warn about unrecognized ones."""
+            mapped = [HEADER_MAP.get(str(h).strip().lower()) for h in raw]
+            if not any(m == 'codename' for m in mapped):
+                flash('Warning: No "Codename" column found. All rows will be skipped.', 'warning')
+            unrecognized = [str(h).strip() for h, m in zip(raw, mapped)
+                            if m is None and str(h).strip()]
+            if unrecognized:
+                flash(f'Unrecognized columns ignored: {", ".join(unrecognized)}', 'warning')
+            return mapped
+
         if filename.endswith('.xlsx'):
             import openpyxl
             wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
             ws = wb.active
             rows = ws.iter_rows()
             raw_headers = [cell.value or '' for cell in next(rows)]
-            headers = [HEADER_MAP.get(str(h).strip().lower()) for h in raw_headers]
+            headers = _map_headers(raw_headers)
 
             for row in rows:
                 values = [cell.value for cell in row]
@@ -1804,7 +1871,7 @@ def product_reference_import():
             delimiter = '\t' if '\t' in text[:2048] else ','
             reader = csv.reader(io.StringIO(text), delimiter=delimiter)
             raw_headers = next(reader)
-            headers = [HEADER_MAP.get(h.strip().lower()) for h in raw_headers]
+            headers = _map_headers(raw_headers)
 
             for row in reader:
                 if not any(cell.strip() for cell in row):
@@ -1841,11 +1908,12 @@ def product_reference_export():
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
-                     'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase'])
+                     'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
+                     'Variant'])
     for r in refs:
         writer.writerow([r['codename'], r['model_name'], r['print_technology'],
                          r['wifi_gen'], r['year'], r['chip_manufacturer'],
-                         r['chip_codename'], r['fw_codebase']])
+                         r['chip_codename'], r['fw_codebase'], r.get('variant', '')])
     csv_bytes = output.getvalue().encode('utf-8-sig')
     return Response(csv_bytes, mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
@@ -1872,7 +1940,8 @@ def product_reference_export_xlsx():
     ws.title = 'Product Reference'
 
     headers = ['Codename', 'Model Name', 'Print Technology', 'Wi-Fi Gen', 'Year',
-               'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase']
+               'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
+               'Variant']
     ws.append(headers)
     header_font = Font(bold=True, size=11)
     header_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
@@ -1884,7 +1953,7 @@ def product_reference_export_xlsx():
     for r in refs:
         ws.append([r['codename'], r['model_name'], r['print_technology'],
                    r['wifi_gen'], r['year'], r['chip_manufacturer'],
-                   r['chip_codename'], r['fw_codebase']])
+                   r['chip_codename'], r['fw_codebase'], r.get('variant', '')])
 
     for col in ws.columns:
         max_len = max((len(str(cell.value or '')) for cell in col), default=10)

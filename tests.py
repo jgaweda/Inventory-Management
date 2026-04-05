@@ -2683,5 +2683,261 @@ class TestSchedulerRetry(BaseTestCase):
         self.assertIsNone(_next_backup_time)
 
 
+class TestBackwardsCompatibility(BaseTestCase):
+    """Test schema versioning, backup compatibility validation, and import flexibility."""
+
+    def test_schema_version_tracked(self):
+        """init_db stamps schema_version in schema_info table."""
+        conn = db.get_connection()
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_info WHERE key='schema_version'"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row[0]), db.SCHEMA_VERSION)
+        finally:
+            conn.close()
+
+    def test_app_version_tracked(self):
+        """init_db stamps app_version in schema_info table."""
+        conn = db.get_connection()
+        try:
+            row = conn.execute(
+                "SELECT value FROM schema_info WHERE key='app_version'"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertNotEqual(row[0], '')
+        finally:
+            conn.close()
+
+    def test_get_schema_version(self):
+        """get_schema_version reads version from database."""
+        ver, app_ver = db.get_schema_version()
+        self.assertEqual(ver, db.SCHEMA_VERSION)
+        self.assertNotEqual(app_ver, 'unknown')
+
+    def test_get_schema_version_missing_table(self):
+        """get_schema_version returns (0, unknown) for old databases without schema_info."""
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.close()
+        try:
+            conn = sqlite3.connect(tmp.name)
+            conn.execute('CREATE TABLE devices (device_id TEXT PRIMARY KEY, name TEXT)')
+            conn.execute('CREATE TABLE users (user_id INTEGER PRIMARY KEY, username TEXT)')
+            conn.commit()
+            conn.close()
+            ver, app_ver = db.get_schema_version(tmp.name)
+            self.assertEqual(ver, 0)
+            self.assertEqual(app_ver, 'unknown')
+        finally:
+            os.unlink(tmp.name)
+
+    def test_validate_backup_valid_current(self):
+        """validate_backup_compatibility passes for current backups."""
+        db.add_device({'name': 'Compat Test'})
+        result = db.backup_database(performed_by='test', manual=True)
+        backup_path = os.path.join(db._get_backup_dir(), result['filename'])
+        compat = db.validate_backup_compatibility(backup_path)
+        self.assertTrue(compat['compatible'])
+        self.assertEqual(len(compat['errors']), 0)
+        self.assertGreater(compat['device_count'], 0)
+        self.assertGreater(compat['user_count'], 0)
+        self.assertEqual(compat['schema_version'], db.SCHEMA_VERSION)
+
+    def test_validate_backup_missing_required_table(self):
+        """validate_backup_compatibility rejects backups missing required tables."""
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.close()
+        try:
+            conn = sqlite3.connect(tmp.name)
+            conn.execute('CREATE TABLE categories (id INTEGER PRIMARY KEY)')
+            conn.commit()
+            conn.close()
+            compat = db.validate_backup_compatibility(tmp.name)
+            self.assertFalse(compat['compatible'])
+            self.assertTrue(any('Missing required' in e for e in compat['errors']))
+        finally:
+            os.unlink(tmp.name)
+
+    def test_validate_backup_old_schema_warns(self):
+        """validate_backup_compatibility warns about pre-versioned databases."""
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.close()
+        try:
+            conn = sqlite3.connect(tmp.name)
+            conn.execute('''CREATE TABLE devices (
+                device_id TEXT PRIMARY KEY, barcode_value TEXT, name TEXT,
+                category TEXT, manufacturer TEXT, model_number TEXT,
+                serial_number TEXT, connectivity TEXT, vendor_supplied INTEGER,
+                status TEXT, location TEXT, assigned_to TEXT, notes TEXT,
+                created_at TEXT, updated_at TEXT)''')
+            conn.execute('''CREATE TABLE users (
+                user_id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT,
+                salt TEXT, role TEXT, display_name TEXT)''')
+            conn.commit()
+            conn.close()
+            compat = db.validate_backup_compatibility(tmp.name)
+            self.assertTrue(compat['compatible'])
+            self.assertTrue(any('before schema version tracking' in w for w in compat['warnings']))
+        finally:
+            os.unlink(tmp.name)
+
+    def test_validate_backup_legacy_roles_warns(self):
+        """validate_backup_compatibility warns about legacy user roles."""
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.close()
+        try:
+            conn = sqlite3.connect(tmp.name)
+            conn.execute('''CREATE TABLE devices (
+                device_id TEXT PRIMARY KEY, barcode_value TEXT, name TEXT,
+                category TEXT, manufacturer TEXT, model_number TEXT,
+                serial_number TEXT, connectivity TEXT, vendor_supplied INTEGER,
+                status TEXT, location TEXT, assigned_to TEXT, notes TEXT,
+                created_at TEXT, updated_at TEXT)''')
+            conn.execute('''CREATE TABLE users (
+                user_id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT,
+                salt TEXT, role TEXT, display_name TEXT)''')
+            conn.execute("INSERT INTO users VALUES (1, 'admin', 'h', 's', 'admin', 'Admin')")
+            conn.execute("INSERT INTO users VALUES (2, 'ed', 'h', 's', 'editor', 'Editor')")
+            conn.commit()
+            conn.close()
+            compat = db.validate_backup_compatibility(tmp.name)
+            self.assertTrue(compat['compatible'])
+            self.assertTrue(any('legacy user roles' in w for w in compat['warnings']))
+            self.assertTrue(any('editor' in w for w in compat['warnings']))
+        finally:
+            os.unlink(tmp.name)
+
+    def test_validate_backup_not_sqlite(self):
+        """validate_backup_compatibility rejects non-SQLite files."""
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.write(b'This is not a database')
+        tmp.close()
+        try:
+            compat = db.validate_backup_compatibility(tmp.name)
+            self.assertFalse(compat['compatible'])
+            self.assertTrue(len(compat['errors']) > 0)
+        finally:
+            os.unlink(tmp.name)
+
+    def test_restore_returns_warnings(self):
+        """restore_database returns compatibility warnings in result."""
+        db.add_device({'name': 'Restore Warn Test'})
+        result = db.backup_database(performed_by='test', manual=True)
+        restore_result = db.restore_database(result['filename'])
+        self.assertIn('warnings', restore_result)
+        self.assertIn('schema_version', restore_result)
+        self.assertIn('app_version', restore_result)
+
+    def test_restore_rejects_incompatible(self):
+        """restore_database raises ValueError for incompatible backups."""
+        import tempfile
+        backup_dir = db._get_backup_dir()
+        # Create an incompatible backup (missing required tables)
+        bad_path = os.path.join(backup_dir, 'manual_backup_20250101_000000.db')
+        conn = sqlite3.connect(bad_path)
+        conn.execute('CREATE TABLE categories (id INTEGER PRIMARY KEY)')
+        conn.commit()
+        conn.close()
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                db.restore_database('manual_backup_20250101_000000.db')
+            self.assertIn('not compatible', str(ctx.exception))
+        finally:
+            if os.path.exists(bad_path):
+                os.remove(bad_path)
+
+    def test_upload_incompatible_backup_rejected(self):
+        """Upload route rejects incompatible database files."""
+        self.login_admin()
+        import tempfile
+        from io import BytesIO
+        # Create an incompatible DB (valid SQLite but missing required tables)
+        tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        tmp.close()
+        conn = sqlite3.connect(tmp.name)
+        conn.execute('CREATE TABLE categories (id INTEGER PRIMARY KEY)')
+        conn.commit()
+        conn.close()
+        with open(tmp.name, 'rb') as f:
+            bad_data = f.read()
+        os.unlink(tmp.name)
+        resp = self.client.post('/backups/upload', data={
+            'backup_file': (BytesIO(bad_data), 'bad_backup.db'),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn(b'not compatible', resp.data)
+
+    def test_product_ref_import_flexible_headers(self):
+        """Product reference import handles alternative header names."""
+        self.login_admin()
+        import io
+        # Use snake_case headers (exported format) instead of display names
+        csv_content = 'codename,model_name,wifi_gen,year,variant\nTestFlex,FlexModel,6E,2025,Base\n'
+        data = {
+            'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'refs.csv'),
+            'import_mode': 'add',
+        }
+        resp = self.client.post('/reference/import',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Imported 1 product', resp.data)
+        refs = db.get_all_product_references()
+        found = [r for r in refs if r['codename'] == 'TestFlex']
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['wifi_gen'], '6E')
+
+    def test_product_ref_import_unrecognized_header_warns(self):
+        """Product reference import warns about unrecognized columns."""
+        self.login_admin()
+        import io
+        csv_content = 'Codename,Unknown Column,Year\nTestWarn,,2025\n'
+        data = {
+            'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'refs.csv'),
+            'import_mode': 'add',
+        }
+        resp = self.client.post('/reference/import',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'Unrecognized columns ignored', resp.data)
+
+    def test_product_ref_import_no_codename_header_warns(self):
+        """Product reference import warns when no codename column found."""
+        self.login_admin()
+        import io
+        csv_content = 'Model Name,Year\nSomeModel,2025\n'
+        data = {
+            'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'refs.csv'),
+            'import_mode': 'add',
+        }
+        resp = self.client.post('/reference/import',
+                                data=data, content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertIn(b'No', resp.data)  # "No Codename column found" warning
+
+    def test_product_ref_export_includes_variant(self):
+        """Product reference CSV export includes Variant column."""
+        self.login_admin()
+        db.add_product_reference(codename='VarTest', model_name='VarModel')
+        resp = self.client.get('/reference/export')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Variant', resp.data)
+
+    def test_device_export_headers_consistent(self):
+        """Device CSV export uses user-friendly headers matching UI."""
+        db.add_device({'name': 'Header Test', 'manufacturer': 'HP'})
+        resp = self.client.get('/export')
+        self.assertIn(b'Connectivity Type/Version', resp.data)
+        self.assertIn(b'Source', resp.data)
+        self.assertIn(b'Device ID', resp.data)
+        self.assertIn(b'Assigned To', resp.data)
+        self.assertIn(b'HP Owned', resp.data)
+
+
 if __name__ == '__main__':
     unittest.main()

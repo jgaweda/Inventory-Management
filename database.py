@@ -34,6 +34,14 @@ DEFAULT_CATEGORIES = [
     ('Other', 'Uncategorized items', 4),
 ]
 
+# Current schema version — increment when making breaking schema changes
+SCHEMA_VERSION = 2
+
+# Tables required for a valid inventory database (used during restore validation)
+REQUIRED_TABLES = {'devices', 'users'}
+EXPECTED_TABLES = {'devices', 'audit_log', 'categories', 'users', 'product_reference',
+                   'product_wiki', 'wiki_attachments', 'device_notes', 'schema_info'}
+
 # Fields that can be updated via update_device()
 UPDATABLE_FIELDS = [
     'name', 'category', 'manufacturer', 'model_number', 'serial_number',
@@ -201,6 +209,15 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_device_notes_device ON device_notes(device_id)')
 
+        # Schema version tracking table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS schema_info (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
@@ -297,6 +314,23 @@ def init_db():
                 'INSERT INTO users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)',
                 ('admin', pw_hash, salt, 'admin', 'Administrator')
             )
+
+        # Stamp current schema version after all migrations complete
+        conn.execute('''
+            INSERT OR REPLACE INTO schema_info (key, value, updated_at)
+            VALUES ('schema_version', ?, CURRENT_TIMESTAMP)
+        ''', (str(SCHEMA_VERSION),))
+        # Also record the app version that last touched this database
+        try:
+            _ver_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
+            with open(_ver_path) as _vf:
+                _app_ver = _vf.read().strip()
+        except Exception:
+            _app_ver = 'unknown'
+        conn.execute('''
+            INSERT OR REPLACE INTO schema_info (key, value, updated_at)
+            VALUES ('app_version', ?, CURRENT_TIMESTAMP)
+        ''', (_app_ver,))
 
 
 def generate_device_id():
@@ -1499,12 +1533,172 @@ def list_backups():
     return backups
 
 
+def get_schema_version(db_path=None):
+    """
+    Read the schema version from a database file.
+    Returns (version: int, app_version: str) tuple.
+    Returns (0, 'unknown') for databases created before version tracking.
+    """
+    path = db_path or DB_PATH
+    try:
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        if 'schema_info' not in tables:
+            conn.close()
+            return (0, 'unknown')
+        row = conn.execute(
+            "SELECT value FROM schema_info WHERE key='schema_version'"
+        ).fetchone()
+        schema_ver = int(row[0]) if row else 0
+        row2 = conn.execute(
+            "SELECT value FROM schema_info WHERE key='app_version'"
+        ).fetchone()
+        app_ver = row2[0] if row2 else 'unknown'
+        conn.close()
+        return (schema_ver, app_ver)
+    except Exception:
+        return (0, 'unknown')
+
+
+def validate_backup_compatibility(backup_path):
+    """
+    Validate that a backup file is compatible with the current application.
+    Returns dict with 'compatible' (bool), 'warnings' (list), 'errors' (list),
+    and metadata about the backup ('tables', 'schema_version', 'app_version',
+    'device_count', 'user_count').
+    """
+    result = {
+        'compatible': True,
+        'warnings': [],
+        'errors': [],
+        'tables': set(),
+        'schema_version': 0,
+        'app_version': 'unknown',
+        'device_count': 0,
+        'user_count': 0,
+    }
+
+    try:
+        conn = sqlite3.connect(backup_path)
+    except Exception as e:
+        result['compatible'] = False
+        result['errors'].append(f'Cannot open database file: {e}')
+        return result
+
+    try:
+        # Check integrity
+        integrity = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        if integrity != 'ok':
+            result['compatible'] = False
+            result['errors'].append(f'Integrity check failed: {integrity}')
+            return result
+
+        # Enumerate tables
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        result['tables'] = tables
+
+        # Check required tables
+        missing_required = REQUIRED_TABLES - tables
+        if missing_required:
+            result['compatible'] = False
+            result['errors'].append(
+                f'Missing required tables: {", ".join(sorted(missing_required))}'
+            )
+            return result
+
+        # Check expected (non-required) tables — warn if missing
+        missing_expected = EXPECTED_TABLES - tables - {'schema_info'}
+        if missing_expected:
+            result['warnings'].append(
+                f'Missing tables (will be created on restore): {", ".join(sorted(missing_expected))}'
+            )
+
+        # Read schema version from backup
+        schema_ver, app_ver = get_schema_version(backup_path)
+        result['schema_version'] = schema_ver
+        result['app_version'] = app_ver
+
+        if schema_ver > SCHEMA_VERSION:
+            result['warnings'].append(
+                f'Backup schema version ({schema_ver}) is newer than current app '
+                f'schema ({SCHEMA_VERSION}). Some features may not work correctly.'
+            )
+
+        if schema_ver == 0:
+            result['warnings'].append(
+                'Backup was created before schema version tracking was added. '
+                'Automatic migrations will be applied on restore.'
+            )
+
+        # Check device columns for compatibility
+        device_cols = {r[1] for r in conn.execute('PRAGMA table_info(devices)').fetchall()}
+        expected_device_cols = {'device_id', 'barcode_value', 'name', 'category',
+                                'manufacturer', 'model_number', 'serial_number',
+                                'connectivity', 'vendor_supplied', 'status',
+                                'location', 'assigned_to', 'notes',
+                                'created_at', 'updated_at'}
+        missing_device_cols = expected_device_cols - device_cols
+        if missing_device_cols:
+            result['warnings'].append(
+                f'Devices table missing columns (may indicate older backup): '
+                f'{", ".join(sorted(missing_device_cols))}'
+            )
+
+        extra_device_cols = device_cols - expected_device_cols - {'codename', 'variant'}
+        if extra_device_cols:
+            result['warnings'].append(
+                f'Devices table has unexpected columns (may indicate newer backup): '
+                f'{", ".join(sorted(extra_device_cols))}'
+            )
+
+        # Check user role values for old role system
+        if 'users' in tables:
+            user_cols = {r[1] for r in conn.execute('PRAGMA table_info(users)').fetchall()}
+            result['user_count'] = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+
+            if 'permissions' not in user_cols:
+                result['warnings'].append(
+                    'Users table is missing "permissions" column (pre-v2 schema). '
+                    'Old roles will be migrated automatically on restore.'
+                )
+
+            # Check for legacy roles that need migration
+            try:
+                legacy_roles = conn.execute(
+                    "SELECT DISTINCT role FROM users WHERE role NOT IN ('admin', 'custom')"
+                ).fetchall()
+                if legacy_roles:
+                    role_names = [r[0] for r in legacy_roles]
+                    result['warnings'].append(
+                        f'Backup contains legacy user roles: {", ".join(role_names)}. '
+                        f'These will be migrated to "custom" with appropriate permissions.'
+                    )
+            except Exception:
+                pass
+
+        # Count devices
+        result['device_count'] = conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
+
+    except sqlite3.DatabaseError as e:
+        result['compatible'] = False
+        result['errors'].append(f'Database error during validation: {e}')
+    finally:
+        conn.close()
+
+    return result
+
+
 def restore_database(filename):
     """
     Restore the database from a backup file using SQLite online backup API.
     Checkpoints WAL first, creates a safety backup, validates, then restores.
     Rolls back to safety backup if restore fails.
-    Returns dict with restore metadata.
+    Returns dict with restore metadata including compatibility warnings.
     """
     import time as _time
     start_time = _time.monotonic()
@@ -1516,20 +1710,22 @@ def restore_database(filename):
     if not os.path.isfile(backup_path):
         raise FileNotFoundError(f'Backup file not found: {filename}')
 
-    # Validate the backup file is a valid SQLite database with full integrity check
-    test_conn = sqlite3.connect(backup_path)
-    try:
-        integrity = test_conn.execute('PRAGMA integrity_check').fetchone()[0]
-        if integrity != 'ok':
-            raise ValueError(f'Backup file failed integrity check: {integrity}')
-        device_count = test_conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
-        user_count = test_conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-        _audit_logger.info('Restore source validated: %s (integrity=ok, %d devices, %d users)',
-                           filename, device_count, user_count)
-    except sqlite3.DatabaseError as e:
-        raise ValueError(f'Backup file is not a valid database: {e}')
-    finally:
-        test_conn.close()
+    # Run backwards-compatibility validation on the backup file
+    compat = validate_backup_compatibility(backup_path)
+    if not compat['compatible']:
+        error_detail = '; '.join(compat['errors'])
+        raise ValueError(f'Backup is not compatible: {error_detail}')
+
+    if compat['warnings']:
+        for w in compat['warnings']:
+            _audit_logger.warning('Restore compatibility warning for %s: %s', filename, w)
+
+    _audit_logger.info(
+        'Restore source validated: %s (integrity=ok, schema_v%d, app=%s, %d devices, %d users%s)',
+        filename, compat['schema_version'], compat['app_version'],
+        compat['device_count'], compat['user_count'],
+        f', {len(compat["warnings"])} warnings' if compat['warnings'] else ''
+    )
 
     # Checkpoint WAL before restore to flush any pending writes
     checkpoint_wal()
@@ -1590,6 +1786,9 @@ def restore_database(filename):
     return {
         'restored_from': filename,
         'safety_backup': safety_backup['filename'],
+        'warnings': compat.get('warnings', []),
+        'schema_version': compat.get('schema_version', 0),
+        'app_version': compat.get('app_version', 'unknown'),
     }
 
 
@@ -1872,14 +2071,14 @@ def get_product_reference_by_codename(codename):
 
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
-                          print_technology=''):
+                          print_technology='', variant=''):
     """Add a single product reference entry. Returns the new ref_id."""
     with db_transaction() as conn:
         cursor = conn.execute('''
             INSERT INTO product_reference
-                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology))
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, variant))
         ref_id = cursor.lastrowid
         # Auto-create a wiki page for the new product
         conn.execute('''
