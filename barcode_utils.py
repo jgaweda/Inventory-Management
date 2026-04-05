@@ -201,10 +201,9 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- TOP band: device name (full width, centered) ---
     top_y = EDGE
-    name_x = EDGE + (usable_w - name_tw) // 2
-    name_y = top_y + TEXT_PAD_Y
-    bearing = draw.textbbox((name_x, name_y), display_name, font=font_name)[0] - name_x
-    draw.text((name_x - bearing, name_y), display_name, fill='black', font=font_name)
+    name_cx = W // 2
+    name_cy = top_y + TEXT_PAD_Y + name_th // 2
+    draw.text((name_cx, name_cy), display_name, fill='black', font=font_name, anchor='mm')
 
     # --- MIDDLE band: QR (left) + barcode (right), same height ---
     mid_y = top_y + top_band_h
@@ -223,9 +222,9 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- BOTTOM band: barcode ID (full width, centered) ---
     bot_y = mid_y + mid_h
-    id_x = EDGE + (usable_w - id_tw) // 2
-    id_y = bot_y + TEXT_PAD_Y
-    draw.text((id_x, id_y), display_id, fill='black', font=font_id)
+    id_cx = W // 2
+    id_cy = bot_y + TEXT_PAD_Y + id_th // 2
+    draw.text((id_cx, id_cy), display_id, fill='black', font=font_id, anchor='mm')
 
     # --- Hairline border for cut/peel alignment ---
     draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=1)

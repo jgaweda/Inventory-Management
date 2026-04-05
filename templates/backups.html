@@ -73,6 +73,25 @@
                     <span style="font-size: 13px; color: var(--text-muted);">hours</span>
                 </div>
             </div>
+
+            <!-- Verification Status -->
+            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                {% if config.last_verify_time %}
+                <div style="padding: 8px 14px; border-radius: 8px; font-size: 12px; flex: 1;
+                    {% if config.last_verify_ok %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);
+                    {% else %}background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); color: var(--accent-red, #ef4444);{% endif %}">
+                    Last verification: <strong>{{ 'passed' if config.last_verify_ok else 'FAILED' }}</strong>
+                    — {{ config.last_verify_file }} at {{ config.last_verify_time }}
+                    {% if not config.last_verify_ok and config.last_verify_result %}
+                    <br>Error: {{ config.last_verify_result }}
+                    {% endif %}
+                </div>
+                {% else %}
+                <div style="padding: 8px 14px; border-radius: 8px; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15); font-size: 12px; color: var(--text-muted); flex: 1;">
+                    No backup verification has been run yet.
+                </div>
+                {% endif %}
+            </div>
         </div>
 
         <!-- Git Push Settings -->
@@ -129,12 +148,20 @@
             {% endif %}
         </div>
     </form>
-    <form method="POST" action="{{ url_for('backup_config_reset') }}" style="margin-top: 8px;"
-          onsubmit="return confirm('Reset all backup settings to defaults?\n\nThis will disable auto-backup, auto-prune, and auto-push.\nGit credentials and backup history will be preserved.');">
-        <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 11px; opacity: 0.7;">
-            Reset to Defaults
-        </button>
-    </form>
+    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <form method="POST" action="{{ url_for('backup_config_reset') }}" style="margin: 0;"
+              onsubmit="return confirm('Reset all backup settings to defaults?\n\nThis will disable auto-backup, auto-prune, and auto-push.\nGit credentials and backup history will be preserved.');">
+            <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 11px; opacity: 0.7;">
+                Reset to Defaults
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('backup_verify_now') }}" style="margin: 0;">
+            <button type="submit" class="btn btn-secondary btn-sm">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                Verify Now
+            </button>
+        </form>
+    </div>
 
     <!-- Manual git push button (separate form) -->
     <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
@@ -152,31 +179,6 @@
         Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
     </div>
     {% endif %}
-
-    <!-- Verification Status -->
-    <div style="margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-        {% if config.last_verify_time %}
-        <div style="padding: 8px 14px; border-radius: 8px; font-size: 12px; flex: 1;
-            {% if config.last_verify_ok %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);
-            {% else %}background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); color: var(--accent-red, #ef4444);{% endif %}">
-            Last verification: <strong>{{ 'passed' if config.last_verify_ok else 'FAILED' }}</strong>
-            — {{ config.last_verify_file }} at {{ config.last_verify_time }}
-            {% if not config.last_verify_ok and config.last_verify_result %}
-            <br>Error: {{ config.last_verify_result }}
-            {% endif %}
-        </div>
-        {% else %}
-        <div style="padding: 8px 14px; border-radius: 8px; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15); font-size: 12px; color: var(--text-muted); flex: 1;">
-            No backup verification has been run yet.
-        </div>
-        {% endif %}
-        <form method="POST" action="{{ url_for('backup_verify_now') }}" style="margin: 0;">
-            <button type="submit" class="btn btn-secondary btn-sm">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                Verify Now
-            </button>
-        </form>
-    </div>
 
     {% if config.backup_enabled or config.prune_enabled or config.git_enabled %}
     <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
