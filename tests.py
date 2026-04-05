@@ -36,7 +36,15 @@ class BaseTestCase(unittest.TestCase):
         # Fresh database for each test
         if os.path.exists(db.DB_PATH):
             os.remove(db.DB_PATH)
+        # Clean up any leftover seed_data from prior tests
+        _seed = os.path.join(_test_dir, 'seed_data')
+        if os.path.isdir(_seed):
+            shutil.rmtree(_seed)
+        # Patch BUNDLE_DIR so init_db() doesn't pick up real seed_data/
+        self._bundle_patcher = patch('database.BUNDLE_DIR', _test_dir)
+        self._bundle_patcher.start()
         db.init_db()
+        self._bundle_patcher.stop()
 
     def tearDown(self):
         if os.path.exists(db.DB_PATH):
@@ -2927,11 +2935,11 @@ class TestProductReferenceSeed(BaseTestCase):
     """Test automatic product reference seeding from seed_data/."""
 
     def setUp(self):
-        super().setUp()
-        # Clean up any seed_data from prior tests
+        # Clean up any seed_data from prior tests BEFORE init_db()
         seed_dir = os.path.join(_test_dir, 'seed_data')
         if os.path.isdir(seed_dir):
             shutil.rmtree(seed_dir)
+        super().setUp()
 
     def _create_seed_csv(self, seed_dir, rows):
         """Helper: write a seed CSV file."""
@@ -3060,6 +3068,63 @@ class TestProductReferenceSeed(BaseTestCase):
         ref_id = refs[0]['ref_id']
         attachments = db.get_wiki_attachments(ref_id)
         self.assertEqual(len(attachments), 0)
+
+    def test_seed_images_fuzzy_match_abbreviations(self):
+        """Image filenames with full names match CSV abbreviated model names."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Muscatel', 'OJ 69x0', '', '2020', 'Ink'],
+            ['Weber', 'OJ Pro 87x0', '', '2019', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'officejet_6950_6960.jpg': fake_png,
+            'officejet_pro_8710_8740.jpg': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        for r in refs:
+            attachments = db.get_wiki_attachments(r['ref_id'])
+            self.assertEqual(len(attachments), 1,
+                             f"Expected 1 image for {r['codename']}, got {len(attachments)}")
+
+    def test_seed_images_fuzzy_match_model_tokens(self):
+        """Image filenames match when model number tokens overlap."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Kay', 'M109/M110/M111/M112', '', '2022', 'Laser'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'laserjet_m109_m112.jpg': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 1)
+        attachments = db.get_wiki_attachments(refs[0]['ref_id'])
+        self.assertEqual(len(attachments), 1)
+
+    def test_seed_images_year_suffix_stripped(self):
+        """Image filenames with year suffixes still match."""
+        seed_dir = os.path.join(_test_dir, 'seed_data')
+        self._create_seed_csv(seed_dir, [
+            ['Spirit', 'PageWide Pro 750', '', '2017', 'Ink'],
+        ])
+        fake_png = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self._create_seed_zip(seed_dir, {
+            'pagewide_pro_750dw_2017.jpg': fake_png,
+        })
+        with patch('database.BUNDLE_DIR', _test_dir):
+            from database import _seed_product_references
+            _seed_product_references()
+        refs = db.get_all_product_references()
+        self.assertEqual(len(refs), 1)
+        attachments = db.get_wiki_attachments(refs[0]['ref_id'])
+        self.assertEqual(len(attachments), 1)
 
 
 if __name__ == '__main__':

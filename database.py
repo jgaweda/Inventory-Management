@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import hashlib
+import re
 import secrets
 import subprocess
 import traceback
@@ -418,13 +419,96 @@ def _seed_product_references():
     finally:
         conn.close()
 
-    model_to_ref = {}
-    codename_to_ref = {}
+    def _normalize_for_match(name):
+        """Normalize a product name for matching: lowercase, expand
+        abbreviations, replace separators with underscores."""
+        s = name.lower().strip()
+        s = re.sub(r'^hp\s+', '', s)
+        s = re.sub(r'\s*series\s*$', '', s)
+        _abbrevs = {'oj': 'officejet', 'dj': 'deskjet', 'ps': 'photosmart',
+                     'lj': 'laserjet'}
+        words = s.split()
+        s = ' '.join(_abbrevs.get(w, w) for w in words)
+        s = re.sub(r'[\s/,\-]+', '_', s)
+        s = re.sub(r'_+', '_', s)
+        return s.strip('_')
+
+    def _extract_model_tokens(name):
+        """Extract alphanumeric tokens containing digits (model numbers)."""
+        return set(re.findall(r'[a-z]*\d+[a-z]*', name.lower()))
+
+    def _extract_product_line(name):
+        s = name.lower().replace('_', '')
+        for line in ('officejet', 'deskjet', 'photosmart', 'envy', 'smarttank',
+                      'pagewide', 'designjet', 'neverstop', 'tango', 'laserjet'):
+            if line in s:
+                return line
+        return None
+
+    def _wildcard_match(pattern_token, target_token):
+        """Check if a token with 'x' wildcards matches a target."""
+        if 'x' not in pattern_token:
+            return pattern_token == target_token
+        regex = '^' + pattern_token.replace('x', '.') + '$'
+        return bool(re.match(regex, target_token))
+
+    # Build normalized lookups and token data for fuzzy matching
+    norm_to_ref = {}   # normalized model/codename -> ref_id
+    ref_token_data = []  # (ref_id, tokens, wildcard_tokens, product_line)
     for r in refs:
-        if r['model_name']:
-            model_to_ref[r['model_name'].lower().strip()] = r['ref_id']
+        rid = r['ref_id']
         if r['codename']:
-            codename_to_ref[r['codename'].lower().strip()] = r['ref_id']
+            norm_to_ref[r['codename'].lower().strip()] = rid
+        if r['model_name']:
+            nm = _normalize_for_match(r['model_name'])
+            norm_to_ref[nm] = rid
+            tokens = _extract_model_tokens(nm)
+            raw = re.findall(r'[a-z]*[\dx]+[a-z]*', nm)
+            wilds = [t for t in raw if 'x' in t]
+            ref_token_data.append((rid, tokens, wilds, _extract_product_line(nm)))
+
+    def _match_image(name_without_ext):
+        """Match an image filename to a product reference ref_id."""
+        img_norm = _normalize_for_match(name_without_ext)
+
+        # 1. Exact match on normalized name
+        if img_norm in norm_to_ref:
+            return norm_to_ref[img_norm]
+
+        # 2. Strip trailing year suffix (e.g. _2017) and retry
+        img_no_year = re.sub(r'_\d{4}$', '', img_norm)
+        if img_no_year != img_norm and img_no_year in norm_to_ref:
+            return norm_to_ref[img_no_year]
+
+        # 3. Substring containment
+        for rk, rid in norm_to_ref.items():
+            if len(rk) >= 4 and (rk in img_norm or img_norm in rk):
+                return rid
+
+        # 4. Token-based fuzzy match with wildcard support
+        img_tokens = _extract_model_tokens(img_no_year)
+        img_line = _extract_product_line(img_norm)
+        best_ref = None
+        best_score = 0
+        for rid, rtokens, rwilds, rline in ref_token_data:
+            if not rtokens and not rwilds:
+                continue
+            if img_line and rline and img_line != rline:
+                continue
+            overlap = img_tokens & rtokens
+            score = len(overlap) * 2
+            for wt in rwilds:
+                for it in img_tokens:
+                    if _wildcard_match(wt, it):
+                        score += 2
+            if score < 2:
+                continue
+            if img_line and rline and img_line == rline:
+                score += 5
+            if score > best_score:
+                best_score = score
+                best_ref = rid
+        return best_ref
 
     try:
         images_seeded = 0
@@ -441,9 +525,7 @@ def _seed_product_references():
                 if ext not in ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'):
                     continue
 
-                # Match to product reference by model name or codename
-                lookup_key = name_without_ext.lower().strip()
-                ref_id = model_to_ref.get(lookup_key) or codename_to_ref.get(lookup_key)
+                ref_id = _match_image(name_without_ext)
 
                 if not ref_id:
                     _audit_logger.debug('Seed image "%s" did not match any product reference', basename)
