@@ -843,6 +843,11 @@ def _get_backup_config():
         'last_git_push': saved.get('last_git_push', ''),
         'last_backup': saved.get('last_backup', ''),
         'last_backup_hash': saved.get('last_backup_hash', ''),
+        'last_verify_time': saved.get('last_verify_time', ''),
+        'last_verify_ok': saved.get('last_verify_ok', False),
+        'last_verify_file': saved.get('last_verify_file', ''),
+        'last_verify_result': saved.get('last_verify_result', ''),
+        'last_verified_file': saved.get('last_verified_file', ''),
     }
 
 
@@ -863,13 +868,22 @@ def get_default_backup_config():
         'last_git_push': '',
         'last_backup': '',
         'last_backup_hash': '',
+        'last_verify_time': '',
+        'last_verify_ok': False,
+        'last_verify_file': '',
+        'last_verify_result': '',
+        'last_verified_file': '',
     }
 
 
 def save_backup_config(config):
-    """Persist backup configuration to disk."""
-    with open(BACKUP_CONFIG_FILE, 'w') as f:
+    """Persist backup configuration to disk atomically (write-then-rename)."""
+    tmp_path = BACKUP_CONFIG_FILE + '.tmp'
+    with open(tmp_path, 'w') as f:
         json.dump(config, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, BACKUP_CONFIG_FILE)
 
 
 def _get_backup_dir():
@@ -910,6 +924,10 @@ def backup_database(performed_by='system', manual=False):
 
     backup_dir = _get_backup_dir()
     config = _get_backup_config()
+
+    # Validate backup directory is writable before proceeding
+    if not os.access(backup_dir, os.W_OK):
+        raise RuntimeError(f'Backup directory is not writable: {backup_dir}')
 
     # Skip-if-unchanged for automated backups (manual backups always proceed)
     if not manual:
@@ -1094,28 +1112,73 @@ def verify_latest_backup():
     Verify the most recent backup file is still a valid, intact SQLite database.
     Returns dict with verification results.
     """
+    return verify_backup(rotate=False)
+
+
+def verify_backup(rotate=False):
+    """
+    Verify a backup file is still a valid, intact SQLite database.
+    When rotate=True, cycles through backups (different one each call)
+    to catch silent corruption in older files.
+    Stores results in backup config for UI display.
+    """
     backup_dir = _get_backup_dir()
     all_backups = sorted(
         [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
         reverse=True,
     )
     if not all_backups:
-        return {'ok': False, 'result': 'No backup files found', 'filename': None}
+        result = {'ok': False, 'result': 'No backup files found', 'filename': None}
+        _save_verify_result(result)
+        return result
 
-    latest = all_backups[0]
-    latest_path = os.path.join(backup_dir, latest)
+    if rotate and len(all_backups) > 1:
+        config = _get_backup_config()
+        last_verified = config.get('last_verified_file', '')
+        try:
+            idx = all_backups.index(last_verified)
+            target_idx = (idx + 1) % len(all_backups)
+        except ValueError:
+            target_idx = 0
+        target = all_backups[target_idx]
+    else:
+        target = all_backups[0]
+
+    target_path = os.path.join(backup_dir, target)
     try:
-        conn = sqlite3.connect(latest_path)
-        result = conn.execute('PRAGMA integrity_check').fetchone()[0]
-        conn.execute('SELECT COUNT(*) FROM devices')
+        conn = sqlite3.connect(target_path)
+        integrity = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        device_count = conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
+        user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
         conn.close()
-        ok = result == 'ok'
+        ok = integrity == 'ok'
         if not ok:
-            _audit_logger.warning('Backup verification failed: %s — %s', latest, result)
-        return {'ok': ok, 'result': result, 'filename': latest}
+            _audit_logger.warning('Backup verification failed: %s — %s', target, integrity)
+        result = {
+            'ok': ok,
+            'result': integrity,
+            'filename': target,
+            'device_count': device_count,
+            'user_count': user_count,
+        }
     except Exception as e:
-        _audit_logger.error('Backup verification error: %s — %s', latest, e)
-        return {'ok': False, 'result': str(e), 'filename': latest}
+        _audit_logger.error('Backup verification error: %s — %s', target, e)
+        result = {'ok': False, 'result': str(e), 'filename': target}
+
+    _save_verify_result(result)
+    return result
+
+
+def _save_verify_result(result):
+    """Store verification result in config for UI display."""
+    config = _get_backup_config()
+    config['last_verify_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    config['last_verify_ok'] = result.get('ok', False)
+    config['last_verify_file'] = result.get('filename', '')
+    config['last_verify_result'] = result.get('result', '')
+    if result.get('filename'):
+        config['last_verified_file'] = result['filename']
+    save_backup_config(config)
 
 
 def startup_integrity_check():
@@ -1305,7 +1368,7 @@ def push_backups_to_git():
                 _audit_logger.info('Git push skipped — backup zip unchanged')
                 config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 save_backup_config(config)
-                push_target = git_repo or 'origin'
+                push_target = config.get('git_repo', '').strip() or 'origin'
                 return {
                     'files_pushed': len(backup_files),
                     'zip_size': zip_size,

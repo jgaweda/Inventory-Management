@@ -1158,6 +1158,10 @@ _next_git_push_time = None
 _next_prune_time = None
 _next_verify_time = None
 
+# Consecutive failure counters for retry backoff (max 3 retries then normal interval)
+_RETRY_DELAYS_MIN = [2, 5, 15]  # minutes to wait before retry 1, 2, 3
+_fail_count = {'backup': 0, 'git_push': 0, 'prune': 0}
+
 
 def _scheduler_loop():
     """Persistent loop: wake every 60s, run any overdue tasks."""
@@ -1186,8 +1190,30 @@ def _scheduler_loop():
             _scheduler_stop.wait(5)
 
 
+def _retry_or_reschedule(task_name, start_func, stop_func, config_enabled_key, config_interval_key):
+    """Handle retry backoff on failure or normal reschedule on success."""
+    config = db._get_backup_config()
+    if not config.get(config_enabled_key):
+        stop_func()
+        _fail_count[task_name] = 0
+        return
+    fails = _fail_count[task_name]
+    if fails > 0 and fails <= len(_RETRY_DELAYS_MIN):
+        retry_minutes = _RETRY_DELAYS_MIN[fails - 1]
+        app_logger.warning('Scheduled %s: retry %d/%d in %d minutes',
+                           task_name, fails, len(_RETRY_DELAYS_MIN), retry_minutes)
+        start_func(retry_minutes / 60.0)
+    else:
+        # Normal interval (either success or retries exhausted)
+        if fails > len(_RETRY_DELAYS_MIN):
+            app_logger.error('Scheduled %s: all %d retries exhausted, resuming normal interval',
+                             task_name, len(_RETRY_DELAYS_MIN))
+            _fail_count[task_name] = 0
+        start_func(config[config_interval_key])
+
+
 def _exec_scheduled_backup():
-    """Run backup and reschedule from latest config."""
+    """Run backup and reschedule from latest config, with retry on failure."""
     try:
         result = db.backup_database(performed_by='scheduled')
         if result.get('skipped'):
@@ -1195,18 +1221,16 @@ def _exec_scheduled_backup():
         else:
             app_logger.info('Scheduled backup completed: %s (%d bytes, pruned=%d)',
                             result['filename'], result['size'], result['pruned'])
+        _fail_count['backup'] = 0
     except Exception as e:
         app_logger.error('Scheduled backup failed: %s\nTraceback:\n%s', e, traceback.format_exc())
-    # Re-arm from latest config
-    config = db._get_backup_config()
-    if config.get('backup_enabled'):
-        _start_backup_timer(config['backup_interval_hours'])
-    else:
-        _stop_backup_timer()
+        _fail_count['backup'] += 1
+    _retry_or_reschedule('backup', _start_backup_timer, _stop_backup_timer,
+                         'backup_enabled', 'backup_interval_hours')
 
 
 def _exec_scheduled_git_push():
-    """Run git push and reschedule from latest config."""
+    """Run git push and reschedule from latest config, with retry on failure."""
     try:
         result = db.push_backups_to_git()
         if result.get('skipped'):
@@ -1214,35 +1238,33 @@ def _exec_scheduled_git_push():
         else:
             app_logger.info('Scheduled git push completed: %d files to %s',
                             result['files_pushed'], result['pushed_to'])
+        _fail_count['git_push'] = 0
     except Exception as e:
         app_logger.error('Scheduled git push failed: %s\nTraceback:\n%s', e, traceback.format_exc())
-    config = db._get_backup_config()
-    if config.get('git_enabled'):
-        _start_git_push_timer(config['git_push_interval_hours'])
-    else:
-        _stop_git_push_timer()
+        _fail_count['git_push'] += 1
+    _retry_or_reschedule('git_push', _start_git_push_timer, _stop_git_push_timer,
+                         'git_enabled', 'git_push_interval_hours')
 
 
 def _exec_scheduled_prune():
-    """Run prune and reschedule from latest config."""
+    """Run prune and reschedule from latest config, with retry on failure."""
     try:
         config = db._get_backup_config()
         pruned = db._smart_prune_backups(config['max_backups'])
         if pruned:
             app_logger.info('Scheduled prune completed: removed %d old auto-backups', pruned)
+        _fail_count['prune'] = 0
     except Exception as e:
         app_logger.error('Scheduled prune failed: %s\nTraceback:\n%s', e, traceback.format_exc())
-    config = db._get_backup_config()
-    if config.get('prune_enabled'):
-        _start_prune_timer(config['prune_interval_hours'])
-    else:
-        _stop_prune_timer()
+        _fail_count['prune'] += 1
+    _retry_or_reschedule('prune', _start_prune_timer, _stop_prune_timer,
+                         'prune_enabled', 'prune_interval_hours')
 
 
 def _exec_scheduled_verify():
     """Run backup verification and reschedule."""
     try:
-        result = db.verify_latest_backup()
+        result = db.verify_backup(rotate=True)
         if result['ok']:
             app_logger.info('Backup verification passed: %s', result['filename'])
         else:
@@ -1368,12 +1390,26 @@ def backup_create():
 @permission_required('backups')
 def backup_upload():
     """Restore database from an uploaded .db file."""
+    MAX_UPLOAD_MB = 500
     file = request.files.get('backup_file')
     if not file or not file.filename:
         flash('No file selected.', 'error')
         return redirect(url_for('backup_list'))
     if not file.filename.endswith('.db'):
         flash('Invalid file type. Please upload a .db file.', 'error')
+        return redirect(url_for('backup_list'))
+    # Validate SQLite magic bytes before saving to disk
+    header = file.read(16)
+    file.seek(0)
+    if header[:16] != b'SQLite format 3\x00':
+        flash('Invalid file: not a valid SQLite database.', 'error')
+        return redirect(url_for('backup_list'))
+    # Check file size (read content length or measure stream)
+    file.seek(0, 2)  # seek to end
+    file_size = file.tell()
+    file.seek(0)
+    if file_size > MAX_UPLOAD_MB * 1024 * 1024:
+        flash(f'File too large ({file_size // (1024*1024)} MB). Maximum is {MAX_UPLOAD_MB} MB.', 'error')
         return redirect(url_for('backup_list'))
     try:
         # Save uploaded file to backup dir
@@ -1397,6 +1433,22 @@ def backup_upload():
     return redirect(url_for('backup_list'))
 
 
+@app.route('/backups/verify', methods=['POST'])
+@permission_required('backups')
+def backup_verify_now():
+    """Manually trigger backup verification."""
+    try:
+        result = db.verify_backup(rotate=False)
+        if result['ok']:
+            flash(f'Verification passed: {result["filename"]}', 'success')
+        else:
+            flash(f'Verification failed: {result["filename"]} — {result["result"]}', 'error')
+    except Exception as e:
+        app_logger.error('Manual verification failed: %s\nTraceback:\n%s', e, traceback.format_exc())
+        flash(f'Verification error: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
 @app.route('/backups/config', methods=['POST'])
 @permission_required('backups')
 def backup_config():
@@ -1406,6 +1458,13 @@ def backup_config():
     # Local backup settings
     backup_dir = request.form.get('backup_dir', '').strip()
     if backup_dir:
+        if not os.path.isabs(backup_dir):
+            flash('Backup directory must be an absolute path.', 'error')
+            return redirect(url_for('backup_list'))
+        os.makedirs(backup_dir, exist_ok=True)
+        if not os.access(backup_dir, os.W_OK):
+            flash(f'Backup directory is not writable: {backup_dir}', 'error')
+            return redirect(url_for('backup_list'))
         config['backup_dir'] = backup_dir
 
     try:
