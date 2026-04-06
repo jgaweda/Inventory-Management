@@ -246,14 +246,16 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw = ImageDraw.Draw(label)
 
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
-    # QR has border=0 — the label surface provides the quiet zone.
-    # QR left edge aligns with the barcode's left edge (both at x=MARGIN).
-    bc_h = 140                             # ~0.47" — well above GS1 minimum
-    bc_y = H - MARGIN - bc_h              # 290
-    qr_gap = 16                            # breathing room between QR and barcode
-    qr_size = bc_y - qr_gap - MARGIN     # 254
-    top_zone_h = bc_y - MARGIN
-    text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
+    # QR has border=0 — the label surface provides top/left quiet zone.
+    # Bottom quiet zone (toward barcode) must be ≥ 4 QR modules for spec compliance.
+    QR_INSET = 10                          # top/left: surface extends quiet zone
+    BC_BOTTOM = 10                         # barcode bottom inset from label edge
+    qr_gap = 40                            # ≥4 modules quiet zone for scanning
+    qr_size = 240                          # 0.80" — good scannable size
+    bc_y = QR_INSET + qr_size + qr_gap   # 290
+    bc_h = H - bc_y - BC_BOTTOM           # 150 — fills remaining space
+    top_zone_h = bc_y - QR_INSET
+    text_area_w = W - QR_INSET - qr_size - GAP - MARGIN  # right of QR
 
     # Auto-size text to fill available space (constrained by text_area_w)
     font_name, display_name, name_tw, name_th = _fit_font(
@@ -263,12 +265,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (MARGIN, MARGIN))
+    label.paste(qr_img, (QR_INSET, QR_INSET))
 
-    text_x = MARGIN + qr_size + GAP
+    text_x = QR_INSET + qr_size + GAP
     text_cx = text_x + text_area_w // 2
     total_text_h = name_th + 16 + id_th
-    text_top = MARGIN + (top_zone_h - total_text_h) // 2
+    text_top = QR_INSET + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
