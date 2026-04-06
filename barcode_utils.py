@@ -207,7 +207,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- Layout: top ~52% for QR+text, bottom for edge-to-edge barcode ---
     top_row_h = int(H * 0.52)
-    bc_h = H - top_row_h          # no vertical margin — barcode to label edge
+    bc_h = H - top_row_h - 10     # keep barcode inside border with margin
     bc_y = top_row_h
 
     qr_size = top_row_h - 2 * EDGE
@@ -233,14 +233,13 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
-    # --- BOTTOM: Code 128 barcode, bars aligned with QR left edge ---
-    # tight_crop strips internal quiet zones; label whitespace provides them
-    BC_PAD = 30           # extra white space on right side only
-    bc_w = W - EDGE - BC_PAD   # left edge aligns with QR at EDGE
+    # --- BOTTOM: Code 128 barcode inside border with visible margin ---
+    BC_INSET = 20         # inset from border so bars don't touch edges
+    bc_w = W - 2 * BC_INSET
     try:
         barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h,
                                              tight_crop=True)
-        label.paste(barcode_img, (EDGE, bc_y))
+        label.paste(barcode_img, (BC_INSET, bc_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
         draw.text((20, bc_y + 20), barcode_value, fill='black', font=font_fb)
