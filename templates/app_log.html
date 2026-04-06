@@ -101,10 +101,8 @@
     <div class="log-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="filter-chip" data-category="" onclick="setCategoryFilter(this)">All</button>
         <button class="filter-chip" data-category="device" onclick="setCategoryFilter(this)">Inventory</button>
-        <button class="filter-chip" data-category="auth" onclick="setCategoryFilter(this)">Auth</button>
-        <button class="filter-chip" data-category="backup" onclick="setCategoryFilter(this)">Backups</button>
-        <button class="filter-chip" data-category="import_export" onclick="setCategoryFilter(this)">Import/Export</button>
-        <button class="filter-chip" data-category="user" onclick="setCategoryFilter(this)">User Mgmt</button>
+        <button class="filter-chip" data-category="auth" onclick="setCategoryFilter(this)">Users</button>
+        <button class="filter-chip" data-category="data" onclick="setCategoryFilter(this)">Data</button>
         <button class="filter-chip" data-category="system" onclick="setCategoryFilter(this)">System</button>
     </div>
 </div>
@@ -147,10 +145,8 @@
 var categoryPatterns = {
     '': null,
     'device': ['device added', 'device updated', 'device retired', 'device checked out', 'device checked in', 'device viewed', 'device not found', 'device search', 'barcode scan', 'scan page', 'label generated', 'label sheet', 'print label'],
-    'auth': ['login successful', 'login failed', 'logout', 'password changed'],
-    'backup': ['backup created', 'backup completed', 'backup failed', 'backup deleted', 'backup downloaded', 'backup schedule', 'backup scheduler', 'restored from', 'restore failed', 'upload restore', 'git restore', 'git push', 'git clone', 'prune'],
-    'import_export': ['csv import', 'csv export', 'product reference import', 'import failed', 'imported'],
-    'user': ['user created', 'user updated', 'user deleted', 'user delete failed'],
+    'auth': ['login successful', 'login failed', 'logout', 'password changed', 'user created', 'user updated', 'user deleted', 'user delete failed'],
+    'data': ['backup created', 'backup completed', 'backup failed', 'backup deleted', 'backup downloaded', 'backup schedule', 'backup scheduler', 'restored from', 'restore failed', 'upload restore', 'git restore', 'git push', 'git clone', 'prune', 'csv import', 'csv export', 'product reference import', 'import failed', 'imported'],
     'system': ['application started', 'internal server error', 'unhandled exception', '404 not found', '500 ', 'log clear', 'log config', 'traceback']
 };
 
