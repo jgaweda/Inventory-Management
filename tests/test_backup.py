@@ -554,17 +554,29 @@ class TestCloudRestoreAdminAuth(BaseTestCase):
 
     def test_restore_rejects_non_admin(self):
         """Cloud restore by non-admin user is rejected even with correct password."""
-        db.create_user('regularuser', 'UserPass123', 'custom')
+        db.create_user('regularuser', 'UserPass123', 'custom', permissions=['backups'])
         self.client.post('/login', data={'username': 'regularuser', 'password': 'UserPass123'})
         resp = self.client.post('/backups/git/restore',
                                 data={'filename': 'auto_backup_20250101_000000.db',
                                       'admin_password': 'UserPass123'},
                                 follow_redirects=True)
-        # Non-admin is blocked by either permission_required or the admin check
-        self.assertTrue(
-            b'password' in resp.data.lower() or b'permission' in resp.data.lower(),
-            'Non-admin should be rejected for cloud restore'
-        )
+        # Non-admin is blocked by the admin role check even with backup permission
+        self.assertIn(b'Invalid admin password', resp.data)
+
+    def test_custom_user_with_backup_permission_can_access_backups(self):
+        """Custom user with 'backups' permission can view the backup page."""
+        db.create_user('backupuser', 'BkPass123', 'custom', permissions=['backups'])
+        self.client.post('/login', data={'username': 'backupuser', 'password': 'BkPass123'})
+        resp = self.client.get('/backups', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Backup', resp.data)
+
+    def test_custom_user_without_backup_permission_blocked(self):
+        """Custom user without 'backups' permission cannot access backup page."""
+        db.create_user('nobackup', 'NbPass123', 'custom', permissions=['devices'])
+        self.client.post('/login', data={'username': 'nobackup', 'password': 'NbPass123'})
+        resp = self.client.get('/backups', follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
 
 
 class TestBackwardsCompatibility(BaseTestCase):
