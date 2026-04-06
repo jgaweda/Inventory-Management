@@ -4,11 +4,11 @@ from tests import BaseTestCase, db, json, os, shutil, _test_dir, patch
 class TestProductReferenceAPI(BaseTestCase):
     """Test inline edit API for product references."""
 
-    def test_inline_edit_requires_admin(self):
+    def test_inline_edit_requires_permission(self):
         resp = self.client.patch('/api/reference/1',
                                  data=json.dumps({'codename': 'Test'}),
                                  content_type='application/json')
-        self.assertEqual(resp.status_code, 302)  # redirect to login
+        self.assertEqual(resp.status_code, 403)  # no permission
 
     def test_inline_edit_updates_field(self):
         self.login_admin()

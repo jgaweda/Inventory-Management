@@ -1,4 +1,4 @@
-from tests import BaseTestCase, db, json, os, _test_dir, ROLE_PERMISSIONS, has_permission, get_user_permissions, app, patch
+from tests import BaseTestCase, db, json, os, _test_dir, ROLE_PERMISSIONS, GUEST_ASSIGNABLE_PERMISSIONS, has_permission, get_user_permissions, app, patch
 
 import sqlite3
 
@@ -558,12 +558,28 @@ class TestPermissionModel(BaseTestCase):
             self.assertTrue(has_permission('devices'))
             self.assertFalse(has_permission('backups'))
 
-    def test_has_permission_no_user(self):
-        """has_permission should return False with no user."""
+    def test_has_permission_no_user_default(self):
+        """has_permission should return False with no user and no guest permissions."""
         with self.app.test_request_context():
             from flask import g
             g.user = None
+            # Clear any guest permissions
+            db.save_guest_permissions(set())
             self.assertFalse(has_permission('devices'))
+            self.assertFalse(has_permission('wiki'))
+
+    def test_has_permission_no_user_with_guest_perms(self):
+        """has_permission should check guest permissions when no user logged in."""
+        with self.app.test_request_context():
+            from flask import g
+            g.user = None
+            db.save_guest_permissions({'wiki', 'references'})
+            self.assertTrue(has_permission('wiki'))
+            self.assertTrue(has_permission('references'))
+            self.assertFalse(has_permission('devices'))
+            self.assertFalse(has_permission('backups'))
+            # Clean up
+            db.save_guest_permissions(set())
 
     def test_version_in_context(self):
         """App version should be available in templates."""
@@ -571,3 +587,112 @@ class TestPermissionModel(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         # Version string should appear in the sidebar
         self.assertIn(b'v1.0', resp.data)
+
+
+class TestGuestPermissions(BaseTestCase):
+    """Test guest/public user permissions system."""
+
+    def test_guest_permissions_default_empty(self):
+        """Guest permissions should be empty by default."""
+        perms = db.get_guest_permissions()
+        self.assertEqual(perms, set())
+
+    def test_save_and_load_guest_permissions(self):
+        """Guest permissions round-trip through database."""
+        db.save_guest_permissions({'wiki', 'references'})
+        perms = db.get_guest_permissions()
+        self.assertEqual(perms, {'wiki', 'references'})
+
+    def test_save_empty_guest_permissions(self):
+        """Saving empty permissions clears all guest access."""
+        db.save_guest_permissions({'wiki'})
+        db.save_guest_permissions(set())
+        perms = db.get_guest_permissions()
+        self.assertEqual(perms, set())
+
+    def test_get_user_permissions_guest(self):
+        """get_user_permissions(None) should return guest permissions."""
+        db.save_guest_permissions({'references'})
+        perms = get_user_permissions(None)
+        self.assertIn('references', perms)
+        self.assertNotIn('devices', perms)
+        db.save_guest_permissions(set())
+
+    def test_admin_can_save_guest_permissions(self):
+        """Admin can update guest permissions via the settings route."""
+        self.login_admin()
+        resp = self.client.post('/settings/guest-permissions', data={
+            'guest_permissions': ['wiki', 'references'],
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Public access permissions saved', resp.data)
+        perms = db.get_guest_permissions()
+        self.assertEqual(perms, {'wiki', 'references'})
+
+    def test_non_admin_cannot_save_guest_permissions(self):
+        """Non-admin user cannot update guest permissions."""
+        db.create_user('viewer', 'test1234', role='custom', permissions=['wiki'])
+        self.client.post('/login', data={'username': 'viewer', 'password': 'test1234'})
+        resp = self.client.post('/settings/guest-permissions', data={
+            'guest_permissions': ['devices'],
+        }, follow_redirects=True)
+        self.assertIn(b'do not have permission', resp.data)
+
+    def test_guest_cannot_save_guest_permissions(self):
+        """Non-logged-in user cannot update guest permissions."""
+        resp = self.client.post('/settings/guest-permissions', data={
+            'guest_permissions': ['devices'],
+        }, follow_redirects=True)
+        self.assertIn(b'log in', resp.data.lower())
+
+    def test_invalid_permissions_filtered(self):
+        """Invalid permission keys are filtered out when saving."""
+        self.login_admin()
+        self.client.post('/settings/guest-permissions', data={
+            'guest_permissions': ['wiki', 'backups', 'settings', 'fake_perm'],
+        }, follow_redirects=True)
+        perms = db.get_guest_permissions()
+        # Only wiki should be saved (backups/settings/fake not in GUEST_ASSIGNABLE)
+        self.assertIn('wiki', perms)
+        self.assertNotIn('backups', perms)
+        self.assertNotIn('settings', perms)
+        self.assertNotIn('fake_perm', perms)
+
+    def test_guest_with_permission_can_access_protected_route(self):
+        """Guest with wiki permission can access wiki edit routes."""
+        db.save_guest_permissions({'references'})
+        # Guest should be able to access add reference form (permission_required('references'))
+        resp = self.client.get('/reference/add')
+        self.assertEqual(resp.status_code, 200)
+        db.save_guest_permissions(set())
+
+    def test_guest_without_permission_redirected_to_login(self):
+        """Guest without permission is redirected to login."""
+        db.save_guest_permissions(set())
+        resp = self.client.get('/reference/add', follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login', resp.headers['Location'])
+
+    def test_login_required_ignores_guest_permissions(self):
+        """Routes with @login_required always require login, regardless of guest permissions."""
+        db.save_guest_permissions({'devices', 'references', 'wiki', 'retire'})
+        # /account uses @login_required, not @permission_required
+        resp = self.client.get('/account', follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login', resp.headers['Location'])
+        db.save_guest_permissions(set())
+
+    def test_settings_page_shows_guest_permissions_card(self):
+        """Admin settings page shows the Public Access card."""
+        self.login_admin()
+        resp = self.client.get('/account')
+        self.assertIn(b'Public Access', resp.data)
+        self.assertIn(b'guest_permissions', resp.data)
+
+    def test_guest_assignable_excludes_sensitive(self):
+        """GUEST_ASSIGNABLE_PERMISSIONS should not include sensitive permissions."""
+        guest_keys = {k for k, _ in GUEST_ASSIGNABLE_PERMISSIONS}
+        self.assertNotIn('backups', guest_keys)
+        self.assertNotIn('logs', guest_keys)
+        self.assertNotIn('settings', guest_keys)
+        self.assertNotIn('users', guest_keys)

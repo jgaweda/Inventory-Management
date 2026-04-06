@@ -1064,6 +1064,31 @@ def get_user_by_username(username):
         return _parse_user_row(row)
 
 
+def get_guest_permissions():
+    """Return the set of permissions granted to non-logged-in (guest) users.
+    Stored in the schema_info table as JSON."""
+    with db_transaction() as conn:
+        row = conn.execute(
+            "SELECT value FROM schema_info WHERE key = 'guest_permissions'"
+        ).fetchone()
+        if row:
+            try:
+                return set(json.loads(row['value']))
+            except (json.JSONDecodeError, TypeError):
+                return set()
+        return set()
+
+
+def save_guest_permissions(permissions):
+    """Save the set of permissions for non-logged-in (guest) users."""
+    perm_list = sorted(permissions) if permissions else []
+    with db_transaction() as conn:
+        conn.execute('''
+            INSERT OR REPLACE INTO schema_info (key, value, updated_at)
+            VALUES ('guest_permissions', ?, CURRENT_TIMESTAMP)
+        ''', (json.dumps(perm_list),))
+
+
 def get_password_hint(username):
     """Get the password hint for a username. Returns hint string or empty string."""
     with db_transaction() as conn:

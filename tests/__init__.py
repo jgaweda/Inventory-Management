@@ -19,7 +19,7 @@ os.environ['INVENTORY_DATA_DIR'] = _test_dir
 
 import database as db
 import barcode_utils
-from app import app, ROLE_PERMISSIONS, has_permission, get_user_permissions
+from app import app, ROLE_PERMISSIONS, GUEST_ASSIGNABLE_PERMISSIONS, has_permission, get_user_permissions
 
 
 class BaseTestCase(unittest.TestCase):

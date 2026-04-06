@@ -179,11 +179,21 @@ ASSIGNABLE_PERMISSIONS = [
     ('retire',       'Retire — Retire and unretire devices'),
 ]
 
+# Permissions that can be granted to non-logged-in (guest/public) users.
+# Sensitive permissions (backups, logs, settings, users) are excluded.
+GUEST_ASSIGNABLE_PERMISSIONS = [
+    ('devices',      'Devices — Add, edit, checkout/checkin, and delete notes'),
+    ('references',   'References — Manage product reference catalog'),
+    ('wiki',         'Wiki — Edit pages, upload/delete attachments'),
+    ('retire',       'Retire — Retire and unretire devices'),
+]
+
 
 def get_user_permissions(user):
-    """Return the effective permission set for a user dict."""
+    """Return the effective permission set for a user dict.
+    For guest (None) users, returns permissions from the database config."""
     if not user:
-        return set()
+        return db.get_guest_permissions()
     if user['role'] == 'admin':
         return ROLE_PERMISSIONS['admin']
     # Custom users: permissions is a pre-parsed list from _parse_user_row
@@ -208,33 +218,31 @@ def get_user_permissions(user):
 
 
 def has_permission(permission):
-    """Check if the current user has a specific permission."""
-    if not g.user:
-        return False
+    """Check if the current user (or guest) has a specific permission."""
     return permission in get_user_permissions(g.user)
 
 
 def permission_required(permission):
-    """Decorator: require a specific permission. Redirects to login or dashboard."""
+    """Decorator: require a specific permission. Guests with the permission are allowed through."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            if has_permission(permission):
+                return f(*args, **kwargs)
             if not g.user:
                 flash('Please log in to continue.', 'warning')
                 return redirect(url_for('login', next=request.path))
-            if not has_permission(permission):
-                flash('You do not have permission to perform this action.', 'error')
-                return redirect(url_for('dashboard'))
-            return f(*args, **kwargs)
+            flash('You do not have permission to perform this action.', 'error')
+            return redirect(url_for('dashboard'))
         return decorated
     return decorator
 
 
 def current_username():
-    """Return display name of logged-in user, or 'system'."""
+    """Return display name of logged-in user, or 'guest'."""
     if g.user:
         return g.user['display_name'] or g.user['username']
-    return 'system'
+    return 'guest'
 
 # ---------------------------------------------------------------------------
 # Context processor: inject categories, user, and current time into templates
@@ -1105,10 +1113,15 @@ def update_log_config():
 @app.route('/account', methods=['GET', 'POST'])
 @login_required
 def account():
-    if request.method == 'POST':
+    def _render(**extra):
         users = db.get_all_users() if has_permission('users') else []
         server_config = _load_server_config()
+        guest_perms = db.get_guest_permissions() if has_permission('settings') else set()
+        return render_template('account.html', users=users, server_config=server_config,
+                               guest_permissions=guest_perms,
+                               guest_assignable_permissions=GUEST_ASSIGNABLE_PERMISSIONS, **extra)
 
+    if request.method == 'POST':
         # Password change + hint form
         current_pw = request.form.get('current_password', '')
         new_pw = request.form.get('new_password', '')
@@ -1119,24 +1132,22 @@ def account():
         user = db.authenticate_user(g.user['username'], current_pw)
         if not user:
             flash('Current password is incorrect.', 'error')
-            return render_template('account.html', users=users, server_config=server_config)
+            return _render()
 
         if len(new_pw) < 4:
             flash('New password must be at least 4 characters.', 'error')
-            return render_template('account.html', users=users, server_config=server_config)
+            return _render()
 
         if new_pw != confirm_pw:
             flash('New passwords do not match.', 'error')
-            return render_template('account.html', users=users, server_config=server_config)
+            return _render()
 
         db.update_user(g.user['user_id'], {'password': new_pw, 'password_hint': hint})
         app_logger.info('Password changed: user=%s', g.user['username'])
         flash('Password changed successfully.', 'success')
         return redirect(url_for('account'))
 
-    users = db.get_all_users() if has_permission('users') else []
-    server_config = _load_server_config()
-    return render_template('account.html', users=users, server_config=server_config)
+    return _render()
 
 
 @app.route('/docs')
@@ -1169,6 +1180,21 @@ def save_server_config():
     _save_server_config(config)
     app_logger.info('Server config updated: port=%d by user=%s', port, g.user['username'])
     flash('Server settings saved. Restart the application for changes to take effect.', 'success')
+    return redirect(url_for('account'))
+
+
+@app.route('/settings/guest-permissions', methods=['POST'])
+@permission_required('settings')
+def save_guest_permissions():
+    """Save which permissions are granted to non-logged-in (guest) users."""
+    # Only allow permissions from the guest-assignable list
+    allowed_keys = {k for k, _ in GUEST_ASSIGNABLE_PERMISSIONS}
+    selected = set(request.form.getlist('guest_permissions'))
+    # Filter to only valid permission keys
+    valid = selected & allowed_keys
+    db.save_guest_permissions(valid)
+    app_logger.info('Guest permissions updated to %s by user=%s', sorted(valid), g.user['username'])
+    flash('Public access permissions saved.', 'success')
     return redirect(url_for('account'))
 
 
@@ -1898,12 +1924,8 @@ def product_reference_list():
 
 
 @app.route('/reference/add', methods=['GET', 'POST'])
-@login_required
+@permission_required('references')
 def product_reference_add():
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
-
     if request.method == 'POST':
         codename = request.form.get('codename', '').strip()
         if not codename:
@@ -1928,12 +1950,8 @@ def product_reference_add():
 
 
 @app.route('/reference/<int:ref_id>/edit', methods=['GET', 'POST'])
-@login_required
+@permission_required('references')
 def product_reference_edit(ref_id):
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
-
     ref = db.get_product_reference(ref_id)
     if not ref:
         flash('Product reference not found.', 'error')
@@ -1964,7 +1982,6 @@ def product_reference_edit(ref_id):
 
 
 @app.route('/api/reference/<int:ref_id>', methods=['PATCH'])
-@login_required
 def api_reference_update(ref_id):
     """Inline edit API — update a single field on a product reference."""
     if not has_permission('references'):
@@ -1991,11 +2008,8 @@ def api_reference_update(ref_id):
 
 
 @app.route('/reference/<int:ref_id>/delete', methods=['POST'])
-@login_required
+@permission_required('references')
 def product_reference_delete(ref_id):
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
     db.delete_product_reference(ref_id)
     flash('Product reference deleted.', 'success')
     return redirect(url_for('product_reference_list'))
@@ -2126,23 +2140,16 @@ def _import_seed_data():
 
 
 @app.route('/reference/seed', methods=['POST'])
-@login_required
+@permission_required('references')
 def product_reference_seed():
     """Import seed data from the application bundle."""
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
     return _import_seed_data()
 
 
 @app.route('/reference/import', methods=['POST'])
-@login_required
+@permission_required('references')
 def product_reference_import():
     """Import product references from an uploaded .xlsx or .csv file."""
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
-
     file = request.files.get('import_file')
     if not file or not file.filename:
         flash('No file selected.', 'error')
@@ -2229,12 +2236,9 @@ def product_reference_import():
 
 
 @app.route('/reference/export')
-@login_required
+@permission_required('references')
 def product_reference_export():
     """Export all product references as a .csv download."""
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
     import csv, io
     refs = db.get_all_product_references()
     output = io.StringIO()
@@ -2253,13 +2257,9 @@ def product_reference_export():
 
 
 @app.route('/reference/export/xlsx')
-@login_required
+@permission_required('references')
 def product_reference_export_xlsx():
     """Export all product references as an .xlsx download."""
-    if not has_permission('references'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
-
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -2341,23 +2341,20 @@ def product_wiki(ref_id):
 
 
 @app.route('/wiki/<int:ref_id>/save', methods=['POST'])
-@login_required
+@permission_required('wiki')
 def product_wiki_save(ref_id):
-    """Save wiki content (any logged-in user)."""
+    """Save wiki content."""
     content = request.form.get('content', '')
-    username = g.user['username']
+    username = g.user['username'] if g.user else 'guest'
     db.save_wiki(ref_id, content, updated_by=username)
     flash('Wiki saved.', 'success')
     return redirect(url_for('product_wiki', ref_id=ref_id))
 
 
 @app.route('/wiki/<int:ref_id>/upload', methods=['POST'])
-@login_required
+@permission_required('wiki')
 def wiki_upload(ref_id):
     """Upload an attachment to a product wiki."""
-    if not has_permission('wiki'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_wiki', ref_id=ref_id))
 
     file = request.files.get('attachment')
     if not file or not file.filename:
@@ -2390,7 +2387,7 @@ def wiki_upload(ref_id):
         original_name=original_name,
         content_type=file.content_type or '',
         size_bytes=len(data),
-        uploaded_by=g.user['username'],
+        uploaded_by=g.user['username'] if g.user else 'guest',
     )
     flash(f'Uploaded {original_name}.', 'success')
     return redirect(url_for('product_wiki', ref_id=ref_id))
@@ -2421,12 +2418,9 @@ def wiki_attachment_preview(attachment_id):
 
 
 @app.route('/wiki/attachment/<int:attachment_id>/delete', methods=['POST'])
-@login_required
+@permission_required('wiki')
 def wiki_delete_attachment(attachment_id):
     """Delete a wiki attachment."""
-    if not has_permission('wiki'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
     att = db.get_wiki_attachment(attachment_id)
     if not att:
         flash('Attachment not found.', 'error')
@@ -2441,12 +2435,9 @@ def wiki_delete_attachment(attachment_id):
 
 
 @app.route('/wiki/repair', methods=['POST'])
-@login_required
+@permission_required('wiki')
 def wiki_repair_attachments():
     """Manually run attachment integrity check — removes orphaned DB records."""
-    if not has_permission('wiki'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('product_reference_list'))
     result = db.check_attachment_integrity(WIKI_UPLOADS_DIR)
     if result['orphaned_removed'] > 0:
         app_logger.info('Manual attachment repair: removed %d orphaned records by=%s',
@@ -2462,7 +2453,7 @@ def wiki_repair_attachments():
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/upload', methods=['POST'])
-@login_required
+@permission_required('devices')
 def device_upload(device_id):
     """Upload an attachment to a device."""
     device = db.get_device(device_id)
@@ -2530,12 +2521,9 @@ def device_attachment_preview(attachment_id):
 
 
 @app.route('/device/attachment/<int:attachment_id>/delete', methods=['POST'])
-@login_required
+@permission_required('devices')
 def device_delete_attachment(attachment_id):
     """Delete a device attachment (requires devices permission)."""
-    if not has_permission('devices'):
-        flash('You do not have permission to perform this action.', 'error')
-        return redirect(url_for('device_list'))
     att = db.get_device_attachment(attachment_id)
     if not att:
         flash('Attachment not found.', 'error')
@@ -2549,7 +2537,6 @@ def device_delete_attachment(attachment_id):
 
 
 @app.route('/api/devices/distinct/<field>')
-@login_required
 def api_distinct_values(field):
     """Return distinct values for a device field, for autocomplete."""
     values = db.get_distinct_values(field)
