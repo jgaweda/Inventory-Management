@@ -86,11 +86,6 @@ scripts\build_exe.bat
 ```
 
 Zip the `dist/InventorySystem/` folder to distribute.
-
-### Automated builds (GitHub Actions)
-
-Nightly builds run automatically and create versioned GitHub Releases with downloadable zip files for both platforms. The version number auto-increments on each build. Builds can also be triggered manually from the Actions tab.
-
 ## Project Structure
 
 ```
