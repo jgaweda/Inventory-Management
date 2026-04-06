@@ -134,6 +134,14 @@
                            autocomplete="off"
                            style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px;">
                     <span style="font-size: 11px; color: var(--text-muted);">{% if config.git_encryption_password %}Encryption active{% else %}Set to encrypt cloud backups{% endif %}</span>
+                    {% if config.git_encryption_password %}
+                    <a href="{{ url_for('backup_export_encryption_key') }}" class="btn btn-secondary btn-sm"
+                       title="Download encryption key as a text file for safekeeping"
+                       style="font-size: 11px; padding: 4px 10px; white-space: nowrap;">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export Key
+                    </a>
+                    {% endif %}
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">

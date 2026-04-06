@@ -144,6 +144,7 @@ def init_db():
                     CHECK(role IN ('admin','custom')),
                 permissions TEXT DEFAULT NULL,
                 display_name TEXT DEFAULT '',
+                password_hint TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_login DATETIME
             )
@@ -310,6 +311,11 @@ def init_db():
                              (perms_json, uid))
             conn.execute('DROP TABLE _users_old')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+
+        # Migrate: add password_hint column to users if missing
+        user_cols = [row[1] for row in conn.execute('PRAGMA table_info(users)').fetchall()]
+        if 'password_hint' not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hint TEXT DEFAULT ''")
 
         # Seed default categories
         for name, desc, sort_ord in DEFAULT_CATEGORIES:
@@ -1058,6 +1064,15 @@ def get_user_by_username(username):
         return _parse_user_row(row)
 
 
+def get_password_hint(username):
+    """Get the password hint for a username. Returns hint string or empty string."""
+    with db_transaction() as conn:
+        row = conn.execute(
+            'SELECT password_hint FROM users WHERE username = ?', (username,)
+        ).fetchone()
+        return (row['password_hint'] or '') if row else ''
+
+
 def get_all_users():
     """Get all users ordered by username."""
     with db_transaction() as conn:
@@ -1067,7 +1082,7 @@ def get_all_users():
         return [_parse_user_row(r) for r in rows]
 
 
-def create_user(username, password, role='custom', display_name='', permissions=None):
+def create_user(username, password, role='custom', display_name='', permissions=None, password_hint=''):
     """Create a new user. Returns user_id. Raises ValueError if username taken.
     permissions: optional list of permission strings for custom role."""
     pw_hash, salt = _hash_password(password)
@@ -1075,8 +1090,8 @@ def create_user(username, password, role='custom', display_name='', permissions=
     with db_transaction() as conn:
         try:
             conn.execute(
-                'INSERT INTO users (username, password_hash, salt, role, permissions, display_name) VALUES (?, ?, ?, ?, ?, ?)',
-                (username, pw_hash, salt, role, perms_json, display_name or username)
+                'INSERT INTO users (username, password_hash, salt, role, permissions, display_name, password_hint) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (username, pw_hash, salt, role, perms_json, display_name or username, password_hint or '')
             )
             return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
         except sqlite3.IntegrityError:
@@ -1108,6 +1123,11 @@ def update_user(user_id, data):
             conn.execute(
                 'UPDATE users SET permissions = ? WHERE user_id = ?',
                 (perms_json, user_id)
+            )
+        if 'password_hint' in data:
+            conn.execute(
+                'UPDATE users SET password_hint = ? WHERE user_id = ?',
+                (data['password_hint'], user_id)
             )
 
 
