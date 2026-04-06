@@ -1167,6 +1167,7 @@ def _get_backup_config():
         'last_verify_file': saved.get('last_verify_file', ''),
         'last_verify_result': saved.get('last_verify_result', ''),
         'last_verified_file': saved.get('last_verified_file', ''),
+        'last_cloud_backup_files': saved.get('last_cloud_backup_files', []),
     }
 
 
@@ -1193,6 +1194,7 @@ def get_default_backup_config():
         'last_verify_file': '',
         'last_verify_result': '',
         'last_verified_file': '',
+        'last_cloud_backup_files': [],
     }
 
 
@@ -1718,6 +1720,7 @@ def push_backups_to_git():
             if diff_result.returncode == 0:
                 _audit_logger.info('Git push skipped — backup zip unchanged')
                 config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                config['last_cloud_backup_files'] = backup_files
                 save_backup_config(config)
                 push_target = config.get('git_repo', '').strip() or 'origin'
                 return {
@@ -1749,6 +1752,7 @@ def push_backups_to_git():
             raise RuntimeError('Git push timed out')
 
     config['last_git_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    config['last_cloud_backup_files'] = backup_files
     save_backup_config(config)
 
     elapsed_ms = round((_time.monotonic() - start_time) * 1000)

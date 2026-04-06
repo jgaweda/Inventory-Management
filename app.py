@@ -1403,10 +1403,11 @@ def backup_list():
         if config.get('last_verify_result'):
             verify_msg += f' — {config["last_verify_result"]}'
         flash(verify_msg, 'error')
+    cloud_files = set(config.get('last_cloud_backup_files', []))
     return render_template('backups.html', backups=backups, config=config,
                            next_backup_time=next_backup, next_git_push_time=next_push,
                            next_prune_time=next_prune, scheduler_alive=scheduler_alive,
-                           backup_health=health)
+                           backup_health=health, cloud_backup_files=cloud_files)
 
 
 @app.route('/backups/create', methods=['POST'])
