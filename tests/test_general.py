@@ -23,18 +23,28 @@ class TestBarcodeGeneration(BaseTestCase):
         self.assertTrue(device['barcode_value'].startswith('CNX-'),
                         f'Expected CNX- prefix, got {device["barcode_value"]}')
 
-    def test_barcodes_are_sequential(self):
-        ids = []
+    def test_barcodes_are_unique(self):
+        """Each device gets a unique barcode even though they're scrambled."""
+        barcodes = []
+        for i in range(10):
+            device_id = db.add_device({'name': f'Device {i}'})
+            device = db.get_device(device_id)
+            barcodes.append(device['barcode_value'])
+        self.assertEqual(len(barcodes), len(set(barcodes)),
+                         f'Duplicate barcodes found: {barcodes}')
+
+    def test_barcodes_not_sequential(self):
+        """Scrambled barcodes should not reveal creation order."""
+        barcodes = []
         for i in range(5):
             device_id = db.add_device({'name': f'Device {i}'})
             device = db.get_device(device_id)
-            ids.append(device['barcode_value'])
-
-        # Extract numbers after prefix
-        nums = [db._base36_to_int(v.replace('CNX-', '')) for v in ids]
-        for i in range(1, len(nums)):
-            self.assertEqual(nums[i], nums[i-1] + 1,
-                             f'Barcodes not sequential: {ids}')
+            barcodes.append(device['barcode_value'])
+        # Extract numeric values — they should NOT be sequential
+        nums = [db._base36_to_int(v.replace('CNX-', '')) for v in barcodes]
+        is_sequential = all(nums[i] == nums[i-1] + 1 for i in range(1, len(nums)))
+        self.assertFalse(is_sequential,
+                         f'Barcodes appear sequential (should be scrambled): {barcodes}')
 
     def test_barcode_no_duplicates(self):
         barcodes = set()
@@ -52,6 +62,38 @@ class TestBarcodeGeneration(BaseTestCase):
         conn.close()
         self.assertIsNotNone(row)
         self.assertGreater(row[0], 1)
+
+    def test_scramble_is_bijection(self):
+        """Scramble function must produce unique outputs (no collisions)."""
+        outputs = set()
+        for i in range(1, 1001):
+            s = db._scramble_seq(i)
+            self.assertNotIn(s, outputs, f'Collision at seq={i}')
+            self.assertGreaterEqual(s, 0)
+            self.assertLess(s, db._BARCODE_SPACE)
+            outputs.add(s)
+
+    def test_barcode_zero_padded(self):
+        """Barcodes should be zero-padded to at least 4 characters after prefix."""
+        device_id = db.add_device({'name': 'Pad Test'})
+        device = db.get_device(device_id)
+        suffix = device['barcode_value'].replace('CNX-', '')
+        self.assertGreaterEqual(len(suffix), 4,
+                                f'Barcode suffix too short: {device["barcode_value"]}')
+
+    def test_old_sequential_barcode_migration(self):
+        """Old sequential barcodes like CNX-1 get scrambled on init."""
+        device_id = db.add_device({'name': 'Migration Test'})
+        with db.db_transaction() as conn:
+            conn.execute("UPDATE devices SET barcode_value = 'CNX-1' WHERE device_id = ?", (device_id,))
+        # Re-run init_db to trigger migration
+        db.init_db()
+        device = db.get_device(device_id)
+        self.assertTrue(device['barcode_value'].startswith('CNX-'))
+        suffix = device['barcode_value'][4:]
+        self.assertGreaterEqual(len(suffix), 4, 'Migrated barcode should be at least 4 chars')
+        self.assertNotEqual(device['barcode_value'], 'CNX-0001',
+                            'Migrated barcode should be scrambled, not just padded')
 
 class TestLabelGeneration(BaseTestCase):
     """Test label PNG and barcode rendering."""
