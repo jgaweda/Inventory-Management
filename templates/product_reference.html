@@ -85,13 +85,6 @@
     .ref-table .new-row .cell-edit {
         border-color: var(--border-color); border-style: dashed;
     }
-    .add-row-btn {
-        background: none; border: 1px dashed var(--border-color); color: var(--text-muted);
-        cursor: pointer; padding: 6px 16px; border-radius: 6px; font-size: 13px;
-        transition: all 0.15s; margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;
-    }
-    .add-row-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
-
     .table-scroll { overflow-x: auto; max-height: calc(100vh - 200px); overflow-y: auto; }
 
 </style>
@@ -243,8 +236,6 @@
 </div>
 
 {% if has_permission('references') %}
-<button class="add-row-btn" onclick="addNewRow()">+ Add Row</button>
-
 <!-- Import Modal -->
 <div id="importModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
     <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:24px; width:100%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
