@@ -215,11 +215,11 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     top_zone_h = bc_y - MARGIN
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
-    # Larger max font sizes to fill the text area
+    # Auto-size text to fill available space (constrained by text_area_w)
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, text_area_w, 48, min_size=20)
+        draw, device_name, BOLD_FONTS, text_area_w, 80, min_size=20)
     font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 60, min_size=30)
+        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 100, min_size=30)
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
