@@ -334,17 +334,17 @@ def init_db():
                 ('admin', pw_hash, salt, 'admin', 'Administrator')
             )
 
-        # Migrate old barcodes to the safe alphabet (no O/I/L/U ambiguity).
-        # Any barcode with characters outside _BARCODE_CHARS gets regenerated.
+        # Migrate old barcodes to the safe alphabet with 6-character suffix.
+        # Any barcode with wrong length, ambiguous chars, or old 4-digit format gets regenerated.
         _safe_chars = set(_BARCODE_CHARS)
         old_barcodes = conn.execute(
             "SELECT device_id, barcode_value FROM devices WHERE barcode_value LIKE 'CNX-%' ORDER BY rowid"
         ).fetchall()
         for idx, row in enumerate(old_barcodes, 1):
             suffix = row['barcode_value'][len(_BARCODE_PREFIX):]
-            if not suffix or not all(ch in _safe_chars for ch in suffix) or len(suffix) < 4:
+            if not suffix or len(suffix) != 6 or not all(ch in _safe_chars for ch in suffix):
                 new_code = _int_to_barcode(_scramble_seq(idx))
-                new_barcode = f'{_BARCODE_PREFIX}{new_code.zfill(4)}'
+                new_barcode = f'{_BARCODE_PREFIX}{new_code.rjust(6, _BARCODE_CHARS[0])}'
                 conn.execute('UPDATE devices SET barcode_value = ? WHERE device_id = ?',
                              (new_barcode, row['device_id']))
 
@@ -652,13 +652,13 @@ def _base36_to_int(s):
 
 _BARCODE_PREFIX = 'CNX-'
 
-# Scramble sequential IDs into pseudo-random 4-digit codes using a
+# Scramble sequential IDs into pseudo-random 6-digit codes using a
 # linear congruential permutation: scrambled = (seq * A + B) mod M
-# where M = 30^4 = 810,000 and A is coprime to M.  This is a bijection
+# where M = 30^6 = 729,000,000 and A is coprime to M.  This is a bijection
 # (every input maps to a unique output), so no collisions are possible.
-_BARCODE_SPACE = _BARCODE_BASE ** 4   # 707,281 possible values
-_BARCODE_MULTIPLIER = 491723          # prime, coprime to _BARCODE_SPACE
-_BARCODE_OFFSET = 173849              # arbitrary offset for extra scrambling
+_BARCODE_SPACE = _BARCODE_BASE ** 6   # 729,000,000 possible values
+_BARCODE_MULTIPLIER = 252149723       # prime, coprime to _BARCODE_SPACE
+_BARCODE_OFFSET = 83917561            # arbitrary offset for extra scrambling
 
 
 def _scramble_seq(n):
@@ -667,11 +667,11 @@ def _scramble_seq(n):
 
 
 def _next_barcode_value(conn):
-    """Generate the next barcode with a scrambled 4-digit suffix.
+    """Generate the next barcode with a scrambled 6-character suffix.
 
     Uses a safe alphabet (no O/I/L/U) and a linear congruential permutation
     so barcodes don't reveal creation order.
-    Example sequence: CNX-9R7K, CNX-M3P2, CNX-4WJ8, ...
+    Example sequence: CNX-9R7KF3, CNX-M3P2W8, CNX-4WJ8D5, ...
     """
     # Ensure sequence table exists
     conn.execute('''
@@ -691,7 +691,9 @@ def _next_barcode_value(conn):
         conn.execute('UPDATE barcode_seq SET next_val = ? WHERE id = 1', (next_val + 1,))
     scrambled = _scramble_seq(next_val)
     code = _int_to_barcode(scrambled)
-    return f'{_BARCODE_PREFIX}{code.zfill(4)}'
+    # Pad with the first safe character (not '0' which is excluded from alphabet)
+    padded = code.rjust(6, _BARCODE_CHARS[0])
+    return f'{_BARCODE_PREFIX}{padded}'
 
 
 def _insert_device(conn, data, performed_by='system'):
