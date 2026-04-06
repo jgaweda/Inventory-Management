@@ -94,7 +94,7 @@ def generate_qr_code(data, size=250):
         return img.crop((offset, offset, offset + size, offset + size))
 
 
-def generate_barcode_image(data, width=350, height=80):
+def generate_barcode_image(data, width=350, height=80, tight_crop=False):
     """
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image sized to width x height.
@@ -103,6 +103,10 @@ def generate_barcode_image(data, width=350, height=80):
     every bar is an integer number of pixels wide — critical for scanner
     readability. module_width is calculated from the target width so bars
     fill the available space without any lossy rescaling.
+
+    If tight_crop=True, the returned image is cropped to just the bars
+    with no quiet-zone padding — the caller is responsible for providing
+    the required quiet zones via surrounding whitespace.
     """
     writer = ImageWriter()
     code = Code128(data, writer=writer)
@@ -135,15 +139,19 @@ def generate_barcode_image(data, width=350, height=80):
 
     img = Image.open(buffer).convert('RGB')
 
-    # Crop to bounding box but preserve quiet zones
+    # Crop to bounding box; optionally preserve quiet zones
     gray = img.convert('L')
     bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
     if bbox:
-        bar_width = bbox[2] - bbox[0]
-        qz = max(15, int(bar_width * 0.10))
-        x0 = max(0, bbox[0] - qz)
-        x1 = min(img.width, bbox[2] + qz)
-        img = img.crop((x0, bbox[1], x1, bbox[3]))
+        if tight_crop:
+            # Crop to just the bars — caller provides quiet zones
+            img = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+        else:
+            bar_width = bbox[2] - bbox[0]
+            qz = max(15, int(bar_width * 0.10))
+            x0 = max(0, bbox[0] - qz)
+            x1 = min(img.width, bbox[2] + qz)
+            img = img.crop((x0, bbox[1], x1, bbox[3]))
 
     # Scale to exact target — NEAREST preserves crisp bar edges
     img = img.resize((width, height), Image.NEAREST)
@@ -225,11 +233,13 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
-    # --- BOTTOM: edge-to-edge Code 128 barcode (full label width) ---
-    # Barcode rendered at full W — it has its own internal quiet zones
+    # --- BOTTOM: Code 128 barcode, bars aligned with QR left edge ---
+    # tight_crop strips internal quiet zones; label whitespace provides them
+    bc_w = W - 2 * EDGE   # bars span from EDGE to W-EDGE
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=W, height=bc_h)
-        label.paste(barcode_img, (0, bc_y))
+        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h,
+                                             tight_crop=True)
+        label.paste(barcode_img, (EDGE, bc_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
         draw.text((20, bc_y + 20), barcode_value, fill='black', font=font_fb)
