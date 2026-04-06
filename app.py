@@ -182,10 +182,8 @@ ASSIGNABLE_PERMISSIONS = [
 # Permissions that can be granted to non-logged-in (guest/public) users.
 # Sensitive permissions (backups, logs, settings, users) are excluded.
 GUEST_ASSIGNABLE_PERMISSIONS = [
-    ('devices',      'Devices — Add, edit, checkout/checkin, and delete notes'),
     ('references',   'References — Manage product reference catalog'),
     ('wiki',         'Wiki — Edit pages, upload/delete attachments'),
-    ('retire',       'Retire — Retire and unretire devices'),
 ]
 
 
@@ -901,7 +899,10 @@ def export_xlsx():
 @permission_required('users')
 def user_list():
     users = db.get_all_users()
-    return render_template('users.html', users=users)
+    guest_permissions = db.get_guest_permissions()
+    return render_template('users.html', users=users,
+                           guest_permissions=guest_permissions,
+                           guest_assignable_permissions=GUEST_ASSIGNABLE_PERMISSIONS)
 
 
 @app.route('/users/add', methods=['GET', 'POST'])
@@ -1116,10 +1117,7 @@ def account():
     def _render(**extra):
         users = db.get_all_users() if has_permission('users') else []
         server_config = _load_server_config()
-        guest_perms = db.get_guest_permissions() if has_permission('settings') else set()
-        return render_template('account.html', users=users, server_config=server_config,
-                               guest_permissions=guest_perms,
-                               guest_assignable_permissions=GUEST_ASSIGNABLE_PERMISSIONS, **extra)
+        return render_template('account.html', users=users, server_config=server_config, **extra)
 
     if request.method == 'POST':
         # Password change + hint form

@@ -54,4 +54,31 @@
         </tbody>
     </table>
 </div>
+
+<!-- Public Access Permissions -->
+<div class="card" style="cursor: default; margin-top: 24px;">
+    <div class="section-label">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+        </svg>
+        Public Access
+    </div>
+    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+        Control what non-logged-in users can do. By default, guests can only view data. Enable permissions below to allow public editing.
+    </p>
+    <form method="POST" action="{{ url_for('save_guest_permissions') }}">
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px;">
+            {% for perm_key, perm_label in guest_assignable_permissions %}
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); transition: all 0.15s;"
+                   onmouseover="this.style.borderColor='var(--accent-blue)'" onmouseout="this.style.borderColor='var(--border-color)'">
+                <input type="checkbox" name="guest_permissions" value="{{ perm_key }}"
+                       style="width: 16px; height: 16px; margin-top: 1px; flex-shrink: 0;"
+                       {% if perm_key in guest_permissions %}checked{% endif %}>
+                <span>{{ perm_label }}</span>
+            </label>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save Public Permissions</button>
+    </form>
+</div>
 {% endblock %}

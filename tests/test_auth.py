@@ -649,11 +649,13 @@ class TestGuestPermissions(BaseTestCase):
         """Invalid permission keys are filtered out when saving."""
         self.login_admin()
         self.client.post('/settings/guest-permissions', data={
-            'guest_permissions': ['wiki', 'backups', 'settings', 'fake_perm'],
+            'guest_permissions': ['wiki', 'devices', 'retire', 'backups', 'settings', 'fake_perm'],
         }, follow_redirects=True)
         perms = db.get_guest_permissions()
-        # Only wiki should be saved (backups/settings/fake not in GUEST_ASSIGNABLE)
+        # Only wiki should be saved (others not in GUEST_ASSIGNABLE)
         self.assertIn('wiki', perms)
+        self.assertNotIn('devices', perms)
+        self.assertNotIn('retire', perms)
         self.assertNotIn('backups', perms)
         self.assertNotIn('settings', perms)
         self.assertNotIn('fake_perm', perms)
@@ -675,24 +677,32 @@ class TestGuestPermissions(BaseTestCase):
 
     def test_login_required_ignores_guest_permissions(self):
         """Routes with @login_required always require login, regardless of guest permissions."""
-        db.save_guest_permissions({'devices', 'references', 'wiki', 'retire'})
+        db.save_guest_permissions({'references', 'wiki'})
         # /account uses @login_required, not @permission_required
         resp = self.client.get('/account', follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/login', resp.headers['Location'])
         db.save_guest_permissions(set())
 
-    def test_settings_page_shows_guest_permissions_card(self):
-        """Admin settings page shows the Public Access card."""
+    def test_user_management_shows_guest_permissions_card(self):
+        """User management page shows the Public Access card."""
         self.login_admin()
-        resp = self.client.get('/account')
+        resp = self.client.get('/users')
         self.assertIn(b'Public Access', resp.data)
         self.assertIn(b'guest_permissions', resp.data)
 
+    def test_settings_page_does_not_show_guest_permissions(self):
+        """Settings page should not show the Public Access card (moved to user management)."""
+        self.login_admin()
+        resp = self.client.get('/account')
+        self.assertNotIn(b'save_guest_permissions', resp.data)
+
     def test_guest_assignable_excludes_sensitive(self):
-        """GUEST_ASSIGNABLE_PERMISSIONS should not include sensitive permissions."""
+        """GUEST_ASSIGNABLE_PERMISSIONS should not include sensitive or destructive permissions."""
         guest_keys = {k for k, _ in GUEST_ASSIGNABLE_PERMISSIONS}
         self.assertNotIn('backups', guest_keys)
         self.assertNotIn('logs', guest_keys)
         self.assertNotIn('settings', guest_keys)
         self.assertNotIn('users', guest_keys)
+        self.assertNotIn('devices', guest_keys)
+        self.assertNotIn('retire', guest_keys)
