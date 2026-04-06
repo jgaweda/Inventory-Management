@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Documentation{% endblock %}
+
+{% block content %}
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+    <h2 style="font-size: 24px; font-weight: 700; margin: 0;">Documentation</h2>
+    <span style="font-size: 12px; color: var(--text-muted); background: var(--bg-primary); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border-color);">README.md</span>
+</div>
+
+<div class="card" style="cursor: default; max-width: 900px; padding: 32px 40px; line-height: 1.7;">
+    <div id="docsContent"></div>
+</div>
+
+<style>
+    #docsContent h1 { font-size: 22px; font-weight: 700; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    #docsContent h2 { font-size: 18px; font-weight: 700; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+    #docsContent h3 { font-size: 15px; font-weight: 700; margin: 20px 0 8px; }
+    #docsContent p { margin: 8px 0; font-size: 14px; color: var(--text-secondary); }
+    #docsContent ul, #docsContent ol { margin: 8px 0; padding-left: 24px; font-size: 14px; color: var(--text-secondary); }
+    #docsContent li { margin: 4px 0; }
+    #docsContent code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 1px 5px;
+    }
+    #docsContent pre {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px 18px;
+        overflow-x: auto;
+        margin: 10px 0;
+    }
+    #docsContent pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+    #docsContent table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+        font-size: 13px;
+    }
+    #docsContent th, #docsContent td {
+        text-align: left;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+    }
+    #docsContent th {
+        background: var(--bg-primary);
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+    #docsContent strong { color: var(--text-primary); }
+    #docsContent a { color: var(--accent-blue); text-decoration: none; }
+    #docsContent a:hover { text-decoration: underline; }
+    #docsContent hr { border: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
+</style>
+
+<script>
+// Lightweight markdown renderer — handles the subset used in the README
+(function() {
+    var raw = {{ readme_content|tojson }};
+    var html = '';
+    var lines = raw.split('\n');
+    var inCode = false;
+    var codeLang = '';
+    var codeBlock = [];
+    var inList = false;
+    var listType = 'ul';
+
+    function esc(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function inline(s) {
+        s = esc(s);
+        // Bold + italic
+        s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+        // Bold
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // Italic
+        s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        // Inline code
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // Links [text](url)
+        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        // Em dash
+        s = s.replace(/ -- /g, ' &mdash; ');
+        return s;
+    }
+
+    function closeList() {
+        if (inList) { html += '</' + listType + '>'; inList = false; }
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+
+        // Code fence
+        if (line.match(/^```/)) {
+            if (inCode) {
+                html += '<pre><code>' + esc(codeBlock.join('\n')) + '</code></pre>';
+                codeBlock = [];
+                inCode = false;
+            } else {
+                closeList();
+                codeLang = line.replace(/^```/, '').trim();
+                inCode = true;
+            }
+            continue;
+        }
+        if (inCode) {
+            codeBlock.push(line);
+            continue;
+        }
+
+        // Headings
+        var hMatch = line.match(/^(#{1,6})\s+(.+)/);
+        if (hMatch) {
+            closeList();
+            var level = hMatch[1].length;
+            html += '<h' + level + '>' + inline(hMatch[2]) + '</h' + level + '>';
+            continue;
+        }
+
+        // Table row
+        if (line.match(/^\|/)) {
+            // Skip separator rows
+            if (line.match(/^\|\s*[-:]+/)) continue;
+            var cells = line.split('|').filter(function(c, idx, arr) { return idx > 0 && idx < arr.length - 1; });
+            // Detect header (next line is separator)
+            var nextLine = i + 1 < lines.length ? lines[i + 1] : '';
+            if (nextLine.match(/^\|\s*[-:]+/)) {
+                html += '<table><thead><tr>';
+                cells.forEach(function(c) { html += '<th>' + inline(c.trim()) + '</th>'; });
+                html += '</tr></thead><tbody>';
+            } else {
+                var isLastRow = i + 1 >= lines.length || !lines[i + 1].match(/^\|/);
+                html += '<tr>';
+                cells.forEach(function(c) { html += '<td>' + inline(c.trim()) + '</td>'; });
+                html += '</tr>';
+                if (isLastRow) html += '</tbody></table>';
+            }
+            continue;
+        }
+
+        // Unordered list
+        if (line.match(/^(\s*)[-*]\s+/)) {
+            if (!inList) { html += '<ul>'; inList = true; listType = 'ul'; }
+            html += '<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>';
+            continue;
+        }
+
+        // Ordered list
+        if (line.match(/^\s*\d+\.\s+/)) {
+            if (!inList) { html += '<ol>'; inList = true; listType = 'ol'; }
+            html += '<li>' + inline(line.replace(/^\s*\d+\.\s+/, '')) + '</li>';
+            continue;
+        }
+
+        closeList();
+
+        // Horizontal rule
+        if (line.match(/^---+$/)) { html += '<hr>'; continue; }
+
+        // Empty line
+        if (line.trim() === '') { continue; }
+
+        // Paragraph
+        html += '<p>' + inline(line) + '</p>';
+    }
+
+    closeList();
+    document.getElementById('docsContent').innerHTML = html;
+})();
+</script>
+{% endblock %}

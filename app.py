@@ -1137,6 +1137,19 @@ def account():
     return render_template('account.html', users=users, server_config=server_config)
 
 
+@app.route('/docs')
+@login_required
+def docs():
+    """Render the README as in-app documentation."""
+    readme_path = os.path.join(BUNDLE_DIR, 'README.md')
+    try:
+        with open(readme_path, 'r') as f:
+            content = f.read()
+    except FileNotFoundError:
+        content = '*Documentation file not found.*'
+    return render_template('docs.html', readme_content=content)
+
+
 @app.route('/settings/server', methods=['POST'])
 @permission_required('settings')
 def save_server_config():
