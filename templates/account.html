@@ -6,37 +6,18 @@
 
 <!-- Account Info (compact) -->
 <div class="card" style="cursor: default; max-width: 800px;">
-    <div class="section-label">Account Information</div>
-    <div style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 200px;">
-            <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg-primary); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: var(--accent-cyan); flex-shrink: 0;">
-                {{ current_user.username[0]|upper }}
-            </div>
-            <div>
-                <div style="font-size: 14px; font-weight: 600;">{{ current_user.display_name or current_user.username }}</div>
-                <div style="font-size: 12px; color: var(--text-muted);">
-                    <span class="font-mono">{{ current_user.username }}</span>
-                    &middot;
-                    {% if current_user.role == 'admin' %}
-                    <span style="color: #3b82f6;">admin</span>
-                    {% else %}
-                    <span style="color: #10b981;">custom</span>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('changePwModal').style.display='flex'">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                Change Password
-            </button>
-            {% if has_permission('settings') %}
-            <a href="{{ url_for('user_list') }}" class="btn btn-secondary btn-sm">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                User Management
-            </a>
-            {% endif %}
-        </div>
+    <div class="section-label">Account</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('changePwModal').style.display='flex'">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Change Password
+        </button>
+        {% if has_permission('settings') %}
+        <a href="{{ url_for('user_list') }}" class="btn btn-secondary btn-sm">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            User Management
+        </a>
+        {% endif %}
     </div>
 </div>
 
