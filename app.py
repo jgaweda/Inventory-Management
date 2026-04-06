@@ -1223,16 +1223,25 @@ def app_update_check():
         )
         branch = branch_result.stdout.strip()
 
-        # Check for differences
+        # Check for differences (--first-parent avoids counting both sides of merges,
+        # and we exclude auto-generated version bump / merge commits from the count)
         log_result = subprocess.run(
-            ['git', 'log', f'HEAD..origin/{branch}', '--oneline', '--no-decorate'],
+            ['git', 'log', f'HEAD..origin/{branch}', '--oneline', '--no-decorate', '--first-parent'],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
         )
         commits = log_result.stdout.strip()
 
         if commits:
-            count = len(commits.splitlines())
-            output = f'Branch: {branch}\n{count} update(s) available:\n\n{commits}'
+            lines = commits.splitlines()
+            # Filter out auto-generated commits (version bumps and merge commits)
+            meaningful = [l for l in lines
+                          if not l.split(' ', 1)[1].startswith(('Bump version to ', 'Merge branch '))]
+            count = len(meaningful)
+            display = '\n'.join(meaningful) if meaningful else '\n'.join(lines)
+            if count == 0:
+                count = len(lines)
+                display = '\n'.join(lines)
+            output = f'Branch: {branch}\n{count} update(s) available:\n\n{display}'
             return jsonify({'updates_available': True, 'output': output, 'branch': branch})
         else:
             return jsonify({'updates_available': False, 'output': f'Branch: {branch}\nNo new commits.', 'branch': branch})
