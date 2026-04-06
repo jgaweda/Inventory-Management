@@ -107,6 +107,7 @@ with app.app_context():
     os.makedirs(os.path.join(app.static_folder, 'labels'), exist_ok=True)
     os.makedirs(db._get_backup_dir(), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, 'wiki_uploads'), exist_ok=True)
+    os.makedirs(os.path.join(DATA_DIR, 'device_uploads'), exist_ok=True)
     # Startup integrity check — log warning if database is corrupt
     _integrity = db.startup_integrity_check()
     if not _integrity['ok']:
@@ -439,8 +440,10 @@ def device_detail(device_id):
                 prod_ref = refs[0]
 
     device_notes = db.get_device_notes(device_id)
+    attachments = db.get_device_attachments(device_id)
     return render_template('device_detail.html', device=device, audit=audit,
-                           prod_ref=prod_ref, device_notes=device_notes)
+                           prod_ref=prod_ref, device_notes=device_notes,
+                           attachments=attachments)
 
 # ---------------------------------------------------------------------------
 # Device notes (public — anyone can add)
@@ -2255,6 +2258,7 @@ def product_reference_export_xlsx():
 # ---------------------------------------------------------------------------
 
 WIKI_UPLOADS_DIR = os.path.join(DATA_DIR, 'wiki_uploads')
+DEVICE_UPLOADS_DIR = os.path.join(DATA_DIR, 'device_uploads')
 ALLOWED_EXTENSIONS = {
     'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp',
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt',
@@ -2400,6 +2404,97 @@ def wiki_repair_attachments():
     else:
         flash(f'All {result["total_checked"]} attachments are intact. No repairs needed.', 'success')
     return redirect(request.referrer or url_for('product_reference_list'))
+
+
+# ---------------------------------------------------------------------------
+# Device Attachments — any logged-in user can upload, devices perm to delete
+# ---------------------------------------------------------------------------
+
+@app.route('/devices/<device_id>/upload', methods=['POST'])
+@login_required
+def device_upload(device_id):
+    """Upload an attachment to a device."""
+    device = db.get_device(device_id)
+    if not device:
+        flash('Device not found.', 'error')
+        return redirect(url_for('device_list'))
+
+    file = request.files.get('attachment')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+
+    original_name = file.filename
+    ext = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else ''
+    if ext not in ALLOWED_EXTENSIONS:
+        flash(f'File type .{ext} is not allowed.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+
+    data = file.read()
+    if len(data) > MAX_UPLOAD_SIZE:
+        flash('File exceeds 25 MB limit.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+
+    upload_dir = os.path.join(DEVICE_UPLOADS_DIR, str(device_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    safe_name = f'{uuid.uuid4().hex}.{ext}'
+    filepath = os.path.join(upload_dir, safe_name)
+    with open(filepath, 'wb') as f:
+        f.write(data)
+
+    db.add_device_attachment(
+        device_id=device_id,
+        filename=safe_name,
+        original_name=original_name,
+        content_type=file.content_type or '',
+        size_bytes=len(data),
+        uploaded_by=current_username(),
+    )
+    flash(f'Uploaded {original_name}.', 'success')
+    return redirect(url_for('device_detail', device_id=device_id))
+
+
+@app.route('/device/attachment/<int:attachment_id>')
+def device_download(attachment_id):
+    """Download a device attachment (public)."""
+    att = db.get_device_attachment(attachment_id)
+    if not att:
+        return 'Attachment not found', 404
+    filepath = os.path.join(DEVICE_UPLOADS_DIR, str(att['device_id']), att['filename'])
+    if not os.path.isfile(filepath):
+        return 'File not found on disk', 404
+    return send_file(filepath, download_name=att['original_name'], as_attachment=True)
+
+
+@app.route('/device/attachment/<int:attachment_id>/preview')
+def device_attachment_preview(attachment_id):
+    """Serve a device attachment inline for image preview (public)."""
+    att = db.get_device_attachment(attachment_id)
+    if not att:
+        return 'Attachment not found', 404
+    filepath = os.path.join(DEVICE_UPLOADS_DIR, str(att['device_id']), att['filename'])
+    if not os.path.isfile(filepath):
+        return 'File not found on disk', 404
+    return send_file(filepath, mimetype=att['content_type'])
+
+
+@app.route('/device/attachment/<int:attachment_id>/delete', methods=['POST'])
+@login_required
+def device_delete_attachment(attachment_id):
+    """Delete a device attachment (requires devices permission)."""
+    if not has_permission('devices'):
+        flash('You do not have permission to perform this action.', 'error')
+        return redirect(url_for('device_list'))
+    att = db.get_device_attachment(attachment_id)
+    if not att:
+        flash('Attachment not found.', 'error')
+        return redirect(url_for('device_list'))
+    filepath = os.path.join(DEVICE_UPLOADS_DIR, str(att['device_id']), att['filename'])
+    if os.path.isfile(filepath):
+        os.remove(filepath)
+    db.delete_device_attachment(attachment_id)
+    flash(f'Deleted {att["original_name"]}.', 'success')
+    return redirect(url_for('device_detail', device_id=att['device_id']))
 
 
 @app.route('/api/devices/distinct/<field>')

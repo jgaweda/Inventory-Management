@@ -80,7 +80,7 @@
                         {{ entry.device_name or entry.device_id }}
                     </a>
                 </td>
-                <td><span class="action-badge action-{{ entry.action }}">{{ entry.action }}</span></td>
+                <td><span class="action-badge action-{{ entry.action }}">{{ entry.action|replace('_', ' ')|title }}</span></td>
                 <td style="color: var(--text-secondary); font-size: 13px;">{{ entry.performed_by }}</td>
                 <td style="color: var(--text-muted); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ entry.details }}</td>
             </tr>
