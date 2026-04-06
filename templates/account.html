@@ -90,6 +90,9 @@ function checkForUpdates() {
                     applyBtn.style.display = 'inline-flex';
                 } else {
                     status.textContent += '\n\nApplication is up to date.';
+                    try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
+                    var b = document.getElementById('updateBanner');
+                    if (b) b.style.display = 'none';
                 }
             }
         })
@@ -104,6 +107,8 @@ function applyUpdate() {
     var status = document.getElementById('updateStatus');
     var applyBtn = document.getElementById('applyUpdateBtn');
     var checkBtn = document.getElementById('checkUpdateBtn');
+    var banner = document.getElementById('updateBanner');
+    if (banner) banner.style.display = 'none';
     status.textContent = 'Pulling updates and restarting...';
     applyBtn.disabled = true;
     checkBtn.disabled = true;
@@ -117,6 +122,7 @@ function applyUpdate() {
                 checkBtn.disabled = false;
             } else {
                 status.textContent = data.output + '\n\nRestarting server — page will reload automatically...';
+                try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
                 setTimeout(function pollServer() {
                     fetch('{{ url_for("health_check") }}')
                         .then(function() { window.location.reload(); })
@@ -126,6 +132,7 @@ function applyUpdate() {
         })
         .catch(function(err) {
             status.textContent = 'Connection lost — server may be restarting.\nRetrying...';
+            try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
             setTimeout(function pollServer() {
                 fetch('{{ url_for("health_check") }}')
                     .then(function() { window.location.reload(); })
