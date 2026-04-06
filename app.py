@@ -161,21 +161,19 @@ def login_required(f):
 # Centralized permission model — single source of truth for all role access.
 # To change what a role can do, edit this dict. To add a role, add a line.
 ROLE_PERMISSIONS = {
-    'admin':  {'devices', 'references', 'wiki', 'wiki_admin', 'users', 'backups', 'logs', 'settings', 'notes_delete', 'retire'},
+    'admin':  {'devices', 'references', 'wiki', 'users', 'backups', 'logs', 'settings', 'retire'},
     'custom': set(),  # custom users get permissions from their user record
 }
 
 # Assignable permissions shown as checkboxes when creating/editing custom users.
 # Admin-only permissions (users, settings) are not assignable.
 ASSIGNABLE_PERMISSIONS = [
-    ('devices',      'Devices — Add, edit, checkout/checkin devices'),
+    ('devices',      'Devices — Add, edit, checkout/checkin, and delete notes'),
     ('references',   'References — Manage product reference catalog'),
-    ('wiki',         'Wiki — View and edit product wiki pages'),
-    ('wiki_admin',   'Wiki Admin — Upload/delete wiki attachments'),
+    ('wiki',         'Wiki — Edit pages, upload/delete attachments'),
     ('backups',      'Backups — View, create, restore, and configure backups'),
     ('logs',         'Logs — View and export application logs'),
     ('retire',       'Retire — Retire and unretire devices'),
-    ('notes_delete', 'Notes — Delete device notes'),
 ]
 
 
@@ -188,13 +186,22 @@ def get_user_permissions(user):
     # Custom users: permissions is a pre-parsed list from _parse_user_row
     perms = user.get('permissions')
     if isinstance(perms, list):
-        return set(perms)
-    if isinstance(perms, str):
+        result = set(perms)
+    elif isinstance(perms, str):
         try:
-            return set(json.loads(perms))
+            result = set(json.loads(perms))
         except (json.JSONDecodeError, TypeError):
-            pass
-    return set()
+            result = set()
+    else:
+        result = set()
+    # Migrate legacy permissions: wiki_admin → wiki, notes_delete → devices
+    if 'wiki_admin' in result:
+        result.discard('wiki_admin')
+        result.add('wiki')
+    if 'notes_delete' in result:
+        result.discard('notes_delete')
+        result.add('devices')
+    return result
 
 
 def has_permission(permission):
@@ -465,9 +472,9 @@ def add_device_note(device_id):
 
 
 @app.route('/devices/<device_id>/notes/<int:note_id>/delete', methods=['POST'])
-@permission_required('notes_delete')
+@permission_required('devices')
 def delete_device_note_route(device_id, note_id):
-    """Delete a device note (admin only)."""
+    """Delete a device note (requires devices permission)."""
     db.delete_device_note(note_id)
     flash('Note deleted.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
@@ -2187,7 +2194,7 @@ def product_wiki_save(ref_id):
 @login_required
 def wiki_upload(ref_id):
     """Upload an attachment to a product wiki."""
-    if not has_permission('wiki_admin'):
+    if not has_permission('wiki'):
         flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_wiki', ref_id=ref_id))
 
@@ -2256,7 +2263,7 @@ def wiki_attachment_preview(attachment_id):
 @login_required
 def wiki_delete_attachment(attachment_id):
     """Delete a wiki attachment."""
-    if not has_permission('wiki_admin'):
+    if not has_permission('wiki'):
         flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
     att = db.get_wiki_attachment(attachment_id)
@@ -2276,7 +2283,7 @@ def wiki_delete_attachment(attachment_id):
 @login_required
 def wiki_repair_attachments():
     """Manually run attachment integrity check — removes orphaned DB records."""
-    if not has_permission('wiki_admin'):
+    if not has_permission('wiki'):
         flash('You do not have permission to perform this action.', 'error')
         return redirect(url_for('product_reference_list'))
     result = db.check_attachment_integrity(WIKI_UPLOADS_DIR)
