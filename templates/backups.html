@@ -197,6 +197,73 @@
     </div>
 </div>
 
+<!-- Local Backup List -->
+{% if backups %}
+<div class="card" style="margin-bottom: 24px; cursor: default;">
+    <div class="section-label">Local Backups</div>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="border-bottom: 2px solid var(--border-color); text-align: left;">
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Filename</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Date</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Size</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Type</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: center;">Cloud</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in backups %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 8px 12px; font-family: var(--font-mono, monospace); white-space: nowrap;">{{ b.filename }}</td>
+                    <td style="padding: 8px 12px; white-space: nowrap; color: var(--text-secondary);">{{ b.timestamp }}</td>
+                    <td style="padding: 8px 12px; white-space: nowrap; color: var(--text-secondary);">
+                        {% if b.size >= 1048576 %}{{ '%.1f'|format(b.size / 1048576) }} MB{% else %}{{ '%.1f'|format(b.size / 1024) }} KB{% endif %}
+                    </td>
+                    <td style="padding: 8px 12px; white-space: nowrap;">
+                        {% if b.type == 'manual' %}
+                        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(99,102,241,0.1); color: var(--accent-blue);">Manual</span>
+                        {% else %}
+                        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(16,185,129,0.1); color: var(--accent-green);">Auto</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 8px 12px; text-align: center;">
+                        {% if b.filename in cloud_backup_files %}
+                        <svg width="16" height="16" fill="none" stroke="var(--accent-green, #10b981)" stroke-width="2" viewBox="0 0 24 24" title="Uploaded to cloud">
+                            <path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M8 16l2.5 2.5L16 13"/>
+                        </svg>
+                        {% else %}
+                        <span style="color: var(--text-muted);" title="Not yet uploaded to cloud">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 8px 12px; white-space: nowrap; text-align: right;">
+                        <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                            <a href="{{ url_for('backup_download', filename=b.filename) }}" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;" title="Download">
+                                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            </a>
+                            <form method="POST" action="{{ url_for('backup_restore', filename=b.filename) }}" style="margin: 0;"
+                                  onsubmit="return confirm('Restore from this backup?\n\nThe current database will be overwritten. A safety backup will be created first.');">
+                                <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px;" title="Restore">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('backup_delete', filename=b.filename) }}" style="margin: 0;"
+                                  onsubmit="return confirm('Delete this backup?\n\n{{ b.filename }}');">
+                                <button type="submit" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 8px; color: var(--accent-red);" title="Delete">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <!-- Local Restore Modal -->
 <div id="localRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
     <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 560px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">

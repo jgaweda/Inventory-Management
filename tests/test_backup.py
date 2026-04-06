@@ -114,6 +114,37 @@ class TestBackupEdgeCases(BaseTestCase):
         resp = self.client.get('/backups', follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
 
+    def test_backup_list_shows_local_backups(self):
+        """Backup page lists local backup files with timestamps."""
+        self.login_admin()
+        result = db.backup_database(performed_by='test', manual=True)
+        resp = self.client.get('/backups')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(result['filename'].encode(), resp.data)
+        self.assertIn(b'Local Backups', resp.data)
+
+    def test_backup_list_shows_cloud_icon(self):
+        """Backups that were pushed to cloud show a cloud indicator."""
+        self.login_admin()
+        result = db.backup_database(performed_by='test', manual=True)
+        # Simulate a cloud push by saving the filename in config
+        config = db._get_backup_config()
+        config['last_cloud_backup_files'] = [result['filename']]
+        db.save_backup_config(config)
+        resp = self.client.get('/backups')
+        self.assertEqual(resp.status_code, 200)
+        # The cloud icon SVG should appear (contains the checkmark path)
+        self.assertIn(b'Uploaded to cloud', resp.data)
+
+    def test_cloud_backup_files_stored_in_config(self):
+        """last_cloud_backup_files persists through config save/load."""
+        config = db._get_backup_config()
+        config['last_cloud_backup_files'] = ['auto_backup_20250101_000000.db', 'manual_backup_20250102_120000.db']
+        db.save_backup_config(config)
+        reloaded = db._get_backup_config()
+        self.assertEqual(reloaded['last_cloud_backup_files'],
+                         ['auto_backup_20250101_000000.db', 'manual_backup_20250102_120000.db'])
+
 class TestBackupConfigRoutes(BaseTestCase):
     """Test backup configuration routes."""
 
