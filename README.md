@@ -63,19 +63,31 @@ Open **http://localhost:8080** in your browser. The database is created automati
 - **Barcode scanning** -- USB barcode scanner support with auto-detection + fullscreen camera QR/barcode scanning
 
 ### Product Reference & Wiki
-- **Product catalog** -- Inline-editable spreadsheet of printer/device specs (codename, model, chipset, Wi-Fi gen, etc.)
+- **Product catalog** -- Inline-editable spreadsheet of printer/device specs (codename, model, chipset, Wi-Fi gen, cartridge/toner, etc.)
 - **Product wiki** -- Community notepad per product for testing nuances, known issues, and configuration tips
 - **Wiki attachments** -- Admin file upload (images, PDFs, docs, spreadsheets, logs); all users can download
 - **Image preview** -- Uploaded images display as inline thumbnails on the wiki page
+- **Wiki integrity repair** -- Automatic cleanup of orphaned attachment records when files are missing
 - **Import/Export** -- Bulk import product references from CSV or XLSX; export to CSV
+
+### Backups & Recovery
+- **Automatic backups** -- Configurable interval with skip-if-unchanged detection (compares DB hash)
+- **Smart retention** -- Keeps at least one backup per day for 7 days, then applies max backup limit
+- **Cloud backup** -- Zip and push backups + wiki uploads to a dedicated git branch with PAT auth
+- **AES-256 encryption** -- Optional encryption password for cloud backups; data is unreadable on GitHub without the password
+- **Restore** -- Restore from local backups or directly from cloud with one click
+- **Admin password required** -- Cloud restore requires admin password re-entry for safety
+- **Backup health monitoring** -- Dashboard alerts when backups are overdue (only when the database has actually changed)
+- **Emergency backup** -- SQL export for disaster recovery scenarios
+- **Self-healing scheduler** -- Backup scheduler automatically recovers from crashes; health checked every 60 seconds
 
 ### System
 - **Dashboard** -- At-a-glance stats, category breakdowns, recent activity
-- **Database backups** -- Configurable auto-backup with skip-if-unchanged, smart retention policy
-- **Git backup push** -- Zip and push backups to a dedicated git branch with Personal Access Token auth
-- **Restore** -- Restore from local backups or directly from git with one click
-- **Application log** -- Paginated, filterable log viewer
-- **User management** -- Role-based access (admin/viewer); public read-only routes for the network
+- **Application log** -- Paginated, filterable log viewer with export to .log file
+- **User management** -- Role-based access control:
+  - **Admin** -- Full access to all features
+  - **Custom** -- Granular permissions: devices, references, wiki, wiki admin, backups, logs, retire, notes delete
+  - **Public** -- Read-only routes accessible without login
 - **Dark / light theme** -- Toggle in the sidebar; preference saved per browser
 - **Health endpoint** -- `GET /health` returns JSON with database integrity status
 - **Rate limiting** -- Login brute-force protection (10 attempts per 5 minutes per IP)
@@ -86,6 +98,7 @@ Open **http://localhost:8080** in your browser. The database is created automati
 - **WSGI Server**: Waitress (production, cross-platform)
 - **Database**: SQLite3 (WAL mode, single file)
 - **Labels**: qrcode + python-barcode + Pillow
+- **Encryption**: pyzipper (AES-256 for cloud backups)
 - **Frontend**: HTML + Vanilla JS + CSS custom properties (dark/light theme)
 
 ## Running from Source (Development)
@@ -107,10 +120,34 @@ Runs on `127.0.0.1:8080` with Flask debug mode and auto-reload.
 ```bash
 python3 -m unittest discover -s tests -v    # all tests
 python3 -m unittest tests.test_devices -v   # just device tests
+python3 -m unittest tests.test_auth -v      # just auth tests
+python3 -m unittest tests.test_references -v # just product reference tests
+python3 -m unittest tests.test_wiki -v      # just wiki tests
 python3 -m unittest tests.test_backup -v    # just backup tests
+python3 -m unittest tests.test_general -v   # labels, export, search, etc.
 ```
 
-318 tests organized by feature: devices, auth, references, wiki, backups, and general.
+330 tests organized by feature: devices, auth, references, wiki, backups, and general.
+
+## Project Structure
+
+```
+app.py                  # Flask application (routes, middleware, scheduler)
+database.py             # Database layer (schema, CRUD, backups, cloud push)
+import_product_reference.py  # CSV/XLSX product reference importer
+templates/              # Jinja2 HTML templates
+static/                 # CSS, JS, images
+seed_data/              # Default product reference CSV + images
+scripts/                # Start scripts, build scripts, PyInstaller spec
+tests/                  # Test suite (6 modules, 330 tests)
+  __init__.py           #   Shared BaseTestCase and test infrastructure
+  test_devices.py       #   Device CRUD, checkout, notes
+  test_auth.py          #   Login, roles, permissions, users
+  test_references.py    #   Product references, seed import, cartridge/toner
+  test_wiki.py          #   Wiki pages, attachments, markdown, integrity
+  test_backup.py        #   Backups, scheduler, encryption, cloud restore
+  test_general.py       #   Barcodes, labels, export, search, dashboard
+```
 
 ## Building Executables
 
