@@ -66,12 +66,12 @@ def generate_qr_code(data, size=250):
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=1,
-        border=4,
+        border=2,
     )
     qr.add_data(data)
     qr.make(fit=True)
     # Calculate modules: matrix size + 2*border
-    modules = qr.modules_count + 2 * 4
+    modules = qr.modules_count + 2 * 2
     # Find largest box_size that divides evenly into target size
     box_size = size // modules
     if box_size < 1:
@@ -206,10 +206,9 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw = ImageDraw.Draw(label)
 
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
-    TOP_MARGIN = 8                         # tight top margin to maximise QR size
     bc_h = 140                             # ~0.47" — well above GS1 minimum
     bc_y = H - MARGIN - bc_h              # 290
-    qr_size = bc_y - TOP_MARGIN           # 282 — fills top zone height
+    qr_size = bc_y - MARGIN               # 270 — top/bottom margins match
     top_zone_h = qr_size
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
@@ -221,12 +220,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (MARGIN, TOP_MARGIN))
+    label.paste(qr_img, (MARGIN, MARGIN))
 
     text_x = MARGIN + qr_size + GAP
     text_cx = text_x + text_area_w // 2
     total_text_h = name_th + 16 + id_th
-    text_top = TOP_MARGIN + (top_zone_h - total_text_h) // 2
+    text_top = MARGIN + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
