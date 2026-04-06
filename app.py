@@ -492,6 +492,7 @@ def add_device_note(device_id):
 def delete_device_note_route(device_id, note_id):
     """Delete a device note (requires devices permission)."""
     db.delete_device_note(note_id)
+    app_logger.info('Note deleted: note_id=%d device_id=%s by=%s', note_id, device_id, current_username())
     flash('Note deleted.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
@@ -1349,12 +1350,16 @@ def _scheduler_loop():
                 run_verify = _next_verify_time is not None and now >= _next_verify_time
 
             if run_backup:
+                app_logger.info('Scheduler: running scheduled backup')
                 _exec_scheduled_backup()
             if run_git:
+                app_logger.info('Scheduler: running scheduled git push')
                 _exec_scheduled_git_push()
             if run_prune:
+                app_logger.info('Scheduler: running scheduled prune')
                 _exec_scheduled_prune()
             if run_verify:
+                app_logger.info('Scheduler: running scheduled verification')
                 _exec_scheduled_verify()
         except Exception:
             app_logger.error('Scheduler loop error (will continue):\n%s', traceback.format_exc())
@@ -1950,6 +1955,7 @@ def product_reference_add():
             print_technology=request.form.get('print_technology', '').strip(),
             cartridge_toner=request.form.get('cartridge_toner', '').strip(),
         )
+        app_logger.info('Product reference added: codename="%s" by=%s', codename, current_username())
         flash(f'Product reference "{codename}" added.', 'success')
         return redirect(url_for('product_reference_list'))
 
@@ -1982,6 +1988,7 @@ def product_reference_edit(ref_id):
             print_technology=request.form.get('print_technology', '').strip(),
             cartridge_toner=request.form.get('cartridge_toner', '').strip(),
         )
+        app_logger.info('Product reference updated: ref_id=%d codename="%s" by=%s', ref_id, codename, current_username())
         flash(f'Product reference "{codename}" updated.', 'success')
         return redirect(url_for('product_reference_list'))
 
@@ -2018,6 +2025,7 @@ def api_reference_update(ref_id):
 @permission_required('references')
 def product_reference_delete(ref_id):
     db.delete_product_reference(ref_id)
+    app_logger.info('Product reference deleted: ref_id=%d by=%s', ref_id, current_username())
     flash('Product reference deleted.', 'success')
     return redirect(url_for('product_reference_list'))
 
@@ -2142,6 +2150,8 @@ def _import_seed_data():
     msg = f'Seed import: {", ".join(parts)}.'
     if images_attached:
         msg += f' {images_attached} images attached to wiki pages.'
+    app_logger.info('Seed import completed: added=%d updated=%d skipped=%d images=%d by=%s',
+                    added, updated, skipped, images_attached, current_username())
     flash(msg, 'success')
     return redirect(url_for('product_reference_list'))
 
@@ -2233,6 +2243,8 @@ def product_reference_import():
                 db.add_product_reference(**record)
                 imported += 1
 
+        app_logger.info('Product reference import: %d imported, %d skipped, file="%s" by=%s',
+                        imported, skipped, file.filename, current_username())
         flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
               + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
     except Exception as e:
@@ -2259,6 +2271,7 @@ def product_reference_export():
                          r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
                          r.get('variant', '')])
     csv_bytes = output.getvalue().encode('utf-8-sig')
+    app_logger.info('Product reference CSV export: %d refs by=%s', len(refs), current_username())
     return Response(csv_bytes, mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=product_reference.csv'})
 
@@ -2354,6 +2367,7 @@ def product_wiki_save(ref_id):
     content = request.form.get('content', '')
     username = g.user['username'] if g.user else 'guest'
     db.save_wiki(ref_id, content, updated_by=username)
+    app_logger.info('Wiki saved: ref_id=%d by=%s', ref_id, current_username())
     flash('Wiki saved.', 'success')
     return redirect(url_for('product_wiki', ref_id=ref_id))
 
@@ -2396,6 +2410,8 @@ def wiki_upload(ref_id):
         size_bytes=len(data),
         uploaded_by=g.user['username'] if g.user else 'guest',
     )
+    app_logger.info('Wiki attachment uploaded: ref_id=%d file="%s" (%d bytes) by=%s',
+                    ref_id, original_name, len(data), current_username())
     flash(f'Uploaded {original_name}.', 'success')
     return redirect(url_for('product_wiki', ref_id=ref_id))
 
@@ -2437,6 +2453,8 @@ def wiki_delete_attachment(attachment_id):
     if os.path.isfile(filepath):
         os.remove(filepath)
     db.delete_wiki_attachment(attachment_id)
+    app_logger.info('Wiki attachment deleted: id=%d file="%s" ref_id=%d by=%s',
+                    attachment_id, att['original_name'], att['ref_id'], current_username())
     flash(f'Deleted {att["original_name"]}.', 'success')
     return redirect(url_for('product_wiki', ref_id=att['ref_id']))
 
@@ -2499,6 +2517,8 @@ def device_upload(device_id):
         size_bytes=len(data),
         uploaded_by=current_username(),
     )
+    app_logger.info('Device attachment uploaded: device_id=%s file="%s" (%d bytes) by=%s',
+                    device_id, original_name, len(data), current_username())
     flash(f'Uploaded {original_name}.', 'success')
     return redirect(url_for('device_detail', device_id=device_id))
 
@@ -2539,6 +2559,8 @@ def device_delete_attachment(attachment_id):
     if os.path.isfile(filepath):
         os.remove(filepath)
     db.delete_device_attachment(attachment_id)
+    app_logger.info('Device attachment deleted: id=%d file="%s" device_id=%s by=%s',
+                    attachment_id, att['original_name'], att['device_id'], current_username())
     flash(f'Deleted {att["original_name"]}.', 'success')
     return redirect(url_for('device_detail', device_id=att['device_id']))
 
