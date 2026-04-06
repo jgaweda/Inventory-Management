@@ -4,115 +4,45 @@
 {% block content %}
 <h2 style="font-size: 24px; font-weight: 700; margin-bottom: 24px;">Settings</h2>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 800px;">
-    <!-- Account Info -->
-    <div class="card" style="cursor: default;">
-        <div class="section-label">Account Information</div>
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-            <div>
-                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Username</div>
-                <div class="font-mono" style="font-size: 14px;">{{ current_user.username }}</div>
+<!-- Account Info (compact) -->
+<div class="card" style="cursor: default; max-width: 800px;">
+    <div class="section-label">Account Information</div>
+    <div style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 200px;">
+            <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg-primary); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; color: var(--accent-cyan); flex-shrink: 0;">
+                {{ current_user.username[0]|upper }}
             </div>
             <div>
-                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Display Name</div>
-                <div style="font-size: 14px;">{{ current_user.display_name }}</div>
-            </div>
-            <div>
-                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600;">Role</div>
-                {% if current_user.role == 'admin' %}
-                <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">admin</span>
-                {% else %}
-                <span style="background: rgba(16,185,129,0.12); color: #10b981; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">custom</span>
-                {% endif %}
+                <div style="font-size: 14px; font-weight: 600;">{{ current_user.display_name or current_user.username }}</div>
+                <div style="font-size: 12px; color: var(--text-muted);">
+                    <span class="font-mono">{{ current_user.username }}</span>
+                    &middot;
+                    {% if current_user.role == 'admin' %}
+                    <span style="color: #3b82f6;">admin</span>
+                    {% else %}
+                    <span style="color: #10b981;">custom</span>
+                    {% endif %}
+                </div>
             </div>
         </div>
-    </div>
-
-    <!-- Change Password -->
-    <div class="card" style="cursor: default;">
-        <div class="section-label">Change Password</div>
-        <form method="POST" action="{{ url_for('account') }}">
-            <input type="hidden" name="form_type" value="password">
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Current Password</label>
-                <input type="password" name="current_password" required autocomplete="current-password">
-            </div>
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">New Password</label>
-                <input type="password" name="new_password" required placeholder="Min 4 characters" autocomplete="new-password">
-            </div>
-            <div style="margin-bottom: 16px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Confirm New Password</label>
-                <input type="password" name="confirm_password" required autocomplete="new-password">
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Change Password</button>
-        </form>
-        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
-        <form method="POST" action="{{ url_for('account') }}">
-            <input type="hidden" name="form_type" value="hint">
-            <div style="margin-bottom: 12px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Password Hint</label>
-                <input type="text" name="password_hint" value="{{ current_user.password_hint or '' }}" placeholder="e.g. 'Pet name + year'" autocomplete="off">
-                <span style="font-size: 11px; color: var(--text-muted);">Shown on the login page if you enter the wrong password</span>
-            </div>
-            <button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: center;">Save Hint</button>
-        </form>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('changePwModal').style.display='flex'">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Change Password
+            </button>
+            {% if has_permission('settings') %}
+            <a href="{{ url_for('user_list') }}" class="btn btn-secondary btn-sm">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                User Management
+            </a>
+            {% endif %}
+        </div>
     </div>
 </div>
 
 {% if has_permission('settings') %}
-<!-- Admin: User Management -->
-<div class="card" style="cursor: default; margin-top: 24px; padding: 0; overflow: hidden;">
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 0;">
-        <div class="section-label" style="margin-bottom: 0;">User Management</div>
-        <a href="{{ url_for('user_add') }}" class="btn btn-primary btn-sm">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-            Add User
-        </a>
-    </div>
-    <div class="table-wrap" style="margin-top: 16px;">
-        <table>
-            <thead>
-                <tr>
-                    <th>Username</th>
-                    <th>Display Name</th>
-                    <th>Role</th>
-                    <th>Last Login</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in users %}
-                <tr>
-                    <td class="font-mono" style="font-weight: 600;">{{ user.username }}</td>
-                    <td style="color: var(--text-secondary);">{{ user.display_name }}</td>
-                    <td>
-                        {% if user.role == 'admin' %}
-                        <span style="background: rgba(59,130,246,0.12); color: #3b82f6; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">admin</span>
-                        {% else %}
-                        <span style="background: rgba(16,185,129,0.12); color: #10b981; padding: 3px 10px; border-radius: 9999px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">custom</span>
-                        {% endif %}
-                    </td>
-                    <td class="font-mono" style="font-size: 12px; color: var(--text-muted);">{{ user.last_login or 'Never' }}</td>
-                    <td>
-                        <div style="display: flex; gap: 8px;">
-                            <a href="{{ url_for('user_edit', user_id=user.user_id) }}" class="btn btn-secondary btn-sm">Edit</a>
-                            {% if user.user_id != current_user.user_id %}
-                            <form method="POST" action="{{ url_for('user_delete', user_id=user.user_id) }}" onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?\n\nThis action cannot be undone.')">
-                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                            </form>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
 <!-- Admin: Application Update -->
-<div class="card" style="cursor: default; margin-top: 24px; max-width: 800px;">
+<div class="card" style="cursor: default; margin-top: 16px; max-width: 800px;">
     <div class="section-label">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
             <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115.95-5.65L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15.95 5.65L3 16"/>
@@ -187,7 +117,6 @@ function applyUpdate() {
                 checkBtn.disabled = false;
             } else {
                 status.textContent = data.output + '\n\nRestarting server — page will reload automatically...';
-                // Poll until the server comes back
                 setTimeout(function pollServer() {
                     fetch('{{ url_for("health_check") }}')
                         .then(function() { window.location.reload(); })
@@ -205,11 +134,8 @@ function applyUpdate() {
         });
 }
 
-// Auto-check for updates when arriving from the sidebar banner
 if (window.location.search.indexOf('check_updates=1') !== -1) {
-    // Clean up URL
     window.history.replaceState({}, '', window.location.pathname);
-    // Scroll to update section and trigger check
     var updateCard = document.getElementById('checkUpdateBtn');
     if (updateCard) {
         updateCard.scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -219,7 +145,7 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
 </script>
 
 <!-- Admin: Server Settings -->
-<div class="card" style="cursor: default; margin-top: 24px; max-width: 800px;">
+<div class="card" style="cursor: default; margin-top: 16px; max-width: 800px;">
     <div class="section-label">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
             <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
@@ -242,7 +168,7 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
 </div>
 
 <!-- Admin: Documentation -->
-<div class="card" style="cursor: default; margin-top: 24px; max-width: 800px;">
+<div class="card" style="cursor: default; margin-top: 16px; max-width: 800px;">
     <div class="section-label">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
             <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
@@ -258,4 +184,44 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
     </a>
 </div>
 {% endif %}
+
+<!-- Change Password Modal -->
+<div id="changePwModal" style="display: none; position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.6); align-items: center; justify-content: center;">
+    <div class="card" style="cursor: default; width: 100%; max-width: 420px; margin: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div class="section-label" style="margin-bottom: 0;">Change Password</div>
+            <button onclick="document.getElementById('changePwModal').style.display='none'" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 4px;">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('account') }}">
+            <input type="hidden" name="form_type" value="password">
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Current Password</label>
+                <input type="password" name="current_password" required autocomplete="current-password">
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">New Password</label>
+                <input type="password" name="new_password" required placeholder="Min 4 characters" autocomplete="new-password">
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Confirm New Password</label>
+                <input type="password" name="confirm_password" required autocomplete="new-password">
+            </div>
+            <hr style="border: none; border-top: 1px solid var(--border-color); margin: 0 0 12px;">
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Password Hint</label>
+                <input type="text" name="password_hint" value="{{ current_user.password_hint or '' }}" placeholder="Optional hint shown after failed login" autocomplete="off">
+                <span style="font-size: 11px; color: var(--text-muted);">Shown on the login page if you enter the wrong password</span>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('changePwModal').style.display='none'">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+document.getElementById('changePwModal').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
+});
+</script>
 {% endblock %}
