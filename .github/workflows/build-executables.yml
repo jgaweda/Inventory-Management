@@ -20,21 +20,32 @@ jobs:
         with:
           ref: ims-app
           fetch-depth: 0
-      - name: Check for commits in the last 24 hours
+      - name: Check for code changes since last release
         id: check
         run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "Non-scheduled trigger — building"
+            echo "Manual trigger — building"
+            exit 0
+          fi
+
+          # Find the last release tag to compare against
+          LAST_TAG=$(git tag --sort=-creatordate | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "No previous release — building"
+            exit 0
+          fi
+
+          # Check for code changes since the last release (ignore VERSION file and merge commits)
+          CHANGES=$(git diff --name-only "$LAST_TAG"..HEAD -- . ':!VERSION' | head -1)
+          if [ -n "$CHANGES" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "Found code changes since $LAST_TAG — building"
+            git diff --name-only "$LAST_TAG"..HEAD -- . ':!VERSION' | head -20
           else
-            RECENT=$(git log --since="24 hours ago" --oneline | head -1)
-            if [ -n "$RECENT" ]; then
-              echo "should_build=true" >> $GITHUB_OUTPUT
-              echo "Found recent commits — building"
-            else
-              echo "should_build=false" >> $GITHUB_OUTPUT
-              echo "No commits in last 24h — skipping build"
-            fi
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "No code changes since $LAST_TAG — skipping build"
           fi
 
   bump-version:
