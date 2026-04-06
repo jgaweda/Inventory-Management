@@ -33,6 +33,7 @@ a = Analysis(
         'barcode.codex',
         'openpyxl',
         'sqlite3',
+        'pyzipper',
     ],
     hookspath=[],
     hooksconfig={},
