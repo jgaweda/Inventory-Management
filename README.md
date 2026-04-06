@@ -1,4 +1,4 @@
-# HP Connectivity Team Inventory Management System
+# Connectivity Team Inventory Management System
 
 A self-contained inventory management system for tracking printers, routers, laptops, phones/tablets, and other hardware devices. Built for long-term use by the HP Connectivity Team.
 
