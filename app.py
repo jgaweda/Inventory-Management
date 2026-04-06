@@ -301,6 +301,14 @@ def login():
     return render_template('login.html', next=request.args.get('next', ''))
 
 
+@app.route('/login/hint')
+def login_hint():
+    """Return the password hint for a username (JSON)."""
+    username = request.args.get('username', '').strip()
+    hint = db.get_password_hint(username) if username else ''
+    return jsonify({'hint': hint})
+
+
 @app.route('/logout')
 def logout():
     username = current_username()
@@ -1106,12 +1114,22 @@ def update_log_config():
 @login_required
 def account():
     if request.method == 'POST':
+        form_type = request.form.get('form_type', 'password')
+        users = db.get_all_users() if has_permission('users') else []
+        server_config = _load_server_config()
+
+        if form_type == 'hint':
+            # Save password hint only
+            hint = request.form.get('password_hint', '').strip()
+            db.update_user(g.user['user_id'], {'password_hint': hint})
+            app_logger.info('Password hint updated: user=%s', g.user['username'])
+            flash('Password hint saved.', 'success')
+            return redirect(url_for('account'))
+
+        # Password change form
         current_pw = request.form.get('current_password', '')
         new_pw = request.form.get('new_password', '')
         confirm_pw = request.form.get('confirm_password', '')
-
-        users = db.get_all_users() if has_permission('users') else []
-        server_config = _load_server_config()
 
         # Verify current password
         user = db.authenticate_user(g.user['username'], current_pw)

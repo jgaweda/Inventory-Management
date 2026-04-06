@@ -127,12 +127,43 @@
         <form method="POST" action="{{ url_for('login') }}">
             <input type="hidden" name="next" value="{{ next }}">
             <label>Username</label>
-            <input type="text" name="username" autofocus autocomplete="username" placeholder="Enter username">
+            <input type="text" id="loginUsername" name="username" autofocus autocomplete="username" placeholder="Enter username">
             <label>Password</label>
             <input type="password" name="password" autocomplete="current-password" placeholder="Enter password">
             <button type="submit">Log In</button>
         </form>
+        <div id="hintArea" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #f59e0b; font-size: 13px; text-align: center;">
+            <strong>Hint:</strong> <span id="hintText"></span>
+        </div>
+        <a href="#" id="showHintLink" onclick="showHint(); return false;" style="display: block; text-align: center; margin-top: 12px; color: var(--text-muted); font-size: 12px; text-decoration: none;">Forgot password?</a>
         <a href="{{ url_for('dashboard') }}" class="back-link">← Back to inventory (view only)</a>
+
+        <script>
+        function showHint() {
+            var username = document.getElementById('loginUsername').value.trim();
+            var hintArea = document.getElementById('hintArea');
+            var hintText = document.getElementById('hintText');
+            if (!username) {
+                hintArea.style.display = 'block';
+                hintText.textContent = 'Enter your username first';
+                return;
+            }
+            fetch('{{ url_for("login_hint") }}?username=' + encodeURIComponent(username))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    hintArea.style.display = 'block';
+                    if (data.hint) {
+                        hintText.textContent = data.hint;
+                    } else {
+                        hintText.textContent = 'No hint set for this account';
+                    }
+                })
+                .catch(function() {
+                    hintArea.style.display = 'block';
+                    hintText.textContent = 'Could not retrieve hint';
+                });
+        }
+        </script>
     </div>
 </body>
 </html>

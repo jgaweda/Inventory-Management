@@ -32,6 +32,7 @@
     <div class="card" style="cursor: default;">
         <div class="section-label">Change Password</div>
         <form method="POST" action="{{ url_for('account') }}">
+            <input type="hidden" name="form_type" value="password">
             <div style="margin-bottom: 12px;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Current Password</label>
                 <input type="password" name="current_password" required autocomplete="current-password">
@@ -45,6 +46,16 @@
                 <input type="password" name="confirm_password" required autocomplete="new-password">
             </div>
             <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Change Password</button>
+        </form>
+        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">
+        <form method="POST" action="{{ url_for('account') }}">
+            <input type="hidden" name="form_type" value="hint">
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Password Hint</label>
+                <input type="text" name="password_hint" value="{{ current_user.password_hint or '' }}" placeholder="e.g. 'Pet name + year'" autocomplete="off">
+                <span style="font-size: 11px; color: var(--text-muted);">Shown on the login page if you enter the wrong password</span>
+            </div>
+            <button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: center;">Save Hint</button>
         </form>
     </div>
 </div>
