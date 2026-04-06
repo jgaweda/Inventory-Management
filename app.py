@@ -13,6 +13,8 @@ import io
 import json
 import logging
 import os
+import subprocess
+import sys
 import traceback
 import uuid
 from functools import wraps
@@ -1142,6 +1144,110 @@ def save_server_config():
     app_logger.info('Server config updated: port=%d by user=%s', port, g.user['username'])
     flash('Server settings saved. Restart the application for changes to take effect.', 'success')
     return redirect(url_for('account'))
+
+
+# ---------------------------------------------------------------------------
+# Application self-update (admin only)
+# ---------------------------------------------------------------------------
+
+_REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+@app.route('/admin/update/check', methods=['POST'])
+@permission_required('settings')
+def app_update_check():
+    """Fetch latest changes from git and report if updates are available."""
+    try:
+        # Fetch latest from remote
+        fetch_result = subprocess.run(
+            ['git', 'fetch', '--all'],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
+        )
+        if fetch_result.returncode != 0:
+            return jsonify({'error': f'Git fetch failed: {fetch_result.stderr.strip()}'})
+
+        # Get current branch
+        branch_result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
+        )
+        branch = branch_result.stdout.strip()
+
+        # Check for differences
+        log_result = subprocess.run(
+            ['git', 'log', f'HEAD..origin/{branch}', '--oneline', '--no-decorate'],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
+        )
+        commits = log_result.stdout.strip()
+
+        if commits:
+            count = len(commits.splitlines())
+            output = f'Branch: {branch}\n{count} update(s) available:\n\n{commits}'
+            return jsonify({'updates_available': True, 'output': output, 'branch': branch})
+        else:
+            return jsonify({'updates_available': False, 'output': f'Branch: {branch}\nNo new commits.', 'branch': branch})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Git operation timed out'})
+    except FileNotFoundError:
+        return jsonify({'error': 'Git is not installed on this system'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+@app.route('/admin/update/apply', methods=['POST'])
+@permission_required('settings')
+def app_update_apply():
+    """Pull latest code, install dependencies, and restart the application."""
+    try:
+        # Get current branch
+        branch_result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
+        )
+        branch = branch_result.stdout.strip()
+
+        # Pull latest
+        pull_result = subprocess.run(
+            ['git', 'pull', 'origin', branch],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=60,
+        )
+        if pull_result.returncode != 0:
+            return jsonify({'error': f'Git pull failed: {pull_result.stderr.strip()}'})
+
+        output = pull_result.stdout.strip()
+
+        # Install updated dependencies (best-effort, non-blocking)
+        pip_cmd = [sys.executable, '-m', 'pip', 'install', '-r',
+                   os.path.join(_REPO_DIR, 'requirements.txt'), '-q']
+        pip_result = subprocess.run(
+            pip_cmd, cwd=_REPO_DIR, capture_output=True, text=True, timeout=120,
+        )
+        if pip_result.returncode == 0:
+            output += '\nDependencies updated.'
+        else:
+            output += f'\nDependency install note: {pip_result.stderr.strip()}'
+
+        app_logger.info('Application update applied by=%s: %s', current_username(), output.replace('\n', ' | '))
+
+        # Schedule restart in a background thread so the response can be sent first
+        def _restart():
+            import time as _t
+            _t.sleep(1.5)  # Give time for the HTTP response to complete
+            app_logger.info('Restarting application after update...')
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        threading.Thread(target=_restart, daemon=True).start()
+
+        return jsonify({'ok': True, 'output': output})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Operation timed out'})
+    except FileNotFoundError:
+        return jsonify({'error': 'Git is not installed on this system'})
+    except Exception as e:
+        app_logger.error('Application update failed: %s\n%s', e, traceback.format_exc())
+        return jsonify({'error': str(e)})
 
 
 # ---------------------------------------------------------------------------
