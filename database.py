@@ -354,6 +354,21 @@ def init_db():
                 conn.execute('UPDATE devices SET barcode_value = ? WHERE device_id = ?',
                              (new_barcode, row['device_id']))
 
+        # Migrate device_id to match barcode_value (unify identifiers).
+        # Update all foreign key references in related tables.
+        mismatched = conn.execute(
+            "SELECT device_id, barcode_value FROM devices WHERE device_id != barcode_value"
+        ).fetchall()
+        for row in mismatched:
+            old_id = row['device_id']
+            new_id = row['barcode_value']
+            conn.execute('UPDATE audit_log SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+            conn.execute('UPDATE device_notes SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+            conn.execute('UPDATE device_attachments SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+            conn.execute('UPDATE devices SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+        if mismatched:
+            _audit_logger.info('Migrated %d device IDs to match barcode values', len(mismatched))
+
         # Stamp current schema version after all migrations complete
         conn.execute('''
             INSERT OR REPLACE INTO schema_info (key, value, updated_at)
@@ -703,9 +718,13 @@ def _next_barcode_value(conn):
 
 
 def _insert_device(conn, data, performed_by='system'):
-    """Internal helper: insert a device and log it. Returns device_id. Takes existing conn."""
-    device_id = generate_device_id()
+    """Internal helper: insert a device and log it. Returns device_id.
+
+    The device_id IS the barcode value (CNX-XXXXXX), so there is only one
+    identifier per device.
+    """
     barcode_value = _next_barcode_value(conn)
+    device_id = barcode_value  # barcode IS the device ID
 
     conn.execute('''
         INSERT INTO devices (device_id, barcode_value, name, category, manufacturer,
@@ -792,11 +811,11 @@ def get_device_by_serial(serial_number):
 
 
 def get_device_by_barcode(barcode_value):
-    """Look up a device by its barcode value (case-insensitive)."""
+    """Look up a device by its barcode/device ID (case-insensitive)."""
     with db_transaction() as conn:
         row = conn.execute(
-            'SELECT * FROM devices WHERE UPPER(barcode_value) = UPPER(?)',
-            (barcode_value,)
+            'SELECT * FROM devices WHERE UPPER(device_id) = UPPER(?) OR UPPER(barcode_value) = UPPER(?)',
+            (barcode_value, barcode_value)
         ).fetchone()
         return dict(row) if row else None
 
