@@ -63,7 +63,7 @@
                 <input type="checkbox" name="permissions" value="{{ perm_key }}"
                        style="width: 16px; height: 16px; margin-top: 1px; flex-shrink: 0;"
                        {% if is_edit and user.permissions and perm_key in user.permissions %}checked{% endif %}
-                       {% if not is_edit and perm_key in ['devices', 'references', 'wiki'] %}checked{% endif %}>
+                       {% if not is_edit and perm_key in ['references', 'wiki'] %}checked{% endif %}>
                 <span>{{ perm_label }}</span>
             </label>
             {% endfor %}
