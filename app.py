@@ -292,6 +292,11 @@ def login():
             _login_attempts[ip] = attempts
             app_logger.warning('Login failed: user=%s ip=%s attempt=%d/%d', username, ip, len(attempts), _LOGIN_MAX)
             flash('Invalid username or password.', 'error')
+            # Show password hint if one is set for this username
+            hint = db.get_password_hint(username)
+            if hint:
+                flash(f'Hint: {hint}', 'warning')
+            return render_template('login.html', next=request.form.get('next', ''))
 
     return render_template('login.html', next=request.args.get('next', ''))
 
@@ -899,6 +904,7 @@ def user_add():
         password = request.form.get('password', '')
         role = request.form.get('role', 'custom')
         display_name = request.form.get('display_name', '').strip()
+        password_hint = request.form.get('password_hint', '').strip()
 
         # Collect permissions from checkboxes (only for custom role)
         permissions = None
@@ -916,7 +922,8 @@ def user_add():
                                    assignable_permissions=ASSIGNABLE_PERMISSIONS)
 
         try:
-            db.create_user(username, password, role, display_name, permissions=permissions)
+            db.create_user(username, password, role, display_name, permissions=permissions,
+                           password_hint=password_hint)
             app_logger.info('User created: username=%s role=%s permissions=%s by=%s',
                             username, role, permissions, current_username())
             flash(f'User "{username}" created successfully.', 'success')
@@ -943,6 +950,7 @@ def user_edit(user_id):
         data = {
             'display_name': request.form.get('display_name', '').strip(),
             'role': role,
+            'password_hint': request.form.get('password_hint', '').strip(),
         }
         if role == 'custom':
             data['permissions'] = request.form.getlist('permissions')
@@ -1686,6 +1694,33 @@ def backup_config():
     app_logger.info('Backup config updated by=%s', current_username())
     flash('Backup configuration saved.', 'success')
     return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/export-encryption-key')
+@permission_required('backups')
+def backup_export_encryption_key():
+    """Download the cloud backup encryption key as a text file."""
+    config = db._get_backup_config()
+    key = config.get('git_encryption_password', '').strip()
+    if not key:
+        flash('No encryption password is configured.', 'error')
+        return redirect(url_for('backup_list'))
+
+    app_logger.info('Encryption key exported by=%s', current_username())
+    content = (
+        'HP Connectivity Inventory — Backup Encryption Key\n'
+        '==================================================\n\n'
+        f'Encryption Password: {key}\n\n'
+        'Store this file in a safe location. You will need this\n'
+        'password to decrypt cloud backup files (.zip) if the\n'
+        'database or configuration is lost.\n\n'
+        'To decrypt a backup manually:\n'
+        '  Use any tool that supports AES-256 encrypted ZIP files\n'
+        '  (e.g. 7-Zip, WinZip, or Python pyzipper library).\n'
+    )
+    response = app.response_class(content, mimetype='text/plain')
+    response.headers['Content-Disposition'] = 'attachment; filename="backup_encryption_key.txt"'
+    return response
 
 
 @app.route('/backups/config/reset', methods=['POST'])
