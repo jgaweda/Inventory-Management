@@ -152,6 +152,47 @@
     </div>
 </div>
 
+<!-- Product Reference Details -->
+<div class="card" style="cursor: default; margin-bottom: 16px; padding: 0; overflow: hidden;">
+    <div style="padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-secondary); display: flex; align-items: center; cursor: pointer;"
+         onclick="var b=document.getElementById('specBody');var a=document.getElementById('specArrow');b.style.display=b.style.display==='none'?'':'none';a.style.transform=b.style.display==='none'?'':'rotate(90deg)';">
+        <svg id="specArrow" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -1px; margin-right: 8px; transition: transform 0.15s; transform: rotate(90deg);"><path d="M9 18l6-6-6-6"/></svg>
+        <span style="font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em;">Product Specifications</span>
+    </div>
+    <div id="specBody" style="padding: 16px 20px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 24px;">
+            {% set specs = [
+                ('Codename', ref.codename),
+                ('Model Name', ref.model_name),
+                ('Variant', ref.variant),
+                ('Print Technology', ref.print_technology),
+                ('Wi-Fi Generation', ref.wifi_gen),
+                ('Year', ref.year),
+                ('Chip Manufacturer', ref.chip_manufacturer),
+                ('Chip Codename', ref.chip_codename),
+                ('Firmware Codebase', ref.fw_codebase),
+                ('Cartridge / Toner', ref.cartridge_toner),
+            ] %}
+            {% for label, value in specs %}
+            {% if value %}
+            <div>
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 3px;">{{ label }}</div>
+                <div style="font-size: 14px; color: var(--text-primary);">{{ value }}</div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% if has_permission('references') %}
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="btn btn-secondary btn-sm" style="font-size: 11px;">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit Product Reference
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Wiki Content -->
 <div class="card" style="padding: 0; overflow: hidden; cursor: default;">
     {% if current_user %}
