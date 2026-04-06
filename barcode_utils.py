@@ -81,17 +81,57 @@ def generate_qr_code(data, size=250):
     # The native size is box_size * modules — center-crop or pad to exact target
     native = box_size * modules
     if native == size:
-        return img
+        result = img
     elif native < size:
         # Pad with white to center
         result = Image.new('RGB', (size, size), 'white')
-        offset = (size - native) // 2
-        result.paste(img, (offset, offset))
-        return result
+        pad = (size - native) // 2
+        result.paste(img, (pad, pad))
     else:
         # Slightly larger — crop from center
-        offset = (native - size) // 2
-        return img.crop((offset, offset, offset + size, offset + size))
+        off = (native - size) // 2
+        result = img.crop((off, off, off + size, off + size))
+
+    # Embed "JG" initials as QR modules in the center — the letters are
+    # formed by the grid squares themselves so they blend into the code.
+    # H-level error correction (30%) recovers the altered modules.
+    #
+    # 7x5 pixel-art pattern (1=black module, 0=white module):
+    #   . J . G G G .
+    #   . J . G . . .
+    #   . J . G . G G
+    #   J J . G . . G
+    #   J J . G G G .
+    _jg_pattern = [
+        [0, 1, 0, 1, 1, 1, 0],
+        [0, 1, 0, 1, 0, 0, 0],
+        [0, 1, 0, 1, 0, 1, 1],
+        [1, 1, 0, 1, 0, 0, 1],
+        [1, 1, 0, 1, 1, 1, 0],
+    ]
+    pw, ph = len(_jg_pattern[0]), len(_jg_pattern)
+    # Centre the pattern on the QR module grid
+    grid_cx = modules // 2
+    grid_cy = modules // 2
+    start_col = grid_cx - pw // 2
+    start_row = grid_cy - ph // 2
+    # Compute pixel offset (accounts for padding when native < size)
+    if native < size:
+        img_offset = (size - native) // 2
+    else:
+        img_offset = 0
+    draw = ImageDraw.Draw(result)
+    for r, row in enumerate(_jg_pattern):
+        for c, val in enumerate(row):
+            mx = start_col + c
+            my = start_row + r
+            px = img_offset + mx * box_size
+            py = img_offset + my * box_size
+            color = 'black' if val else 'white'
+            draw.rectangle([px, py, px + box_size - 1, py + box_size - 1],
+                           fill=color)
+
+    return result
 
 
 def generate_barcode_image(data, width=350, height=80, tight_crop=False):
