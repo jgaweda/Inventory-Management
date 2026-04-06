@@ -334,6 +334,15 @@
 
         <!-- Version + user info at bottom of sidebar -->
         <div style="margin-top: auto;">
+        {% if current_user and has_permission('settings') %}
+        <div id="updateBanner" style="display: none; margin: 0 12px 4px; padding: 8px 12px; border-radius: 8px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); cursor: pointer; text-align: center; transition: opacity 0.2s;"
+             onclick="applyUpdateFromBanner()" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+            <div style="font-size: 11px; font-weight: 600; color: var(--accent-blue);">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -1px; margin-right: 2px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span id="updateBannerText">Update available</span>
+            </div>
+        </div>
+        {% endif %}
         <div style="padding: 8px 20px; text-align: center;">
             <span style="font-size: 10px; color: var(--text-muted); letter-spacing: 0.05em; font-family: 'JetBrains Mono', monospace;">v{{ app_version }}</span>
         </div>
@@ -459,5 +468,87 @@
             </div>
         </div>
     </div>
+{% if current_user and has_permission('settings') %}
+<script>
+(function() {
+    var CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+    var CACHE_KEY = '_inv_update_check';
+
+    function showBanner(count) {
+        var banner = document.getElementById('updateBanner');
+        var text = document.getElementById('updateBannerText');
+        if (banner && text) {
+            text.textContent = count + ' update' + (count !== 1 ? 's' : '') + ' available';
+            banner.style.display = 'block';
+        }
+    }
+
+    // Check cache first
+    try {
+        var cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || '{}');
+        if (cached.ts && (Date.now() - cached.ts < CHECK_INTERVAL_MS)) {
+            if (cached.count > 0) showBanner(cached.count);
+            return; // Still fresh, skip network check
+        }
+    } catch(e) {}
+
+    // Background check — don't block page load
+    setTimeout(function() {
+        fetch('{{ url_for("app_update_check") }}', {method: 'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var count = 0;
+                if (data.updates_available && data.output) {
+                    var lines = data.output.split('\n');
+                    for (var i = 0; i < lines.length; i++) {
+                        // Count commit lines (non-empty, not header text)
+                        if (lines[i].match(/^[0-9a-f]{7,}/)) count++;
+                    }
+                    if (count === 0 && data.updates_available) count = 1;
+                    showBanner(count);
+                }
+                try {
+                    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ts: Date.now(), count: count}));
+                } catch(e) {}
+            })
+            .catch(function() {}); // Silently fail — this is a background check
+    }, 2000);
+})();
+
+function applyUpdateFromBanner() {
+    if (!confirm('Update available. Pull latest changes and restart the server?\n\nAll active sessions will be briefly interrupted.')) return;
+    var banner = document.getElementById('updateBanner');
+    var text = document.getElementById('updateBannerText');
+    text.textContent = 'Updating...';
+    banner.style.pointerEvents = 'none';
+
+    fetch('{{ url_for("app_update_apply") }}', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                text.textContent = 'Failed: ' + data.error;
+                banner.style.pointerEvents = '';
+            } else {
+                text.textContent = 'Restarting...';
+                try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
+                setTimeout(function pollServer() {
+                    fetch('{{ url_for("health_check") }}')
+                        .then(function() { window.location.reload(); })
+                        .catch(function() { setTimeout(pollServer, 2000); });
+                }, 3000);
+            }
+        })
+        .catch(function() {
+            text.textContent = 'Restarting...';
+            try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
+            setTimeout(function pollServer() {
+                fetch('{{ url_for("health_check") }}')
+                    .then(function() { window.location.reload(); })
+                    .catch(function() { setTimeout(pollServer, 2000); });
+            }, 3000);
+        });
+}
+</script>
+{% endif %}
 </body>
 </html>
