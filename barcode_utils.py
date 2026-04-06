@@ -199,19 +199,19 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    EDGE = 6          # edge margin for QR and text only
+    MARGIN = 20       # uniform inset from border for all content
     GAP = 14          # gap between QR and text
 
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Layout: top ~52% for QR+text, bottom for edge-to-edge barcode ---
+    # --- Layout: top ~52% for QR+text, bottom for barcode ---
     top_row_h = int(H * 0.52)
-    bc_h = H - top_row_h - 10     # keep barcode inside border with margin
+    bc_h = H - top_row_h - MARGIN  # keep barcode inside border
     bc_y = top_row_h
 
-    qr_size = top_row_h - 2 * EDGE
-    text_area_w = W - EDGE - qr_size - GAP - EDGE
+    qr_size = top_row_h - 2 * MARGIN
+    text_area_w = W - MARGIN - qr_size - GAP - MARGIN
 
     # Larger max font sizes to fill the text area
     font_name, display_name, name_tw, name_th = _fit_font(
@@ -220,11 +220,11 @@ def generate_label(device_id, barcode_value, device_name, save=True):
         draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 60, min_size=30)
 
     # --- TOP ROW: QR (left) + text info (right) ---
-    qr_y = EDGE
+    qr_y = MARGIN
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (EDGE, qr_y))
+    label.paste(qr_img, (MARGIN, qr_y))
 
-    text_x = EDGE + qr_size + GAP
+    text_x = MARGIN + qr_size + GAP
     text_cx = text_x + text_area_w // 2
     total_text_h = name_th + 16 + id_th
     text_top = qr_y + (qr_size - total_text_h) // 2
@@ -233,13 +233,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
-    # --- BOTTOM: Code 128 barcode inside border with visible margin ---
-    BC_INSET = 20         # inset from border so bars don't touch edges
-    bc_w = W - 2 * BC_INSET
+    # --- BOTTOM: Code 128 barcode, left-aligned with QR ---
+    bc_w = W - 2 * MARGIN
     try:
         barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h,
                                              tight_crop=True)
-        label.paste(barcode_img, (BC_INSET, bc_y))
+        label.paste(barcode_img, (MARGIN, bc_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
         draw.text((20, bc_y + 20), barcode_value, fill='black', font=font_fb)
