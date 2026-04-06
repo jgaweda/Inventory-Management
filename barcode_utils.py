@@ -205,15 +205,13 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Layout: text+QR top zone, full-width Code 128 bottom ---
-    # Prioritise barcode height (primary scan method) while giving QR
-    # enough size for reliable mobile scanning.
+    # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
+    TOP_MARGIN = 8                         # tight top margin to maximise QR size
     bc_h = 140                             # ~0.47" — well above GS1 minimum
     bc_y = H - MARGIN - bc_h              # 290
-    qr_size = 270                          # ~0.90" — 39% larger than old 194px
-    qr_x = W - MARGIN - qr_size          # right-aligned
-    top_zone_h = bc_y - MARGIN            # 270
-    text_area_w = qr_x - GAP - MARGIN    # left of QR
+    qr_size = bc_y - TOP_MARGIN           # 282 — fills top zone height
+    top_zone_h = qr_size
+    text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
     # Larger max font sizes to fill the text area
     font_name, display_name, name_tw, name_th = _fit_font(
@@ -221,13 +219,14 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     font_id, display_id, id_tw, id_th = _fit_font(
         draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 60, min_size=30)
 
-    # --- TOP ROW: text info (left) + QR code (right) ---
+    # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (qr_x, MARGIN))
+    label.paste(qr_img, (MARGIN, TOP_MARGIN))
 
-    text_cx = MARGIN + text_area_w // 2
+    text_x = MARGIN + qr_size + GAP
+    text_cx = text_x + text_area_w // 2
     total_text_h = name_th + 16 + id_th
-    text_top = MARGIN + (top_zone_h - total_text_h) // 2
+    text_top = TOP_MARGIN + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
