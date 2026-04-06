@@ -73,6 +73,101 @@
     </form>
 </div>
 
+<!-- Admin: Application Update -->
+<div class="card" style="cursor: default; margin-top: 24px; max-width: 800px;">
+    <div class="section-label">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
+            <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115.95-5.65L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15.95 5.65L3 16"/>
+        </svg>
+        Application Update
+    </div>
+    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+        Pull the latest code from the git repository, install updated dependencies, and restart the application.
+    </p>
+    <div id="updateStatus" style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-family: var(--font-mono, monospace); white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-secondary);">
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <button type="button" id="checkUpdateBtn" class="btn btn-secondary btn-sm" onclick="checkForUpdates()">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Check for Updates
+        </button>
+        <button type="button" id="applyUpdateBtn" class="btn btn-primary btn-sm" onclick="applyUpdate()" style="display: none;">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Update &amp; Restart
+        </button>
+    </div>
+</div>
+
+<script>
+function checkForUpdates() {
+    var status = document.getElementById('updateStatus');
+    var applyBtn = document.getElementById('applyUpdateBtn');
+    var checkBtn = document.getElementById('checkUpdateBtn');
+    status.style.display = 'block';
+    status.textContent = 'Checking for updates...';
+    applyBtn.style.display = 'none';
+    checkBtn.disabled = true;
+
+    fetch('{{ url_for("app_update_check") }}', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            checkBtn.disabled = false;
+            if (data.error) {
+                status.textContent = 'Error: ' + data.error;
+                status.style.borderColor = 'var(--accent-red)';
+            } else {
+                status.textContent = data.output;
+                status.style.borderColor = 'var(--border-color)';
+                if (data.updates_available) {
+                    applyBtn.style.display = 'inline-flex';
+                } else {
+                    status.textContent += '\n\nApplication is up to date.';
+                }
+            }
+        })
+        .catch(function(err) {
+            checkBtn.disabled = false;
+            status.textContent = 'Failed to check: ' + err.message;
+        });
+}
+
+function applyUpdate() {
+    if (!confirm('This will pull the latest code, install dependencies, and restart the server.\n\nAll active sessions will be briefly interrupted.\n\nContinue?')) return;
+    var status = document.getElementById('updateStatus');
+    var applyBtn = document.getElementById('applyUpdateBtn');
+    var checkBtn = document.getElementById('checkUpdateBtn');
+    status.textContent = 'Pulling updates and restarting...';
+    applyBtn.disabled = true;
+    checkBtn.disabled = true;
+
+    fetch('{{ url_for("app_update_apply") }}', {method: 'POST'})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                status.textContent = 'Update failed: ' + data.error;
+                applyBtn.disabled = false;
+                checkBtn.disabled = false;
+            } else {
+                status.textContent = data.output + '\n\nRestarting server — page will reload automatically...';
+                // Poll until the server comes back
+                setTimeout(function pollServer() {
+                    fetch('{{ url_for("health_check") }}')
+                        .then(function() { window.location.reload(); })
+                        .catch(function() { setTimeout(pollServer, 2000); });
+                }, 3000);
+            }
+        })
+        .catch(function(err) {
+            status.textContent = 'Connection lost — server may be restarting.\nRetrying...';
+            setTimeout(function pollServer() {
+                fetch('{{ url_for("health_check") }}')
+                    .then(function() { window.location.reload(); })
+                    .catch(function() { setTimeout(pollServer, 2000); });
+            }, 3000);
+        });
+}
+</script>
+
 <!-- Admin: User Management -->
 <div class="card" style="cursor: default; margin-top: 24px; padding: 0; overflow: hidden;">
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 0;">
