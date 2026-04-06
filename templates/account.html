@@ -204,6 +204,18 @@ function applyUpdate() {
             }, 3000);
         });
 }
+
+// Auto-check for updates when arriving from the sidebar banner
+if (window.location.search.indexOf('check_updates=1') !== -1) {
+    // Clean up URL
+    window.history.replaceState({}, '', window.location.pathname);
+    // Scroll to update section and trigger check
+    var updateCard = document.getElementById('checkUpdateBtn');
+    if (updateCard) {
+        updateCard.scrollIntoView({behavior: 'smooth', block: 'center'});
+        setTimeout(checkForUpdates, 300);
+    }
+}
 </script>
 
 <!-- Admin: Server Settings -->
