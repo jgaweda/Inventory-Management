@@ -301,14 +301,6 @@ def login():
     return render_template('login.html', next=request.args.get('next', ''))
 
 
-@app.route('/login/hint')
-def login_hint():
-    """Return the password hint for a username (JSON)."""
-    username = request.args.get('username', '').strip()
-    hint = db.get_password_hint(username) if username else ''
-    return jsonify({'hint': hint})
-
-
 @app.route('/logout')
 def logout():
     username = current_username()
