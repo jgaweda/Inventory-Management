@@ -99,41 +99,53 @@ def generate_barcode_image(data, width=350, height=80):
     Generate a Code 128 barcode image (no human-readable text below).
     Returns a PIL Image sized to width x height.
 
-    Optimised for old-school laser barcode scanners:
-    - module_width 0.76mm (3 mil) — well above the 0.5mm minimum for laser
-    - module_height 40mm — taller bars are easier for hand-held scanners
-    - quiet_zone 6mm — laser scanners need ≥10× module width of whitespace
-    - Crops to bounding box + proportional quiet zone, then scales with
-      NEAREST to preserve crisp bar edges at any target size.
+    Renders at 2× target resolution and downscales with NEAREST to ensure
+    every bar is an integer number of pixels wide — critical for scanner
+    readability. module_width is calculated from the target width so bars
+    fill the available space without any lossy rescaling.
     """
     writer = ImageWriter()
     code = Code128(data, writer=writer)
+
+    # Code 128: start(11) + data(11 each) + checksum(11) + stop(13) = modules
+    # Quiet zone 10 modules each side (GS1 spec).
+    # Estimate total modules to compute ideal module_width.
+    n_chars = len(data)
+    total_modules = 11 + n_chars * 11 + 11 + 13 + 20  # 20 = quiet zones
+    # Render at 2× and scale down — ensures bars are whole-pixel aligned
+    render_scale = 2
+    render_w = width * render_scale
+    # module_width in mm at render DPI
+    render_dpi = 300
+    module_px = render_w / total_modules
+    module_mm = module_px / render_dpi * 25.4
+    # Clamp: minimum 0.3mm for scanner readability
+    module_mm = max(0.3, module_mm)
+
     buffer = io.BytesIO()
     code.render(writer_options={
         'font_size': 0,
         'text_distance': 0,
-        'quiet_zone': 6.0,      # 6mm — laser scanners need ≥10× module width
-        'module_width': 0.76,   # 0.76mm (3 mil) — thick bars for laser readability
-        'module_height': 40,    # tall bars for easy scanning
-        'dpi': 300,
+        'quiet_zone': module_mm * 10,   # 10× module width per GS1 spec
+        'module_width': module_mm,
+        'module_height': 50,            # tall bars — easier for hand-held scanners
+        'dpi': render_dpi,
     }).save(buffer, format='PNG')
     buffer.seek(0)
 
     img = Image.open(buffer).convert('RGB')
 
-    # Crop to bounding box but keep proportional quiet zones.
-    # Laser scanners need quiet zones on left/right of the barcode.
+    # Crop to bounding box but preserve quiet zones
     gray = img.convert('L')
     bbox = gray.point(lambda x: 0 if x > 200 else 255).getbbox()
     if bbox:
         bar_width = bbox[2] - bbox[0]
-        # Keep quiet zone = 10% of bar width on each side (min 15px)
         qz = max(15, int(bar_width * 0.10))
         x0 = max(0, bbox[0] - qz)
         x1 = min(img.width, bbox[2] + qz)
         img = img.crop((x0, bbox[1], x1, bbox[3]))
 
-    # Scale to fill target exactly — NEAREST preserves crisp bar edges
+    # Scale to exact target — NEAREST preserves crisp bar edges
     img = img.resize((width, height), Image.NEAREST)
     return img
 
