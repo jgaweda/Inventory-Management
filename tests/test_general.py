@@ -2,20 +2,20 @@ from tests import BaseTestCase, db, json, os, shutil, _test_dir, barcode_utils, 
 
 
 class TestBarcodeGeneration(BaseTestCase):
-    """Test base-36 barcode generation with CNX- prefix."""
+    """Test barcode generation with safe alphabet and CNX- prefix."""
 
-    def test_int_to_base36_basic(self):
-        self.assertEqual(db._int_to_base36(0), '0')
-        self.assertEqual(db._int_to_base36(1), '1')
-        self.assertEqual(db._int_to_base36(10), 'A')
-        self.assertEqual(db._int_to_base36(35), 'Z')
-        self.assertEqual(db._int_to_base36(36), '10')
-
-    def test_base36_roundtrip(self):
-        for n in [0, 1, 10, 35, 36, 100, 999, 1296, 46655]:
-            encoded = db._int_to_base36(n)
-            decoded = db._base36_to_int(encoded)
+    def test_barcode_encoding_roundtrip(self):
+        """Barcode encoding/decoding is reversible."""
+        for n in [0, 1, 10, 28, 29, 100, 999, 50000]:
+            encoded = db._int_to_barcode(n)
+            decoded = db._barcode_to_int(encoded)
             self.assertEqual(decoded, n, f'Round-trip failed for {n}: encoded={encoded}')
+
+    def test_barcode_alphabet_excludes_ambiguous(self):
+        """Barcode alphabet should not contain O, I, L, U, 0, or 1."""
+        for ch in 'OILUoilu01':
+            self.assertNotIn(ch, db._BARCODE_CHARS,
+                             f'Ambiguous character {ch!r} found in barcode alphabet')
 
     def test_barcode_has_cnx_prefix(self):
         device_id = db.add_device({'name': 'Test Device'})
@@ -41,10 +41,21 @@ class TestBarcodeGeneration(BaseTestCase):
             device = db.get_device(device_id)
             barcodes.append(device['barcode_value'])
         # Extract numeric values — they should NOT be sequential
-        nums = [db._base36_to_int(v.replace('CNX-', '')) for v in barcodes]
+        nums = [db._barcode_to_int(v.replace('CNX-', '')) for v in barcodes]
         is_sequential = all(nums[i] == nums[i-1] + 1 for i in range(1, len(nums)))
         self.assertFalse(is_sequential,
                          f'Barcodes appear sequential (should be scrambled): {barcodes}')
+
+    def test_barcode_uses_safe_alphabet_only(self):
+        """Generated barcodes only contain characters from the safe alphabet."""
+        safe = set(db._BARCODE_CHARS)
+        for i in range(20):
+            device_id = db.add_device({'name': f'Safe Test {i}'})
+            device = db.get_device(device_id)
+            suffix = device['barcode_value'][4:]  # strip CNX-
+            for ch in suffix:
+                self.assertIn(ch, safe,
+                              f'Unsafe character {ch!r} in barcode {device["barcode_value"]}')
 
     def test_barcode_no_duplicates(self):
         barcodes = set()
