@@ -211,6 +211,22 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_device_notes_device ON device_notes(device_id)')
 
+        # Device attachments table — anyone can upload, admin can delete
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS device_attachments (
+                attachment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                content_type TEXT DEFAULT '',
+                size_bytes INTEGER DEFAULT 0,
+                uploaded_by TEXT DEFAULT '',
+                uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (device_id) REFERENCES devices(device_id)
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_device_attach_device ON device_attachments(device_id)')
+
         # Schema version tracking table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS schema_info (
@@ -1728,26 +1744,28 @@ def push_backups_to_git():
                     zf.setpassword(encryption_password.encode('utf-8'))
                     for bf in backup_files:
                         zf.write(os.path.join(backup_dir, bf), bf)
-                    wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
-                    if os.path.isdir(wiki_dir):
-                        for dirpath, _dirnames, filenames in os.walk(wiki_dir):
-                            for fname in filenames:
-                                full_path = os.path.join(dirpath, fname)
-                                arcname = os.path.relpath(full_path, DATA_DIR)
-                                zf.write(full_path, arcname)
+                    for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                        upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                        if os.path.isdir(upl_dir):
+                            for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                                for fname in filenames:
+                                    full_path = os.path.join(dirpath, fname)
+                                    arcname = os.path.relpath(full_path, DATA_DIR)
+                                    zf.write(full_path, arcname)
             else:
                 # Unencrypted zip (legacy / no password configured)
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                     for bf in backup_files:
                         zf.write(os.path.join(backup_dir, bf), bf)
-                    wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
-                    if os.path.isdir(wiki_dir):
-                        for dirpath, _dirnames, filenames in os.walk(wiki_dir):
-                            for fname in filenames:
-                                full_path = os.path.join(dirpath, fname)
-                                arcname = os.path.relpath(full_path, DATA_DIR)
-                                zf.write(full_path, arcname)
+                    for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                        upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                        if os.path.isdir(upl_dir):
+                            for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                                for fname in filenames:
+                                    full_path = os.path.join(dirpath, fname)
+                                    arcname = os.path.relpath(full_path, DATA_DIR)
+                                    zf.write(full_path, arcname)
             zip_size = os.path.getsize(zip_path)
 
             subprocess.run(['git', 'add', zip_name],
@@ -2591,6 +2609,52 @@ def delete_wiki_attachment(attachment_id):
     """Delete an attachment record."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))
+
+
+# ---------------------------------------------------------------------------
+# Device Attachments
+# ---------------------------------------------------------------------------
+
+
+def get_device_attachments(device_id):
+    """Return all attachments for a device."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            'SELECT * FROM device_attachments WHERE device_id = ? ORDER BY uploaded_at DESC',
+            (device_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_device_attachment(device_id, filename, original_name, content_type, size_bytes, uploaded_by):
+    """Record a new device attachment."""
+    with db_transaction() as conn:
+        conn.execute('''
+            INSERT INTO device_attachments
+                (device_id, filename, original_name, content_type, size_bytes, uploaded_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (device_id, filename, original_name, content_type, size_bytes, uploaded_by))
+
+
+def get_device_attachment(attachment_id):
+    """Return a single device attachment by ID."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM device_attachments WHERE attachment_id = ?', (attachment_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_device_attachment(attachment_id):
+    """Delete a device attachment record."""
+    with db_transaction() as conn:
+        conn.execute('DELETE FROM device_attachments WHERE attachment_id = ?', (attachment_id,))
 
 
 def check_attachment_integrity(uploads_dir):

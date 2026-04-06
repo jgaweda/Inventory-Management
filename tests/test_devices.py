@@ -1,3 +1,4 @@
+from io import BytesIO
 from tests import BaseTestCase, db, json, os, shutil, _test_dir, patch
 
 
@@ -493,3 +494,118 @@ class TestOwnershipDropdown(BaseTestCase):
         devices = db.get_all_devices()
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0]['vendor_supplied'], 0)
+
+
+class TestDeviceAttachments(BaseTestCase):
+    """Test device file attachment upload, download, preview, and delete."""
+
+    def _make_device(self):
+        self.login_admin()
+        device_id = db.add_device({'name': 'Test Device', 'category': 'Printer'})
+        return device_id
+
+    def test_db_crud(self):
+        """Database CRUD operations for device attachments."""
+        device_id = db.add_device({'name': 'D1'})
+        db.add_device_attachment(device_id, 'abc.png', 'photo.png', 'image/png', 1234, 'admin')
+        atts = db.get_device_attachments(device_id)
+        self.assertEqual(len(atts), 1)
+        self.assertEqual(atts[0]['original_name'], 'photo.png')
+        self.assertEqual(atts[0]['size_bytes'], 1234)
+
+        att = db.get_device_attachment(atts[0]['attachment_id'])
+        self.assertIsNotNone(att)
+        self.assertEqual(att['filename'], 'abc.png')
+
+        db.delete_device_attachment(atts[0]['attachment_id'])
+        self.assertEqual(len(db.get_device_attachments(device_id)), 0)
+
+    def test_upload_requires_login(self):
+        """Upload should require authentication."""
+        device_id = db.add_device({'name': 'D1'})
+        resp = self.client.post(f'/devices/{device_id}/upload',
+                                data={'attachment': (BytesIO(b'data'), 'test.txt')},
+                                content_type='multipart/form-data',
+                                follow_redirects=False)
+        self.assertIn(resp.status_code, [302, 303])
+
+    def test_upload_and_download(self):
+        """Logged-in user can upload, anyone can download."""
+        device_id = self._make_device()
+        data = b'Hello attachment content'
+        resp = self.client.post(f'/devices/{device_id}/upload',
+                                data={'attachment': (BytesIO(data), 'readme.txt')},
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+
+        atts = db.get_device_attachments(device_id)
+        self.assertEqual(len(atts), 1)
+        self.assertEqual(atts[0]['original_name'], 'readme.txt')
+
+        # Download
+        resp = self.client.get(f'/device/attachment/{atts[0]["attachment_id"]}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, data)
+
+    def test_preview_image(self):
+        """Image preview returns inline content."""
+        device_id = self._make_device()
+        png_data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
+        self.client.post(f'/devices/{device_id}/upload',
+                         data={'attachment': (BytesIO(png_data), 'photo.png')},
+                         content_type='multipart/form-data',
+                         follow_redirects=True)
+        atts = db.get_device_attachments(device_id)
+        resp = self.client.get(f'/device/attachment/{atts[0]["attachment_id"]}/preview')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_delete_requires_devices_permission(self):
+        """Only users with devices permission can delete attachments."""
+        device_id = self._make_device()
+        self.client.post(f'/devices/{device_id}/upload',
+                         data={'attachment': (BytesIO(b'x'), 'file.txt')},
+                         content_type='multipart/form-data',
+                         follow_redirects=True)
+        atts = db.get_device_attachments(device_id)
+        att_id = atts[0]['attachment_id']
+
+        # Create a custom user without devices permission
+        db.create_user('viewer', 'pass', role='custom', display_name='Viewer', permissions=[])
+        self.client.get('/logout', follow_redirects=True)
+        self.client.post('/login', data={'username': 'viewer', 'password': 'pass'}, follow_redirects=True)
+        resp = self.client.post(f'/device/attachment/{att_id}/delete', follow_redirects=True)
+        # Attachment should still exist
+        self.assertIsNotNone(db.get_device_attachment(att_id))
+
+        # Admin can delete
+        self.client.get('/logout', follow_redirects=True)
+        self.login_admin()
+        resp = self.client.post(f'/device/attachment/{att_id}/delete', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(db.get_device_attachment(att_id))
+
+    def test_rejected_extension(self):
+        """Files with disallowed extensions are rejected."""
+        device_id = self._make_device()
+        resp = self.client.post(f'/devices/{device_id}/upload',
+                                data={'attachment': (BytesIO(b'exe'), 'malware.exe')},
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(len(db.get_device_attachments(device_id)), 0)
+
+    def test_attachments_shown_on_detail_page(self):
+        """Device detail page includes attachments section."""
+        device_id = self._make_device()
+        self.client.post(f'/devices/{device_id}/upload',
+                         data={'attachment': (BytesIO(b'content'), 'notes.txt')},
+                         content_type='multipart/form-data',
+                         follow_redirects=True)
+        resp = self.client.get(f'/devices/{device_id}')
+        self.assertIn(b'notes.txt', resp.data)
+        self.assertIn(b'Attachments', resp.data)
+
+    def test_download_nonexistent(self):
+        """Downloading a nonexistent attachment returns 404."""
+        resp = self.client.get('/device/attachment/99999')
+        self.assertEqual(resp.status_code, 404)

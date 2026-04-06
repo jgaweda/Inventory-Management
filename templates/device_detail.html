@@ -13,6 +13,50 @@
         max-width: 90vw; max-height: 90vh; border-radius: 8px;
         box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
+    /* Attachments */
+    .attach-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px; margin-top: 12px;
+    }
+    .attach-card {
+        background: var(--bg-secondary); border: 1px solid var(--border-color);
+        border-radius: 8px; overflow: hidden; transition: border-color 0.15s;
+    }
+    .attach-card:hover { border-color: var(--accent-blue); }
+    .attach-preview {
+        width: 100%; height: 140px; object-fit: cover; display: block;
+        background: var(--bg-primary);
+    }
+    .attach-preview-placeholder {
+        width: 100%; height: 140px; display: flex; align-items: center;
+        justify-content: center; background: var(--bg-primary);
+        color: var(--text-muted); font-size: 32px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none;
+    }
+    .attach-info { padding: 10px 12px; }
+    .attach-name {
+        font-size: 13px; font-weight: 600; color: var(--text-primary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        text-decoration: none; display: block;
+    }
+    .attach-name:hover { color: var(--accent-blue); }
+    .attach-meta {
+        font-size: 11px; color: var(--text-muted); margin-top: 4px;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .attach-delete {
+        background: none; border: none; color: var(--text-muted); cursor: pointer;
+        font-size: 14px; padding: 2px 6px; border-radius: 4px; opacity: 0.5;
+        transition: opacity 0.15s, color 0.15s;
+    }
+    .attach-delete:hover { opacity: 1; color: var(--accent-red); }
+    .upload-area {
+        border: 2px dashed var(--border-color); border-radius: 8px;
+        padding: 20px; text-align: center; transition: border-color 0.15s;
+        cursor: pointer; margin-top: 12px;
+    }
+    .upload-area:hover, .upload-area.dragover { border-color: var(--accent-blue); }
+    .upload-area input[type="file"] { display: none; }
 </style>
 {% endblock %}
 
@@ -283,6 +327,88 @@
             </form>
         </div>
 
+        <!-- Attachments -->
+        <div class="card" style="margin-bottom: 16px; cursor: default;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="section-label" style="margin-bottom: 0;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                    Attachments{% if attachments %} ({{ attachments|length }}){% endif %}
+                </div>
+            </div>
+
+            {% if attachments %}
+            <div class="attach-grid">
+                {% for att in attachments %}
+                <div class="attach-card">
+                    {% set is_image = att.content_type and att.content_type.startswith('image/') %}
+                    {% if is_image %}
+                    <a href="{{ url_for('device_attachment_preview', attachment_id=att.attachment_id) }}" target="_blank">
+                        <img src="{{ url_for('device_attachment_preview', attachment_id=att.attachment_id) }}" alt="{{ att.original_name }}" class="attach-preview">
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('device_download', attachment_id=att.attachment_id) }}" class="attach-preview-placeholder">
+                        {{ att.original_name.rsplit('.', 1)[-1] if '.' in att.original_name else '?' }}
+                    </a>
+                    {% endif %}
+                    <div class="attach-info">
+                        <a href="{{ url_for('device_download', attachment_id=att.attachment_id) }}" class="attach-name" title="{{ att.original_name }}">{{ att.original_name }}</a>
+                        <div class="attach-meta">
+                            <span>{{ '%.1f'|format(att.size_bytes / 1024) }} KB &middot; {{ att.uploaded_by }}</span>
+                            {% if has_permission('devices') %}
+                            <form method="POST" action="{{ url_for('device_delete_attachment', attachment_id=att.attachment_id) }}"
+                                  onsubmit="return confirm('Delete {{ att.original_name }}?')" style="margin: 0;">
+                                <button type="submit" class="attach-delete" title="Delete">&times;</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% elif not current_user %}
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 12px;">No attachments yet.</p>
+            {% endif %}
+
+            {% if current_user %}
+            <form method="POST" action="{{ url_for('device_upload', device_id=device.device_id) }}" enctype="multipart/form-data" id="deviceUploadForm">
+                <div class="upload-area" id="deviceUploadArea" onclick="document.getElementById('deviceFileInput').click()">
+                    <svg width="24" height="24" fill="none" stroke="var(--text-muted)" stroke-width="2" viewBox="0 0 24 24" style="margin-bottom: 8px;">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Click to upload or drag and drop</p>
+                    <p style="color: var(--text-muted); font-size: 11px; margin: 4px 0 0;">Images, PDFs, documents, spreadsheets, logs (max 25 MB)</p>
+                    <input type="file" name="attachment" id="deviceFileInput" onchange="document.getElementById('deviceUploadForm').submit()">
+                </div>
+            </form>
+            <script>
+            (function() {
+                var area = document.getElementById('deviceUploadArea');
+                var form = document.getElementById('deviceUploadForm');
+                ['dragenter', 'dragover'].forEach(function(evt) {
+                    area.addEventListener(evt, function(e) { e.preventDefault(); e.stopPropagation(); area.classList.add('dragover'); });
+                });
+                ['dragleave', 'drop'].forEach(function(evt) {
+                    area.addEventListener(evt, function(e) { e.preventDefault(); e.stopPropagation(); area.classList.remove('dragover'); });
+                });
+                area.addEventListener('drop', function(e) {
+                    var files = e.dataTransfer.files;
+                    if (!files.length) return;
+                    var formData = new FormData();
+                    formData.append('attachment', files[0]);
+                    area.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Uploading...</p>';
+                    fetch(form.action, { method: 'POST', body: formData })
+                        .then(function() { window.location.reload(); })
+                        .catch(function() { window.location.reload(); });
+                });
+                document.addEventListener('dragover', function(e) { e.preventDefault(); });
+                document.addEventListener('drop', function(e) { e.preventDefault(); });
+            })();
+            </script>
+            {% endif %}
+        </div>
+
         <!-- Activity History -->
         <div class="card" style="cursor: default;">
             <div class="section-label">Activity History</div>
@@ -295,7 +421,7 @@
                         border-radius: 50%;"></div>
                     <div style="flex: 1;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span class="action-badge action-{{ entry.action }}">{{ entry.action }}</span>
+                            <span class="action-badge action-{{ entry.action }}">{{ entry.action|replace('_', ' ')|title }}</span>
                             <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">{{ entry.timestamp }}</span>
                         </div>
                         {% if entry.performed_by %}
