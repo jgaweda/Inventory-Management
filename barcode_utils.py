@@ -235,11 +235,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- BOTTOM: Code 128 barcode, bars aligned with QR left edge ---
     # tight_crop strips internal quiet zones; label whitespace provides them
-    bc_w = W - 2 * EDGE   # bars span from EDGE to W-EDGE
+    BC_MARGIN = 30        # white space on each side of barcode
+    bc_w = W - 2 * BC_MARGIN
     try:
         barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h,
                                              tight_crop=True)
-        label.paste(barcode_img, (EDGE, bc_y))
+        label.paste(barcode_img, (BC_MARGIN, bc_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
         draw.text((20, bc_y + 20), barcode_value, fill='black', font=font_fb)
