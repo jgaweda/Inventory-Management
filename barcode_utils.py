@@ -64,14 +64,14 @@ def generate_qr_code(data, size=250):
     """
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=1,
-        border=2,
+        border=4,
     )
     qr.add_data(data)
     qr.make(fit=True)
     # Calculate modules: matrix size + 2*border
-    modules = qr.modules_count + 2 * 2
+    modules = qr.modules_count + 2 * 4
     # Find largest box_size that divides evenly into target size
     box_size = size // modules
     if box_size < 1:
@@ -205,13 +205,15 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Layout: top ~52% for QR+text, bottom for barcode ---
-    top_row_h = int(H * 0.52)
-    bc_h = H - top_row_h - MARGIN  # keep barcode inside border
-    bc_y = top_row_h
-
-    qr_size = top_row_h - 2 * MARGIN
-    text_area_w = W - MARGIN - qr_size - GAP - MARGIN
+    # --- Layout: text+QR top zone, full-width Code 128 bottom ---
+    # Prioritise barcode height (primary scan method) while giving QR
+    # enough size for reliable mobile scanning.
+    bc_h = 140                             # ~0.47" — well above GS1 minimum
+    bc_y = H - MARGIN - bc_h              # 290
+    qr_size = 270                          # ~0.90" — 39% larger than old 194px
+    qr_x = W - MARGIN - qr_size          # right-aligned
+    top_zone_h = bc_y - MARGIN            # 270
+    text_area_w = qr_x - GAP - MARGIN    # left of QR
 
     # Larger max font sizes to fill the text area
     font_name, display_name, name_tw, name_th = _fit_font(
@@ -219,21 +221,19 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     font_id, display_id, id_tw, id_th = _fit_font(
         draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 60, min_size=30)
 
-    # --- TOP ROW: QR (left) + text info (right) ---
-    qr_y = MARGIN
+    # --- TOP ROW: text info (left) + QR code (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (MARGIN, qr_y))
+    label.paste(qr_img, (qr_x, MARGIN))
 
-    text_x = MARGIN + qr_size + GAP
-    text_cx = text_x + text_area_w // 2
+    text_cx = MARGIN + text_area_w // 2
     total_text_h = name_th + 16 + id_th
-    text_top = qr_y + (qr_size - total_text_h) // 2
+    text_top = MARGIN + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
-    # --- BOTTOM: Code 128 barcode, left-aligned with QR ---
+    # --- BOTTOM: Code 128 barcode, full width ---
     bc_w = W - 2 * MARGIN
     try:
         barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h,
