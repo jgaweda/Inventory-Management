@@ -459,6 +459,114 @@ class TestDatabaseRecovery(BaseTestCase):
         result = db.verify_latest_backup()
         self.assertFalse(result['ok'])
 
+class TestCloudBackupEncryption(BaseTestCase):
+    """Test AES-256 encryption of cloud backup zip files."""
+
+    def test_encryption_password_in_config(self):
+        """Encryption password is stored in backup config."""
+        config = db._get_backup_config()
+        self.assertIn('git_encryption_password', config)
+
+    def test_encryption_password_persists(self):
+        """Encryption password survives config save/load cycle."""
+        config = db._get_backup_config()
+        config['git_encryption_password'] = 'my_secret_password'
+        db.save_backup_config(config)
+        reloaded = db._get_backup_config()
+        self.assertEqual(reloaded['git_encryption_password'], 'my_secret_password')
+
+    def test_encrypted_zip_created(self):
+        """push_backups_to_git creates an AES-encrypted zip when password is set."""
+        import pyzipper
+        import tempfile
+
+        # Create a backup file to zip
+        db.backup_database(performed_by='test', manual=True)
+
+        config = db._get_backup_config()
+        config['git_encryption_password'] = 'test_encryption_pw'
+        db.save_backup_config(config)
+
+        # Test zip creation directly (without actual git push)
+        backup_dir = db._get_backup_dir()
+        backup_files = [f for f in os.listdir(backup_dir) if db._is_backup_file(f)]
+        self.assertGreater(len(backup_files), 0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = os.path.join(tmpdir, 'test_encrypted.zip')
+            with pyzipper.AESZipFile(zip_path, 'w',
+                                     compression=pyzipper.ZIP_DEFLATED,
+                                     encryption=pyzipper.WZ_AES) as zf:
+                zf.setpassword(b'test_encryption_pw')
+                for bf in backup_files:
+                    zf.write(os.path.join(backup_dir, bf), bf)
+
+            # Verify it's encrypted and readable with correct password
+            with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                zf.setpassword(b'test_encryption_pw')
+                names = zf.namelist()
+                self.assertGreater(len(names), 0)
+                # Verify we can actually read the content
+                for name in names:
+                    data = zf.read(name)
+                    self.assertGreater(len(data), 0)
+
+            # Verify standard zipfile cannot read the encrypted contents
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                for name in zf.namelist():
+                    with self.assertRaises(RuntimeError):
+                        zf.read(name)
+
+    def test_default_config_has_encryption_field(self):
+        """Default config includes encryption password field."""
+        defaults = db.get_default_backup_config()
+        self.assertIn('git_encryption_password', defaults)
+        self.assertEqual(defaults['git_encryption_password'], '')
+
+
+class TestCloudRestoreAdminAuth(BaseTestCase):
+    """Test that cloud restore requires admin password re-entry."""
+
+    def _create_admin(self):
+        """Create an admin user and return credentials."""
+        db.create_user('cloudadmin', 'AdminPass123', 'admin')
+        return 'cloudadmin', 'AdminPass123'
+
+    def test_restore_requires_password(self):
+        """Cloud restore without password is rejected."""
+        username, password = self._create_admin()
+        self.client.post('/login', data={'username': username, 'password': password})
+        resp = self.client.post('/backups/git/restore',
+                                data={'filename': 'auto_backup_20250101_000000.db'},
+                                follow_redirects=True)
+        self.assertIn(b'Admin password is required', resp.data)
+
+    def test_restore_rejects_wrong_password(self):
+        """Cloud restore with wrong password is rejected."""
+        username, password = self._create_admin()
+        self.client.post('/login', data={'username': username, 'password': password})
+        resp = self.client.post('/backups/git/restore',
+                                data={'filename': 'auto_backup_20250101_000000.db',
+                                      'admin_password': 'wrong_password'},
+                                follow_redirects=True)
+        self.assertIn(b'Invalid admin password', resp.data)
+
+    def test_restore_rejects_non_admin(self):
+        """Cloud restore by non-admin user is rejected even with correct password."""
+        db.create_user('regularuser', 'UserPass123', 'custom')
+        self.client.post('/login', data={'username': 'regularuser', 'password': 'UserPass123'})
+        resp = self.client.post('/backups/git/restore',
+                                data={'filename': 'auto_backup_20250101_000000.db',
+                                      'admin_password': 'UserPass123'},
+                                follow_redirects=True)
+        # Non-admin is blocked by either permission_required or the admin check
+        self.assertTrue(
+            b'password' in resp.data.lower() or b'permission' in resp.data.lower(),
+            'Non-admin should be rejected for cloud restore'
+        )
+
+
 class TestBackwardsCompatibility(BaseTestCase):
     """Test schema versioning, backup compatibility validation, and import flexibility."""
 

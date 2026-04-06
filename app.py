@@ -1528,6 +1528,7 @@ def backup_config():
     config['git_repo'] = request.form.get('git_repo', '').strip()
     config['git_branch'] = request.form.get('git_branch', 'backups').strip() or 'backups'
     config['git_token'] = request.form.get('git_token', '').strip()
+    config['git_encryption_password'] = request.form.get('git_encryption_password', '').strip()
     try:
         config['git_push_interval_hours'] = max(0.1, float(request.form.get('git_push_interval_hours', 24)))
     except (ValueError, TypeError):
@@ -1632,11 +1633,23 @@ def backup_git_list():
 @app.route('/backups/git/restore', methods=['POST'])
 @permission_required('backups')
 def backup_git_restore():
-    """Restore database from a file in the git backup zip."""
+    """Restore database from a file in the git backup zip. Requires admin password."""
     filename = request.form.get('filename', '').strip()
     if not filename:
         flash('No file selected.', 'error')
         return redirect(url_for('backup_list'))
+
+    # Require admin password re-entry for cloud restore
+    admin_password = request.form.get('admin_password', '').strip()
+    if not admin_password:
+        flash('Admin password is required to restore from cloud backup.', 'error')
+        return redirect(url_for('backup_list'))
+    user = db.authenticate_user(current_username(), admin_password)
+    if not user or user.get('role') != 'admin':
+        app_logger.warning('Cloud restore blocked: invalid admin password by=%s', current_username())
+        flash('Invalid admin password. Cloud restore requires admin authentication.', 'error')
+        return redirect(url_for('backup_list'))
+
     try:
         result = db.restore_from_git(filename)
         app_logger.info('Database restored from git: %s (safety: %s) by=%s',

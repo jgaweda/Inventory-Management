@@ -1157,6 +1157,7 @@ def _get_backup_config():
         'git_repo': saved.get('git_repo', ''),
         'git_branch': saved.get('git_branch', 'backups'),
         'git_token': saved.get('git_token', ''),
+        'git_encryption_password': saved.get('git_encryption_password', ''),
         'git_push_interval_hours': saved.get('git_push_interval_hours', 24),
         'last_git_push': saved.get('last_git_push', ''),
         'last_backup': saved.get('last_backup', ''),
@@ -1182,6 +1183,7 @@ def get_default_backup_config():
         'git_repo': '',
         'git_branch': 'backups',
         'git_token': '',
+        'git_encryption_password': '',
         'git_push_interval_hours': 24,
         'last_git_push': '',
         'last_backup': '',
@@ -1628,20 +1630,20 @@ def push_backups_to_git():
     """
     import tempfile
     import time as _time
-    import zipfile
 
     start_time = _time.monotonic()
     config = _get_backup_config()
     backup_dir = _get_backup_dir()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
+    encryption_password = config.get('git_encryption_password', '').strip()
 
     # Collect all backup files (auto + manual)
     backup_files = sorted(
         [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
         reverse=True,
     )
-    _audit_logger.info('Git push: backup_dir=%s, found %d .db files to zip',
-                       backup_dir, len(backup_files))
+    _audit_logger.info('Git push: backup_dir=%s, found %d .db files to zip (encrypted=%s)',
+                       backup_dir, len(backup_files), bool(encryption_password))
     if not backup_files:
         raise ValueError('No backup files to push')
 
@@ -1673,17 +1675,36 @@ def push_backups_to_git():
             # Create/update zip archive — stable name so git tracks diffs
             zip_name = 'hp_connectivity_inventory_backup.zip'
             zip_path = os.path.join(tmpdir, zip_name)
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for bf in backup_files:
-                    zf.write(os.path.join(backup_dir, bf), bf)
-                # Include wiki_uploads/ so attachments are backed up with the DB
-                wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
-                if os.path.isdir(wiki_dir):
-                    for dirpath, _dirnames, filenames in os.walk(wiki_dir):
-                        for fname in filenames:
-                            full_path = os.path.join(dirpath, fname)
-                            arcname = os.path.relpath(full_path, DATA_DIR)
-                            zf.write(full_path, arcname)
+
+            if encryption_password:
+                # AES-256 encrypted zip — contents unreadable without the password
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'w',
+                                         compression=pyzipper.ZIP_DEFLATED,
+                                         encryption=pyzipper.WZ_AES) as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    for bf in backup_files:
+                        zf.write(os.path.join(backup_dir, bf), bf)
+                    wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
+                    if os.path.isdir(wiki_dir):
+                        for dirpath, _dirnames, filenames in os.walk(wiki_dir):
+                            for fname in filenames:
+                                full_path = os.path.join(dirpath, fname)
+                                arcname = os.path.relpath(full_path, DATA_DIR)
+                                zf.write(full_path, arcname)
+            else:
+                # Unencrypted zip (legacy / no password configured)
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for bf in backup_files:
+                        zf.write(os.path.join(backup_dir, bf), bf)
+                    wiki_dir = os.path.join(DATA_DIR, 'wiki_uploads')
+                    if os.path.isdir(wiki_dir):
+                        for dirpath, _dirnames, filenames in os.walk(wiki_dir):
+                            for fname in filenames:
+                                full_path = os.path.join(dirpath, fname)
+                                arcname = os.path.relpath(full_path, DATA_DIR)
+                                zf.write(full_path, arcname)
             zip_size = os.path.getsize(zip_path)
 
             subprocess.run(['git', 'add', zip_name],
@@ -2083,13 +2104,14 @@ def _get_git_push_url():
 def list_git_backups():
     """
     Fetch the backup zip from git and list the .db files inside it.
+    Handles both encrypted (AES) and unencrypted zips.
     Returns list of dicts with filename and size info.
     """
     import tempfile
-    import zipfile
 
     config = _get_backup_config()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
+    encryption_password = config.get('git_encryption_password', '').strip()
     remote_url = _get_git_push_url()
     git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
@@ -2114,16 +2136,37 @@ def list_git_backups():
             raise ValueError('No backup zip found on the git branch.')
 
         entries = []
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            for info in zf.infolist():
-                if _is_backup_file(info.filename):
-                    backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
-                    entries.append({
-                        'filename': info.filename,
-                        'size': info.file_size,
-                        'timestamp': _parse_backup_timestamp(info.filename),
-                        'type': backup_type,
-                    })
+        try:
+            # Try encrypted zip first if password is configured
+            if encryption_password:
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    for info in zf.infolist():
+                        if _is_backup_file(info.filename):
+                            backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
+                            entries.append({
+                                'filename': info.filename,
+                                'size': info.file_size,
+                                'timestamp': _parse_backup_timestamp(info.filename),
+                                'type': backup_type,
+                            })
+            else:
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    for info in zf.infolist():
+                        if _is_backup_file(info.filename):
+                            backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
+                            entries.append({
+                                'filename': info.filename,
+                                'size': info.file_size,
+                                'timestamp': _parse_backup_timestamp(info.filename),
+                                'type': backup_type,
+                            })
+        except Exception as e:
+            if encryption_password:
+                raise ValueError('Failed to read cloud backup — check that the encryption password is correct.') from e
+            raise
 
         # Sort most recent first
         entries.sort(key=lambda e: e['filename'], reverse=True)
@@ -2133,16 +2176,17 @@ def list_git_backups():
 def restore_from_git(filename):
     """
     Extract a specific .db file from the git backup zip and restore it.
+    Handles both encrypted (AES) and unencrypted zips.
     Creates a safety backup first. Returns restore metadata.
     """
     import tempfile
-    import zipfile
 
     if not _is_backup_file(filename) or '..' in filename:
         raise ValueError('Invalid backup filename')
 
     config = _get_backup_config()
     git_branch = config.get('git_branch', 'backups').strip() or 'backups'
+    encryption_password = config.get('git_encryption_password', '').strip()
     remote_url = _get_git_push_url()
     git_env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
 
@@ -2164,11 +2208,25 @@ def restore_from_git(filename):
         if not os.path.isfile(zip_path):
             raise ValueError('No backup zip found on the git branch.')
 
-        # Extract the requested file
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            if filename not in zf.namelist():
-                raise ValueError(f'File "{filename}" not found in backup zip.')
-            zf.extract(filename, tmpdir)
+        # Extract the requested file (encrypted or plain)
+        try:
+            if encryption_password:
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    if filename not in zf.namelist():
+                        raise ValueError(f'File "{filename}" not found in backup zip.')
+                    zf.extract(filename, tmpdir)
+            else:
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    if filename not in zf.namelist():
+                        raise ValueError(f'File "{filename}" not found in backup zip.')
+                    zf.extract(filename, tmpdir)
+        except Exception as e:
+            if encryption_password and 'not found in backup' not in str(e):
+                raise ValueError('Failed to decrypt cloud backup — check that the encryption password is correct.') from e
+            raise
 
         extracted_path = os.path.join(tmpdir, filename)
 
