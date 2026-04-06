@@ -236,7 +236,8 @@
                         <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(16,185,129,0.1); color: var(--accent-green);">Auto</span>
                         {% endif %}
                     </td>
-                    <td style="padding: 8px 12px; text-align: center;">
+                    <td style="padding: 8px 12px;">
+                        <div style="display: flex; align-items: center; justify-content: center;">
                         {% if b.filename in cloud_backup_files %}
                         <svg width="16" height="16" fill="none" stroke="var(--accent-green, #10b981)" stroke-width="2" viewBox="0 0 24 24" title="Uploaded to cloud">
                             <path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M8 16l2.5 2.5L16 13"/>
@@ -244,6 +245,7 @@
                         {% else %}
                         <span style="color: var(--text-muted);" title="Not yet uploaded to cloud">&mdash;</span>
                         {% endif %}
+                        </div>
                     </td>
                     <td style="padding: 8px 12px; white-space: nowrap; text-align: right;">
                         <div style="display: flex; gap: 6px; justify-content: flex-end;">
