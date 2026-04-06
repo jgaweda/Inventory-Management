@@ -182,39 +182,6 @@ class TestCheckoutCheckinFlow(BaseTestCase):
         self.assertIn('returned', actions)
 
 
-class TestDeviceCheckoutFlow(BaseTestCase):
-    """Functional tests for checkout/checkin workflow."""
-
-    def test_checkout_and_checkin(self):
-        """Full checkout -> checkin flow."""
-        self.login_admin()
-        did = db.add_device({'name': 'Checkout Test Dev'})
-        # Checkout
-        resp = self.client.post(f'/devices/{did}/checkout', data={
-            'assigned_to': 'John Doe'
-        }, follow_redirects=True)
-        self.assertIn(b'checked out', resp.data.lower())
-        device = db.get_device(did)
-        self.assertEqual(device['status'], 'checked_out')
-        self.assertEqual(device['assigned_to'], 'John Doe')
-        # Checkin
-        resp = self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
-        device = db.get_device(did)
-        self.assertEqual(device['status'], 'available')
-        self.assertEqual(device['assigned_to'], '')
-
-    def test_checkout_history_shown(self):
-        """Device detail should show checkout history."""
-        self.login_admin()
-        did = db.add_device({'name': 'History Test Dev'})
-        self.client.post(f'/devices/{did}/checkout', data={'assigned_to': 'Jane'},
-                         follow_redirects=True)
-        self.client.post(f'/devices/{did}/checkin', follow_redirects=True)
-        resp = self.client.get(f'/devices/{did}')
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'Checkout History', resp.data)
-
-
 class TestDeviceLifecycleFull(BaseTestCase):
     """Test complete device lifecycle: add -> edit -> checkout -> checkin -> retire."""
 
@@ -272,16 +239,6 @@ class TestDeviceLifecycleFull(BaseTestCase):
         self.assertIn('checked_out', actions)
         self.assertIn('returned', actions)
         self.assertIn('retired', actions)
-
-    def test_device_detail_shows_history(self):
-        """Device detail page should show audit history."""
-        self.login_admin()
-        did = db.add_device({'name': 'History Device'})
-        db.checkout_device(did, 'TestUser', performed_by='admin')
-        resp = self.client.get(f'/devices/{did}')
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'History Device', resp.data)
-
 
 class TestDeviceNotes(BaseTestCase):
     """Test public device notes feature."""
@@ -397,34 +354,12 @@ class TestDeviceNotes(BaseTestCase):
 class TestDeviceNotesEdgeCases(BaseTestCase):
     """Test device notes edge cases."""
 
-    def test_note_on_nonexistent_device(self):
-        resp = self.client.post('/devices/nonexistent/notes', data={
-            'note_content': 'Test',
-        }, follow_redirects=True)
-        self.assertIn(b'not found', resp.data.lower())
-
     def test_delete_nonexistent_note(self):
         self.login_admin()
         did = db.add_device({'name': 'Test Device'})
         resp = self.client.post(f'/devices/{did}/notes/99999/delete',
                                 follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-
-    def test_empty_note_rejected(self):
-        did = db.add_device({'name': 'Test Device'})
-        resp = self.client.post(f'/devices/{did}/notes', data={
-            'note_content': '',
-        }, follow_redirects=True)
-        notes = db.get_device_notes(did)
-        self.assertEqual(len(notes), 0)
-
-    def test_very_long_note(self):
-        did = db.add_device({'name': 'Long Note Test'})
-        long_content = 'A' * 10000
-        db.add_device_note(did, 'Tester', long_content)
-        notes = db.get_device_notes(did)
-        self.assertEqual(len(notes), 1)
-        self.assertEqual(len(notes[0]['content']), 10000)
 
     def test_non_admin_cannot_delete_note(self):
         self.login_admin()

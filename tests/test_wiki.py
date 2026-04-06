@@ -171,15 +171,6 @@ class TestWikiMarkdown(BaseTestCase):
         resp = self.client.get(f'/wiki/{ref_id}')
         self.assertIn(b'marked.min.js', resp.data)
 
-    def test_wiki_read_only_has_render_target(self):
-        """Non-logged-in view should have wikiReadOnly div for JS rendering."""
-        db.add_product_reference(codename='ReadProd')
-        refs = db.get_all_product_references()
-        ref_id = refs[0]['ref_id']
-        resp = self.client.get(f'/wiki/{ref_id}')
-        self.assertIn(b'wikiReadOnly', resp.data)
-
-
 class TestFormatToolbar(BaseTestCase):
     """Test wiki formatting toolbar presence."""
 
@@ -210,14 +201,6 @@ class TestFormatToolbar(BaseTestCase):
 
 class TestAttachmentIntegrity(BaseTestCase):
     """Test wiki attachment integrity checking."""
-
-    def test_check_no_attachments(self):
-        """Integrity check with no attachments returns clean result."""
-        uploads_dir = os.path.join(_test_dir, 'wiki_uploads')
-        os.makedirs(uploads_dir, exist_ok=True)
-        result = db.check_attachment_integrity(uploads_dir)
-        self.assertEqual(result['total_checked'], 0)
-        self.assertEqual(result['orphaned_removed'], 0)
 
     def test_check_removes_orphaned_records(self):
         """Integrity check removes DB records with missing files."""

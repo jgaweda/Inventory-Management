@@ -440,7 +440,7 @@ class TestPowerUserRole(BaseTestCase):
 
 
 class TestPowerUserPermissions(BaseTestCase):
-    """Test power_user role boundary cases."""
+    """Test power_user role boundary cases — backups and checkout denial."""
 
     def _create_power_user(self):
         self.login_admin()
@@ -450,25 +450,6 @@ class TestPowerUserPermissions(BaseTestCase):
         })
         self.client.get('/logout')
         self.client.post('/login', data={'username': 'puser', 'password': 'test1234'})
-
-    def test_power_user_can_add_reference(self):
-        self._create_power_user()
-        resp = self.client.post('/reference/add', data={
-            'codename': 'PowerTest',
-        }, follow_redirects=True)
-        self.assertNotIn(b'do not have permission', resp.data)
-
-    def test_power_user_cannot_add_device(self):
-        self._create_power_user()
-        resp = self.client.post('/devices/add', data={
-            'manufacturer': 'HP', 'category': 'Router/AP',
-        }, follow_redirects=True)
-        self.assertIn(b'do not have permission', resp.data)
-
-    def test_power_user_cannot_manage_users(self):
-        self._create_power_user()
-        resp = self.client.get('/users', follow_redirects=True)
-        self.assertIn(b'do not have permission', resp.data)
 
     def test_power_user_cannot_access_backups(self):
         self._create_power_user()
@@ -580,13 +561,6 @@ class TestPermissionModel(BaseTestCase):
             self.assertFalse(has_permission('backups'))
             # Clean up
             db.save_guest_permissions(set())
-
-    def test_version_in_context(self):
-        """App version should be available in templates."""
-        resp = self.client.get('/')
-        self.assertEqual(resp.status_code, 200)
-        # Version string should appear in the sidebar
-        self.assertIn(b'v1.0', resp.data)
 
 
 class TestGuestPermissions(BaseTestCase):

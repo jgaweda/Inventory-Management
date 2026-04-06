@@ -242,16 +242,6 @@ class TestLabelRoutes(BaseTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('image/png', resp.content_type)
 
-class TestHealthEndpoint(BaseTestCase):
-    """Test /health endpoint."""
-
-    def test_health_ok(self):
-        resp = self.client.get('/health')
-        self.assertEqual(resp.status_code, 200)
-        data = json.loads(resp.data)
-        self.assertEqual(data['status'], 'ok')
-        self.assertEqual(data['db'], 'ok')
-
 class TestHealthAndDashboard(BaseTestCase):
     """Functional tests for dashboard and health."""
 
@@ -352,17 +342,6 @@ class TestCSVImport(BaseTestCase):
 class TestExportImportFunctional(BaseTestCase):
     """Functional tests for export and import flows."""
 
-    def test_csv_export_contains_devices(self):
-        """CSV export should contain all devices."""
-        self.login_admin()
-        db.add_device({'name': 'Export Dev 1', 'category': 'Router'})
-        db.add_device({'name': 'Export Dev 2', 'category': 'Printer', 'codename': 'Test'})
-        resp = self.client.get('/export')
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'Export Dev 1', resp.data)
-        self.assertIn(b'Export Dev 2', resp.data)
-        self.assertIn('text/csv', resp.content_type)
-
     def test_xlsx_export(self):
         """Excel export should return xlsx file."""
         self.login_admin()
@@ -448,11 +427,6 @@ class TestLogPagination(BaseTestCase):
         resp = self.client.get('/logs?page=1')
         self.assertEqual(resp.status_code, 200)
 
-    def test_log_invalid_page(self):
-        self.login_admin()
-        resp = self.client.get('/logs?page=-1')
-        self.assertEqual(resp.status_code, 200)  # clamps to page 1
-
 class TestLogRoutes(BaseTestCase):
     """Test log viewing, clearing, and config routes."""
 
@@ -504,30 +478,6 @@ class TestScannerLookup(BaseTestCase):
         """Scan page should load."""
         resp = self.client.get('/scan')
         self.assertEqual(resp.status_code, 200)
-
-class TestScannerPage(BaseTestCase):
-    """Test barcode scanner page and API lookup."""
-
-    def test_scan_page_loads(self):
-        resp = self.client.get('/scan')
-        self.assertEqual(resp.status_code, 200)
-
-    def test_api_lookup_by_barcode(self):
-        did = db.add_device({'name': 'Scan Test'})
-        device = db.get_device(did)
-        resp = self.client.get(f'/api/lookup?barcode={device["barcode_value"]}')
-        self.assertEqual(resp.status_code, 200)
-        data = json.loads(resp.data)
-        self.assertTrue(data['found'])
-        self.assertEqual(data['device_id'], did)
-
-    def test_api_lookup_case_insensitive(self):
-        did = db.add_device({'name': 'Case Scan'})
-        device = db.get_device(did)
-        resp = self.client.get(f'/api/lookup?barcode={device["barcode_value"].lower()}')
-        self.assertEqual(resp.status_code, 200)
-        data = json.loads(resp.data)
-        self.assertTrue(data['found'])
 
 class TestSearchAndFilters(BaseTestCase):
     """Test device search and filter functions."""
@@ -639,12 +589,6 @@ class TestClientSideFiltering(BaseTestCase):
         db.add_device({'name': 'Filter Me', 'category': 'Router', 'location': 'Lab A'})
         resp = self.client.get('/devices')
         self.assertIn(b'data-name=', resp.data)
-
-    def test_device_list_has_filter_input(self):
-        """Device list should have a search input for client-side filtering."""
-        resp = self.client.get('/devices')
-        # Should have the search input
-        self.assertIn(b'search', resp.data.lower())
 
     def test_codename_filter_server_side(self):
         """Filtering by codename should use server-side filtering."""

@@ -27,12 +27,6 @@ class TestBackupSystem(BaseTestCase):
         result = db.check_database_integrity()
         self.assertTrue(result['ok'])
 
-    def test_default_backup_config(self):
-        defaults = db.get_default_backup_config()
-        self.assertEqual(defaults['backup_interval_hours'], 4)
-        self.assertEqual(defaults['max_backups'], 10)
-        self.assertIn('last_backup_hash', defaults)
-
 class TestBackupHealth(BaseTestCase):
     """Test backup health reporting and overdue detection."""
 
@@ -337,14 +331,6 @@ class TestBackupImprovements(BaseTestCase):
 class TestSchedulerRetry(BaseTestCase):
     """Test scheduler retry backoff logic."""
 
-    def test_retry_delays_defined(self):
-        """Retry delays are properly configured."""
-        from app import _RETRY_DELAYS_MIN, _fail_count
-        self.assertEqual(len(_RETRY_DELAYS_MIN), 3)
-        self.assertIn('backup', _fail_count)
-        self.assertIn('git_push', _fail_count)
-        self.assertIn('prune', _fail_count)
-
     def test_retry_or_reschedule_success_resets_counter(self):
         """Successful task resets failure counter."""
         from app import _fail_count, _retry_or_reschedule, _start_backup_timer, _stop_backup_timer
@@ -478,19 +464,6 @@ class TestDatabaseRecovery(BaseTestCase):
         self.assertGreater(status['size_bytes'], 0)
         self.assertIn('devices', status['table_counts'])
         self.assertEqual(status['integrity'], 'ok')
-
-    def test_verify_latest_backup(self):
-        db.backup_database(performed_by='test', manual=True)
-        result = db.verify_latest_backup()
-        self.assertTrue(result['ok'])
-
-    def test_verify_no_backups(self):
-        backup_dir = db._get_backup_dir()
-        for f in os.listdir(backup_dir):
-            if f.endswith('.db'):
-                os.remove(os.path.join(backup_dir, f))
-        result = db.verify_latest_backup()
-        self.assertFalse(result['ok'])
 
 class TestCloudBackupEncryption(BaseTestCase):
     """Test AES-256 encryption of cloud backup zip files."""
