@@ -191,24 +191,25 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    EDGE = 6          # minimal edge margin
-    GAP = 10          # gap between QR and text
+    EDGE = 6          # edge margin for QR and text only
+    GAP = 14          # gap between QR and text
 
     label = Image.new('RGB', (W, H), 'white')
     draw = ImageDraw.Draw(label)
 
-    # --- Measure text for the info area (right of QR) ---
-    # QR code takes roughly half the height; text area is to the right
-    top_row_h = int(H * 0.52)   # top row: QR + text info
-    bc_h = H - top_row_h - 2 * EDGE  # bottom: full-width barcode
+    # --- Layout: top ~52% for QR+text, bottom for edge-to-edge barcode ---
+    top_row_h = int(H * 0.52)
+    bc_h = H - top_row_h          # no vertical margin — barcode to label edge
+    bc_y = top_row_h
 
     qr_size = top_row_h - 2 * EDGE
     text_area_w = W - EDGE - qr_size - GAP - EDGE
 
+    # Larger max font sizes to fill the text area
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, text_area_w - 10, 38, min_size=18)
+        draw, device_name, BOLD_FONTS, text_area_w, 48, min_size=20)
     font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, text_area_w - 10, 48, min_size=28)
+        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 60, min_size=30)
 
     # --- TOP ROW: QR (left) + text info (right) ---
     qr_y = EDGE
@@ -217,23 +218,21 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     text_x = EDGE + qr_size + GAP
     text_cx = text_x + text_area_w // 2
-    # Stack: device name on top, barcode ID below, vertically centered
-    total_text_h = name_th + 12 + id_th  # 12px gap between lines
+    total_text_h = name_th + 16 + id_th
     text_top = qr_y + (qr_size - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
-    draw.text((text_cx, text_top + name_th + 12 + id_th // 2), display_id,
+    draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
-    # --- BOTTOM: full-width Code 128 barcode (max bar thickness) ---
-    bc_y = top_row_h
-    bc_w = W - 2 * EDGE
+    # --- BOTTOM: edge-to-edge Code 128 barcode (full label width) ---
+    # Barcode rendered at full W — it has its own internal quiet zones
     try:
-        barcode_img = generate_barcode_image(barcode_value, width=bc_w, height=bc_h)
-        label.paste(barcode_img, (EDGE, bc_y))
+        barcode_img = generate_barcode_image(barcode_value, width=W, height=bc_h)
+        label.paste(barcode_img, (0, bc_y))
     except Exception:
         font_fb = _find_font(MONO_BOLD_FONTS, 36)
-        draw.text((EDGE + 20, bc_y + 20), barcode_value, fill='black', font=font_fb)
+        draw.text((20, bc_y + 20), barcode_value, fill='black', font=font_fb)
 
     # --- Hairline border for cut/peel alignment ---
     draw.rectangle([0, 0, W - 1, H - 1], outline='#cccccc', width=1)
