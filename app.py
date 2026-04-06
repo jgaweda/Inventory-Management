@@ -1447,13 +1447,14 @@ def _stop_prune_timer():
 
 
 def _ensure_scheduler_running():
-    """Start the scheduler thread if it isn't already alive."""
+    """Start the scheduler thread if it isn't already alive (thread-safe)."""
     global _scheduler_thread
-    if _scheduler_thread is not None and _scheduler_thread.is_alive():
-        return
-    _scheduler_stop.clear()
-    _scheduler_thread = threading.Thread(target=_scheduler_loop, name='backup-scheduler', daemon=True)
-    _scheduler_thread.start()
+    with _scheduler_lock:
+        if _scheduler_thread is not None and _scheduler_thread.is_alive():
+            return
+        _scheduler_stop.clear()
+        _scheduler_thread = threading.Thread(target=_scheduler_loop, name='backup-scheduler', daemon=True)
+        _scheduler_thread.start()
     app_logger.info('Backup scheduler thread started')
 
 

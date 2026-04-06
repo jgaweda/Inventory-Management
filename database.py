@@ -16,6 +16,7 @@ import hashlib
 import re
 import secrets
 import subprocess
+import threading
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -1187,6 +1188,9 @@ import gzip as _gzip
 REPO_DIR = DATA_DIR
 BACKUP_CONFIG_FILE = os.path.join(REPO_DIR, 'backup_config.json')
 
+# Lock to prevent races between backup file operations (verify, prune, delete)
+_backup_file_lock = threading.Lock()
+
 # Default backup directory (used when no config exists)
 _DEFAULT_BACKUP_DIR = os.path.join(REPO_DIR, 'backups')
 
@@ -1196,7 +1200,11 @@ def _load_backup_config():
     try:
         with open(BACKUP_CONFIG_FILE, 'r') as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        _audit_logger.error('Backup config file is corrupt (JSONDecodeError: %s) — '
+                            'using defaults. Backups may need to be re-configured.', e)
         return {}
 
 
@@ -1325,11 +1333,14 @@ def backup_database(performed_by='system', manual=False):
                 'skipped': True,
             }
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    now = datetime.now()
+    timestamp = now.strftime('%Y%m%d_%H%M%S')
+    # Include microseconds to prevent filename collision on concurrent backups
+    timestamp_full = f'{timestamp}_{now.microsecond:06d}'
     if manual:
-        backup_filename = f'manual_backup_{timestamp}.db'
+        backup_filename = f'manual_backup_{timestamp_full}.db'
     else:
-        backup_filename = f'auto_backup_{timestamp}.db'
+        backup_filename = f'auto_backup_{timestamp_full}.db'
     backup_path = os.path.join(backup_dir, backup_filename)
 
     # Checkpoint WAL before backup to ensure all data is in the main file
@@ -1504,7 +1515,14 @@ def verify_backup(rotate=False):
     When rotate=True, cycles through backups (different one each call)
     to catch silent corruption in older files.
     Stores results in backup config for UI display.
+    Holds _backup_file_lock to prevent races with prune/delete.
     """
+    with _backup_file_lock:
+        return _verify_backup_unlocked(rotate)
+
+
+def _verify_backup_unlocked(rotate=False):
+    """Inner verify logic — caller must hold _backup_file_lock."""
     backup_dir = _get_backup_dir()
     all_backups = sorted(
         [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
@@ -1635,7 +1653,14 @@ def _smart_prune_backups(max_backups):
     """
     Smart retention: keep at least 1 backup per day for the last 7 days,
     then apply max_backups to the remainder. Manual backups are never pruned.
+    Holds _backup_file_lock to prevent races with verify.
     """
+    with _backup_file_lock:
+        return _smart_prune_unlocked(max_backups)
+
+
+def _smart_prune_unlocked(max_backups):
+    """Inner prune logic — caller must hold _backup_file_lock."""
     backup_dir = _get_backup_dir()
     auto_backups = sorted(
         [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and f.endswith('.db')],
@@ -1650,10 +1675,15 @@ def _smart_prune_backups(max_backups):
     days_seen = set()
 
     for f in auto_backups:
-        try:
-            ts_part = f.replace('auto_backup_', '').replace('.db', '').split('_uploaded')[0]
-            dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
-        except ValueError:
+        ts_part = f.replace('auto_backup_', '').replace('.db', '').split('_uploaded')[0]
+        dt = None
+        for fmt in ('%Y%m%d_%H%M%S_%f', '%Y%m%d_%H%M%S'):
+            try:
+                dt = datetime.strptime(ts_part, fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
             continue
         if dt >= cutoff:
             day_key = dt.strftime('%Y%m%d')
@@ -1804,8 +1834,10 @@ def push_backups_to_git():
 
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode() if e.stderr else str(e)
-            _audit_logger.error('Git push subprocess failed: %s', stderr)
-            raise RuntimeError(f'Git push failed: {stderr}')
+            # Sanitize: never expose tokens in error messages or logs
+            sanitized = _sanitize_git_output(stderr)
+            _audit_logger.error('Git push subprocess failed: %s', sanitized)
+            raise RuntimeError(f'Git push failed: {sanitized}')
         except subprocess.TimeoutExpired:
             _audit_logger.error('Git push timed out after 120s')
             raise RuntimeError('Git push timed out')
@@ -1842,11 +1874,14 @@ def _parse_backup_timestamp(filename):
         ts_part = ts_part.replace(prefix, '')
     # Strip _uploaded suffix from uploaded files
     ts_part = ts_part.split('_uploaded')[0]
-    try:
-        dt = datetime.strptime(ts_part, '%Y%m%d_%H%M%S')
-        return dt.strftime('%Y-%m-%d %H:%M:%S')
-    except ValueError:
-        return ts_part
+    # Try format with microseconds first, then without
+    for fmt in ('%Y%m%d_%H%M%S_%f', '%Y%m%d_%H%M%S'):
+        try:
+            dt = datetime.strptime(ts_part, fmt)
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            continue
+    return ts_part
 
 
 def list_backups():
@@ -2077,14 +2112,14 @@ def restore_database(filename):
             dst.close()
             src.close()
 
-        # Verify restored database integrity
-        verify_conn = sqlite3.connect(DB_PATH)
-        try:
-            post_integrity = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
-            if post_integrity != 'ok':
-                raise RuntimeError(f'Post-restore integrity check failed: {post_integrity}')
-        finally:
-            verify_conn.close()
+        # Verify restored database with full compatibility validation
+        post_compat = validate_backup_compatibility(DB_PATH)
+        if not post_compat['compatible']:
+            error_detail = '; '.join(post_compat['errors'])
+            raise RuntimeError(f'Post-restore validation failed: {error_detail}')
+        if post_compat.get('warnings'):
+            for w in post_compat['warnings']:
+                _audit_logger.warning('Post-restore validation warning: %s', w)
 
     except Exception as e:
         # Rollback: restore from safety backup
@@ -2099,10 +2134,25 @@ def restore_database(filename):
             finally:
                 rollback_dst.close()
                 rollback_src.close()
+            # Verify the rollback succeeded
+            rollback_check = sqlite3.connect(DB_PATH)
+            try:
+                rb_integrity = rollback_check.execute('PRAGMA integrity_check').fetchone()[0]
+                if rb_integrity != 'ok':
+                    raise RuntimeError(f'Rollback integrity check failed: {rb_integrity}')
+            finally:
+                rollback_check.close()
             _audit_logger.info('Rollback to safety backup %s succeeded', safety_backup['filename'])
         except Exception as rollback_err:
-            _audit_logger.critical('ROLLBACK FAILED after restore failure: %s — database may be corrupt',
-                                   rollback_err)
+            _audit_logger.critical(
+                'ROLLBACK FAILED after restore failure: %s — '
+                'DATABASE MAY BE CORRUPT. Safety backup at: %s',
+                rollback_err, os.path.join(backup_dir, safety_backup['filename']))
+            raise RuntimeError(
+                f'CRITICAL: Database restore failed and rollback also failed. '
+                f'Database may be corrupt. Safety backup saved at: '
+                f'{os.path.join(backup_dir, safety_backup["filename"])}'
+            ) from rollback_err
         raise
 
     # Re-run init_db to apply any migrations the restored DB may be missing
@@ -2112,6 +2162,15 @@ def restore_database(filename):
     config = _get_backup_config()
     config['last_backup_hash'] = _compute_db_hash()
     save_backup_config(config)
+
+    # Record successful verification after restore
+    _save_verify_result({
+        'ok': True,
+        'result': 'ok',
+        'filename': filename,
+        'device_count': compat.get('device_count', 0),
+        'user_count': compat.get('user_count', 0),
+    })
 
     elapsed_ms = round((_time.monotonic() - start_time) * 1000)
     _audit_logger.info('Database restored from %s (safety=%s, %dms)',
@@ -2128,14 +2187,22 @@ def restore_database(filename):
 
 def delete_backup(filename):
     """Delete a backup file. Returns True if deleted."""
-    backup_dir = _get_backup_dir()
-    if not _is_backup_file(filename) or '..' in filename:
-        raise ValueError('Invalid backup filename')
-    path = os.path.join(backup_dir, filename)
-    if os.path.isfile(path):
-        os.remove(path)
-        return True
-    return False
+    with _backup_file_lock:
+        backup_dir = _get_backup_dir()
+        if not _is_backup_file(filename) or '..' in filename:
+            raise ValueError('Invalid backup filename')
+        path = os.path.join(backup_dir, filename)
+        if os.path.isfile(path):
+            os.remove(path)
+            return True
+        return False
+
+
+def _sanitize_git_output(text):
+    """Remove tokens/credentials from git command output before logging."""
+    import re
+    # Strip embedded tokens from https://TOKEN@host URLs
+    return re.sub(r'https://[^@]+@', 'https://***@', text)
 
 
 def _get_git_push_url():
