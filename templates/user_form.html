@@ -38,7 +38,7 @@
 
         <div style="margin-bottom: 16px;">
             <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Password Hint</label>
-            <input type="text" name="password_hint" value="{{ user.get('password_hint', '') if user is mapping else user.password_hint if user else '' }}" placeholder="Optional — shown after failed login attempt" autocomplete="off">
+            <input type="text" name="password_hint" value="{{ user.get('password_hint', '') if user is mapping else user.password_hint if user else '' }}" placeholder="Optional" autocomplete="off">
             <span style="font-size: 11px; color: var(--text-muted);">Displayed on the login page if the wrong password is entered</span>
         </div>
 

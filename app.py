@@ -1106,22 +1106,14 @@ def update_log_config():
 @login_required
 def account():
     if request.method == 'POST':
-        form_type = request.form.get('form_type', 'password')
         users = db.get_all_users() if has_permission('users') else []
         server_config = _load_server_config()
 
-        if form_type == 'hint':
-            # Save password hint only
-            hint = request.form.get('password_hint', '').strip()
-            db.update_user(g.user['user_id'], {'password_hint': hint})
-            app_logger.info('Password hint updated: user=%s', g.user['username'])
-            flash('Password hint saved.', 'success')
-            return redirect(url_for('account'))
-
-        # Password change form
+        # Password change + hint form
         current_pw = request.form.get('current_password', '')
         new_pw = request.form.get('new_password', '')
         confirm_pw = request.form.get('confirm_password', '')
+        hint = request.form.get('password_hint', '').strip()
 
         # Verify current password
         user = db.authenticate_user(g.user['username'], current_pw)
@@ -1137,7 +1129,7 @@ def account():
             flash('New passwords do not match.', 'error')
             return render_template('account.html', users=users, server_config=server_config)
 
-        db.update_user(g.user['user_id'], {'password': new_pw})
+        db.update_user(g.user['user_id'], {'password': new_pw, 'password_hint': hint})
         app_logger.info('Password changed: user=%s', g.user['username'])
         flash('Password changed successfully.', 'success')
         return redirect(url_for('account'))
