@@ -208,13 +208,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
     # QR has border=0 — the label surface provides the quiet zone.
     # QR left edge aligns with the barcode's left edge (both at x=MARGIN).
-    QR_INSET = 6                           # small inset from label edge
     bc_h = 140                             # ~0.47" — well above GS1 minimum
     bc_y = H - MARGIN - bc_h              # 290
-    qr_gap = 8                             # small gap between QR bottom and barcode
-    qr_size = bc_y - qr_gap - QR_INSET   # 276 — reclaims internal border space
-    top_zone_h = bc_y - QR_INSET
-    text_area_w = W - QR_INSET - qr_size - GAP - MARGIN  # right of QR
+    qr_gap = 16                            # breathing room between QR and barcode
+    qr_size = bc_y - qr_gap - MARGIN     # 254
+    top_zone_h = bc_y - MARGIN
+    text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
     # Larger max font sizes to fill the text area
     font_name, display_name, name_tw, name_th = _fit_font(
@@ -224,12 +223,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (QR_INSET, QR_INSET))
+    label.paste(qr_img, (MARGIN, MARGIN))
 
-    text_x = QR_INSET + qr_size + GAP
+    text_x = MARGIN + qr_size + GAP
     text_cx = text_x + text_area_w // 2
     total_text_h = name_th + 16 + id_th
-    text_top = QR_INSET + (top_zone_h - total_text_h) // 2
+    text_top = MARGIN + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
     draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
