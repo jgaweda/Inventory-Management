@@ -245,7 +245,7 @@ class TestAttachmentIntegrity(BaseTestCase):
         self.assertEqual(len(db.get_wiki_attachments(ref_id)), 1)
 
     def test_repair_endpoint_requires_permission(self):
-        """Repair endpoint requires wiki_admin permission."""
+        """Repair endpoint requires wiki permission."""
         resp = self.client.post('/wiki/repair', follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         # Not logged in — should redirect to login
