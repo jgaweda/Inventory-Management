@@ -166,12 +166,14 @@ ROLE_PERMISSIONS = {
 }
 
 # Assignable permissions shown as checkboxes when creating/editing custom users.
-# Admin-only permissions (users, backups, logs, settings) are not assignable.
+# Admin-only permissions (users, settings) are not assignable.
 ASSIGNABLE_PERMISSIONS = [
     ('devices',      'Devices — Add, edit, checkout/checkin devices'),
     ('references',   'References — Manage product reference catalog'),
     ('wiki',         'Wiki — View and edit product wiki pages'),
     ('wiki_admin',   'Wiki Admin — Upload/delete wiki attachments'),
+    ('backups',      'Backups — View, create, restore, and configure backups'),
+    ('logs',         'Logs — View and export application logs'),
     ('retire',       'Retire — Retire and unretire devices'),
     ('notes_delete', 'Notes — Delete device notes'),
 ]
