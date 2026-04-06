@@ -359,14 +359,17 @@ def init_db():
         mismatched = conn.execute(
             "SELECT device_id, barcode_value FROM devices WHERE device_id != barcode_value"
         ).fetchall()
-        for row in mismatched:
-            old_id = row['device_id']
-            new_id = row['barcode_value']
-            conn.execute('UPDATE audit_log SET device_id = ? WHERE device_id = ?', (new_id, old_id))
-            conn.execute('UPDATE device_notes SET device_id = ? WHERE device_id = ?', (new_id, old_id))
-            conn.execute('UPDATE device_attachments SET device_id = ? WHERE device_id = ?', (new_id, old_id))
-            conn.execute('UPDATE devices SET device_id = ? WHERE device_id = ?', (new_id, old_id))
         if mismatched:
+            # Temporarily disable FK checks so we can update parent + child rows
+            conn.execute('PRAGMA foreign_keys = OFF')
+            for row in mismatched:
+                old_id = row['device_id']
+                new_id = row['barcode_value']
+                conn.execute('UPDATE devices SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+                conn.execute('UPDATE audit_log SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+                conn.execute('UPDATE device_notes SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+                conn.execute('UPDATE device_attachments SET device_id = ? WHERE device_id = ?', (new_id, old_id))
+            conn.execute('PRAGMA foreign_keys = ON')
             _audit_logger.info('Migrated %d device IDs to match barcode values', len(mismatched))
 
         # Stamp current schema version after all migrations complete
