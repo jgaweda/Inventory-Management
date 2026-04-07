@@ -247,13 +247,13 @@ def generate_label(device_id, barcode_value, device_name, save=True):
 
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
     # QR has border=0 — the label surface provides top/left quiet zone.
-    # Bottom quiet zone (toward barcode) must be ≥ 4 QR modules for spec compliance.
+    # QR kept small (0.50") to maximise barcode height for handheld scanners.
     QR_INSET = 10                          # top/left: surface extends quiet zone
     BC_BOTTOM = 10                         # barcode bottom inset from label edge
-    qr_gap = 40                            # ≥4 modules quiet zone for scanning
-    qr_size = 240                          # 0.80" — good scannable size
-    bc_y = QR_INSET + qr_size + qr_gap   # 290
-    bc_h = H - bc_y - BC_BOTTOM           # 150 — fills remaining space
+    qr_size = 150                          # 0.50" — standard retail QR size
+    qr_gap = 24                            # 4 modules × 6px — spec-compliant
+    bc_y = QR_INSET + qr_size + qr_gap   # 184
+    bc_h = H - bc_y - BC_BOTTOM           # 256 (0.85") — dominant barcode
     top_zone_h = bc_y - QR_INSET
     text_area_w = W - QR_INSET - qr_size - GAP - MARGIN  # right of QR
 
