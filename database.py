@@ -60,7 +60,8 @@ def get_connection():
     conn.execute('PRAGMA foreign_keys=ON')
     conn.execute('PRAGMA busy_timeout=30000')
     conn.execute('PRAGMA synchronous=NORMAL')
-    conn.execute('PRAGMA cache_size=-8000')  # 8 MB page cache
+    conn.execute('PRAGMA cache_size=-8000')   # 8 MB page cache
+    conn.execute('PRAGMA temp_store=MEMORY')  # keep temp tables in RAM
     return conn
 
 
@@ -252,6 +253,10 @@ def init_db():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_category ON devices(category)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_barcode ON devices(barcode_value)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_device ON audit_log(device_id)')
+        # Composite indexes for frequent query patterns
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_devices_status_updated ON devices(status, updated_at DESC)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_audit_device_ts ON audit_log(device_id, timestamp DESC)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_prodref_codename_year ON product_reference(codename, year DESC)')
 
         # Migrate: add sort_order column if missing (existing databases)
         cols = [row[1] for row in conn.execute('PRAGMA table_info(categories)').fetchall()]

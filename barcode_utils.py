@@ -24,8 +24,18 @@ def _ensure_labels_dir():
     os.makedirs(LABELS_DIR, exist_ok=True)
 
 
+_font_path_cache = {}  # font name list key -> resolved path
+
+
 def _find_font(names, size):
-    """Try multiple font paths (Linux + macOS) and return the first that works."""
+    """Try multiple font paths and return the first that works (path cached)."""
+    cache_key = tuple(names)
+    if cache_key in _font_path_cache:
+        path = _font_path_cache[cache_key]
+        if path is None:
+            return ImageFont.load_default(size=size)
+        return ImageFont.truetype(path, size)
+
     for name in names:
         for path in [
             f"/usr/share/fonts/truetype/dejavu/{name}",
@@ -35,15 +45,20 @@ def _find_font(names, size):
             f"/System/Library/Fonts/Supplemental/{name}",
         ]:
             try:
-                return ImageFont.truetype(path, size)
+                font = ImageFont.truetype(path, size)
+                _font_path_cache[cache_key] = path
+                return font
             except (OSError, IOError):
                 continue
     # Last resort: try by name only (Pillow searches system paths)
     for name in names:
         try:
-            return ImageFont.truetype(name, size)
+            font = ImageFont.truetype(name, size)
+            _font_path_cache[cache_key] = name
+            return font
         except (OSError, IOError):
             continue
+    _font_path_cache[cache_key] = None
     return ImageFont.load_default(size=size)
 
 

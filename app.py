@@ -110,15 +110,24 @@ with app.app_context():
     os.makedirs(db._get_backup_dir(), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, 'wiki_uploads'), exist_ok=True)
     os.makedirs(os.path.join(DATA_DIR, 'device_uploads'), exist_ok=True)
-    # Startup integrity check — log warning if database is corrupt
-    _integrity = db.startup_integrity_check()
-    if not _integrity['ok']:
-        app_logger.error('DATABASE INTEGRITY ISSUE ON STARTUP: %s', _integrity['result'])
-    # Check wiki attachment integrity — remove orphaned DB records for missing files
-    _att_check = db.check_attachment_integrity(os.path.join(DATA_DIR, 'wiki_uploads'))
-    if _att_check['orphaned_removed'] > 0:
-        app_logger.warning('Startup: removed %d orphaned wiki attachment records', _att_check['orphaned_removed'])
     app_logger.info('Application started — database initialized')
+
+    # Defer slow integrity checks to a background thread so the server
+    # starts accepting requests immediately (big win on slow machines).
+    import threading
+
+    def _deferred_startup_checks():
+        try:
+            _integrity = db.startup_integrity_check()
+            if not _integrity['ok']:
+                app_logger.error('DATABASE INTEGRITY ISSUE: %s', _integrity['result'])
+            _att_check = db.check_attachment_integrity(os.path.join(DATA_DIR, 'wiki_uploads'))
+            if _att_check['orphaned_removed'] > 0:
+                app_logger.warning('Removed %d orphaned wiki attachment records', _att_check['orphaned_removed'])
+        except Exception as e:
+            app_logger.error('Deferred startup check failed: %s', e)
+
+    threading.Thread(target=_deferred_startup_checks, daemon=True).start()
 
 # ---------------------------------------------------------------------------
 # Authentication helpers
