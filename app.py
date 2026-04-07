@@ -2240,10 +2240,12 @@ def product_reference_import():
                 imported += 1
 
         if filename.endswith('.zip'):
-            # --- ZIP bundle import (CSV + images) ---
+            # --- ZIP bundle import (CSV + printer_images.zip) ---
+            import tempfile
             raw_data = file.read()
             zf = zipfile.ZipFile(io.BytesIO(raw_data))
-            # Find the CSV inside the ZIP
+
+            # Find and import the CSV
             csv_names = [n for n in zf.namelist() if n.lower().endswith('.csv')]
             if not csv_names:
                 flash('ZIP file does not contain a .csv file.', 'error')
@@ -2251,53 +2253,19 @@ def product_reference_import():
             csv_text = zf.read(csv_names[0]).decode('utf-8-sig')
             _import_csv_text(csv_text)
 
-            # Attach images: look for images/<codename>/<file> entries
+            # Extract printer_images.zip (if present) and attach via _seed_wiki_images
             images_attached = 0
-            # Build codename -> ref_id lookup from DB (after CSV import)
-            all_refs = db.get_all_product_references()
-            codename_to_ref = {r['codename'].strip().lower(): r['ref_id'] for r in all_refs}
-
-            image_exts = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'pdf'}
-            for entry in zf.namelist():
-                # Expected path: images/<codename>/<filename>
-                parts = entry.replace('\\', '/').split('/')
-                if len(parts) < 3 or parts[0].lower() != 'images':
-                    continue
-                folder_name = parts[1]
-                orig_name = parts[-1]
-                if not orig_name:
-                    continue  # directory entry
-                ext = orig_name.rsplit('.', 1)[-1].lower() if '.' in orig_name else ''
-                if ext not in image_exts:
-                    continue
-
-                # Match folder to codename (case-insensitive, underscores = slashes)
-                lookup = folder_name.strip().replace('_', '/').lower()
-                ref_id = codename_to_ref.get(lookup)
-                if not ref_id:
-                    # Try exact folder name
-                    ref_id = codename_to_ref.get(folder_name.strip().lower())
-                if not ref_id:
-                    continue
-
-                # Save image to wiki_uploads
-                data = zf.read(entry)
-                upload_dir = os.path.join(WIKI_UPLOADS_DIR, str(ref_id))
-                os.makedirs(upload_dir, exist_ok=True)
-                safe_name = f'{uuid.uuid4().hex}.{ext}'
-                filepath = os.path.join(upload_dir, safe_name)
-                with open(filepath, 'wb') as f_out:
-                    f_out.write(data)
-
-                db.add_wiki_attachment(
-                    ref_id=ref_id,
-                    filename=safe_name,
-                    original_name=orig_name,
-                    content_type=f'image/{ext}' if ext != 'pdf' else 'application/pdf',
-                    size_bytes=len(data),
-                    uploaded_by=g.user['username'] if g.user else 'guest',
-                )
-                images_attached += 1
+            zip_names = [n for n in zf.namelist() if n.lower().endswith('.zip')]
+            for inner_name in zip_names:
+                inner_data = zf.read(inner_name)
+                with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp:
+                    tmp.write(inner_data)
+                    tmp_path = tmp.name
+                try:
+                    from database import _seed_wiki_images
+                    images_attached += _seed_wiki_images(tmp_path)
+                finally:
+                    os.unlink(tmp_path)
 
             zf.close()
             msg = f'Imported {imported} product{"s" if imported != 1 else ""}.'
@@ -2421,12 +2389,16 @@ def product_reference_export_xlsx():
 @app.route('/reference/export/zip')
 @permission_required('references')
 def product_reference_export_zip():
-    """Export product references as a ZIP bundle with CSV + wiki attachment images."""
+    """Export product references as a ZIP bundle with CSV + printer_images.zip.
+
+    Mirrors the seed_data structure so the ZIP can be imported on another
+    machine using the same fuzzy-matching image attachment logic.
+    """
     refs = db.get_all_product_references()
 
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        # --- CSV ---
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as outer:
+        # --- product_reference.csv ---
         csv_buf = io.StringIO()
         writer = csv.writer(csv_buf)
         writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner',
@@ -2437,22 +2409,33 @@ def product_reference_export_zip():
                              r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
                              r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
                              r.get('variant', '')])
-        zf.writestr('product_reference.csv', csv_buf.getvalue().encode('utf-8-sig'))
+        outer.writestr('product_reference.csv', csv_buf.getvalue().encode('utf-8-sig'))
 
-        # --- Attachments per product (grouped by codename) ---
-        for ref in refs:
-            attachments = db.get_wiki_attachments(ref['ref_id'])
-            if not attachments:
-                continue
-            folder = ref['codename'].strip().replace('/', '_').replace('\\', '_')
-            for att in attachments:
-                filepath = os.path.join(WIKI_UPLOADS_DIR, str(ref['ref_id']), att['filename'])
-                if os.path.isfile(filepath):
-                    arc_name = f'images/{folder}/{att["original_name"]}'
-                    zf.write(filepath, arc_name)
+        # --- printer_images.zip (inner ZIP with wiki attachment images) ---
+        img_buf = io.BytesIO()
+        img_count = 0
+        with zipfile.ZipFile(img_buf, 'w', zipfile.ZIP_DEFLATED) as inner:
+            for ref in refs:
+                attachments = db.get_wiki_attachments(ref['ref_id'])
+                if not attachments:
+                    continue
+                for att in attachments:
+                    filepath = os.path.join(WIKI_UPLOADS_DIR, str(ref['ref_id']), att['filename'])
+                    if not os.path.isfile(filepath):
+                        continue
+                    # Use codename as prefix so _seed_wiki_images() can fuzzy-match
+                    codename = ref['codename'].strip().replace('/', '_').replace('\\', '_')
+                    ext = att['original_name'].rsplit('.', 1)[-1] if '.' in att['original_name'] else 'png'
+                    # If multiple images per product, append a suffix
+                    arc_name = f'{codename}.{ext}' if len(attachments) == 1 else f'{codename}_{att["attachment_id"]}.{ext}'
+                    inner.write(filepath, arc_name)
+                    img_count += 1
+
+        if img_count:
+            outer.writestr('printer_images.zip', img_buf.getvalue())
 
     buf.seek(0)
-    app_logger.info('Product reference ZIP export: %d refs by=%s', len(refs), current_username())
+    app_logger.info('Product reference ZIP export: %d refs, %d images by=%s', len(refs), img_count, current_username())
     return Response(buf.getvalue(), mimetype='application/zip',
                     headers={'Content-Disposition': 'attachment; filename=product_reference_bundle.zip'})
 
