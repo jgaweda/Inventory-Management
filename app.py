@@ -35,6 +35,7 @@ app = Flask(__name__,
             static_folder=os.path.join(BUNDLE_DIR, 'static'),
             template_folder=os.path.join(BUNDLE_DIR, 'templates'))
 app.secret_key = os.environ.get('SECRET_KEY', 'hp-connectivity-inventory-system-change-me')
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600  # cache static files for 1 hour
 
 # Application version (read from VERSION file)
 _version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
@@ -613,13 +614,14 @@ def _label_name(device):
 
 @app.route('/labels/<device_id>.png')
 def serve_label(device_id):
-    """Serve a label PNG, always regenerating to ensure it's current."""
+    """Serve a label PNG, regenerating only when missing or stale."""
     device = db.get_device(device_id)
     if not device:
         app_logger.warning('Label requested for unknown device: id=%s', device_id)
         return 'Device not found', 404
-    barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     path = barcode_utils.get_label_path(device_id)
+    if not os.path.isfile(path) or os.path.getmtime(path) < datetime.fromisoformat(device['updated_at']).timestamp():
+        barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
     return send_file(path, mimetype='image/png')
 
 
@@ -2868,7 +2870,7 @@ if __name__ == '__main__':
         try:
             from waitress import serve
             app_logger.info('Starting production server (waitress) on %s:%s', args.host, args.port)
-            serve(app, host=args.host, port=args.port, threads=4)
+            serve(app, host=args.host, port=args.port, threads=8)
         except ImportError:
             print("  WARNING: waitress not installed. Install it for production:")
             print("    pip install waitress")

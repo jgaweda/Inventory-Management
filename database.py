@@ -60,6 +60,7 @@ def get_connection():
     conn.execute('PRAGMA foreign_keys=ON')
     conn.execute('PRAGMA busy_timeout=30000')
     conn.execute('PRAGMA synchronous=NORMAL')
+    conn.execute('PRAGMA cache_size=-8000')  # 8 MB page cache
     return conn
 
 
@@ -947,11 +948,28 @@ def get_distinct_values(column):
         return [r[0] for r in rows]
 
 
+_categories_cache = None
+_categories_cache_time = 0
+
+
 def get_categories():
-    """Get all categories ordered by sort_order."""
+    """Get all categories ordered by sort_order (cached for 30 seconds)."""
+    global _categories_cache, _categories_cache_time
+    import time
+    now = time.monotonic()
+    if _categories_cache is not None and (now - _categories_cache_time) < 30:
+        return _categories_cache
     with db_transaction() as conn:
         rows = conn.execute('SELECT * FROM categories ORDER BY sort_order, name').fetchall()
-        return [dict(r) for r in rows]
+        _categories_cache = [dict(r) for r in rows]
+        _categories_cache_time = now
+        return _categories_cache
+
+
+def invalidate_categories_cache():
+    """Clear the categories cache after add/edit/delete."""
+    global _categories_cache
+    _categories_cache = None
 
 
 def get_stats():
