@@ -248,10 +248,12 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
     # QR has border=0 — the label surface provides top/left quiet zone.
     # QR left edge aligns with barcode left edge (both at x=MARGIN).
-    qr_size = 140                          # 0.47" — fits within safe margins
-    qr_gap = 24                            # 4 modules × ~6px — spec-compliant
-    bc_y = MARGIN + qr_size + qr_gap      # 204
-    bc_h = H - bc_y - MARGIN              # 206 — dominant barcode
+    # DYMO clips more from the bottom — use larger bottom margin.
+    BC_BOTTOM = 60                         # extra bottom margin for DYMO clipping
+    qr_size = 130                          # 0.43" — smaller to allow more barcode gap
+    qr_gap = 24                            # 4 modules × ~5px — spec-compliant
+    bc_y = MARGIN + qr_size + qr_gap      # 194
+    bc_h = H - bc_y - BC_BOTTOM           # 196 — safe from bottom clipping
     top_zone_h = bc_y - MARGIN
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
