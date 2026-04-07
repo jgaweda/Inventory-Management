@@ -250,18 +250,18 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # QR left edge aligns with barcode left edge (both at x=MARGIN).
     # DYMO clips more from the bottom — use larger bottom margin.
     BC_BOTTOM = 60                         # extra bottom margin for DYMO clipping
-    qr_size = 130                          # 0.43" — smaller to allow more barcode gap
+    qr_size = 117                          # ~0.39" — 10% smaller, clear of edges
     qr_gap = 24                            # 4 modules × ~5px — spec-compliant
-    bc_y = MARGIN + qr_size + qr_gap      # 194
-    bc_h = H - bc_y - BC_BOTTOM           # 196 — safe from bottom clipping
-    top_zone_h = bc_y - MARGIN
+    bc_y = MARGIN + qr_size + qr_gap      # 181
+    bc_h = H - bc_y - BC_BOTTOM           # 209
+    top_zone_h = qr_size                   # text constrained to QR height
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
-    # Auto-size text to fill available space (constrained by text_area_w)
+    # Text sized to fit within QR code height boundaries
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, text_area_w, 80, min_size=20)
+        draw, device_name, BOLD_FONTS, text_area_w, 60, min_size=16)
     font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 100, min_size=30)
+        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 75, min_size=24)
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
