@@ -249,31 +249,32 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # QR has border=0 — the label surface provides top/left quiet zone.
     # QR left edge aligns with barcode left edge (both at x=MARGIN).
     # DYMO clips more from the bottom — use larger bottom margin.
+    QR_TOP = 55                            # extra top clearance for DYMO
     BC_BOTTOM = 60                         # extra bottom margin for DYMO clipping
-    qr_size = 117                          # ~0.39" — 10% smaller, clear of edges
+    qr_size = 117                          # ~0.39"
     qr_gap = 24                            # 4 modules × ~5px — spec-compliant
-    bc_y = MARGIN + qr_size + qr_gap      # 181
-    bc_h = H - bc_y - BC_BOTTOM           # 209
+    bc_y = QR_TOP + qr_size + qr_gap      # 196
+    bc_h = H - bc_y - BC_BOTTOM           # 194
     top_zone_h = qr_size                   # text constrained to QR height
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
     # Text sized to fit within QR code height boundaries
     font_name, display_name, name_tw, name_th = _fit_font(
-        draw, device_name, BOLD_FONTS, text_area_w, 60, min_size=16)
+        draw, device_name, BOLD_FONTS, text_area_w, 45, min_size=14)
     font_id, display_id, id_tw, id_th = _fit_font(
-        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 75, min_size=24)
+        draw, barcode_value, MONO_BOLD_FONTS, text_area_w, 56, min_size=20)
 
     # --- TOP ROW: QR code (left) + text info (right) ---
     qr_img = generate_qr_code(barcode_value, size=qr_size)
-    label.paste(qr_img, (MARGIN, MARGIN))
+    label.paste(qr_img, (MARGIN, QR_TOP))
 
     text_x = MARGIN + qr_size + GAP
     text_cx = text_x + text_area_w // 2
-    total_text_h = name_th + 16 + id_th
-    text_top = MARGIN + (top_zone_h - total_text_h) // 2
+    total_text_h = name_th + 12 + id_th
+    text_top = QR_TOP + (top_zone_h - total_text_h) // 2
     draw.text((text_cx, text_top + name_th // 2), display_name,
               fill='black', font=font_name, anchor='mm')
-    draw.text((text_cx, text_top + name_th + 16 + id_th // 2), display_id,
+    draw.text((text_cx, text_top + name_th + 12 + id_th // 2), display_id,
               fill='black', font=font_id, anchor='mm')
 
     # --- BOTTOM: Code 128 barcode, full width ---
