@@ -239,7 +239,7 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     Returns the file path (if saved) or the PIL Image.
     """
     W, H = 1050, 450
-    MARGIN = 20       # uniform inset from border for all content
+    MARGIN = 40       # safe zone for DYMO printer (~0.13" non-printable edges)
     GAP = 14          # gap between QR and text
 
     label = Image.new('RGB', (W, H), 'white')
@@ -248,11 +248,10 @@ def generate_label(device_id, barcode_value, device_name, save=True):
     # --- Layout: QR (left) + text (right) top zone, full-width Code 128 bottom ---
     # QR has border=0 — the label surface provides top/left quiet zone.
     # QR left edge aligns with barcode left edge (both at x=MARGIN).
-    BC_BOTTOM = 10                         # barcode bottom inset from label edge
-    qr_size = 150                          # 0.50" — standard retail QR size
-    qr_gap = 24                            # 4 modules × 6px — spec-compliant
-    bc_y = MARGIN + qr_size + qr_gap      # 194
-    bc_h = H - bc_y - BC_BOTTOM           # 246 — dominant barcode
+    qr_size = 140                          # 0.47" — fits within safe margins
+    qr_gap = 24                            # 4 modules × ~6px — spec-compliant
+    bc_y = MARGIN + qr_size + qr_gap      # 204
+    bc_h = H - bc_y - MARGIN              # 206 — dominant barcode
     top_zone_h = bc_y - MARGIN
     text_area_w = W - MARGIN - qr_size - GAP - MARGIN  # right of QR
 
