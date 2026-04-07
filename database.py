@@ -1304,6 +1304,13 @@ def _get_backup_config():
         'last_verify_result': saved.get('last_verify_result', ''),
         'last_verified_file': saved.get('last_verified_file', ''),
         'last_cloud_backup_files': saved.get('last_cloud_backup_files', []),
+        # File path / SharePoint backup
+        'filepath_enabled': bool(saved.get('filepath_enabled', False)),
+        'filepath_path': saved.get('filepath_path', ''),
+        'filepath_encryption_password': saved.get('filepath_encryption_password', ''),
+        'filepath_push_interval_hours': saved.get('filepath_push_interval_hours', 24),
+        'last_filepath_push': saved.get('last_filepath_push', ''),
+        'last_filepath_backup_files': saved.get('last_filepath_backup_files', []),
     }
 
 
@@ -1331,6 +1338,13 @@ def get_default_backup_config():
         'last_verify_result': '',
         'last_verified_file': '',
         'last_cloud_backup_files': [],
+        # File path / SharePoint backup
+        'filepath_enabled': False,
+        'filepath_path': '',
+        'filepath_encryption_password': '',
+        'filepath_push_interval_hours': 24,
+        'last_filepath_push': '',
+        'last_filepath_backup_files': [],
     }
 
 
@@ -1930,6 +1944,110 @@ def push_backups_to_git():
     }
 
 
+def push_backups_to_filepath():
+    """
+    Copy all local .db backup files + uploads into an encrypted (or plain)
+    zip and write it to a configured file path (network share, SharePoint
+    synced folder, USB drive, etc.).  Returns dict with push metadata.
+    """
+    import time as _time
+    import shutil
+
+    start_time = _time.monotonic()
+    config = _get_backup_config()
+    backup_dir = _get_backup_dir()
+    dest_dir = config.get('filepath_path', '').strip()
+    encryption_password = config.get('filepath_encryption_password', '').strip()
+
+    if not dest_dir:
+        raise ValueError('No file path configured for backup')
+
+    # Validate destination is reachable and writable
+    if not os.path.isdir(dest_dir):
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+        except OSError as e:
+            raise RuntimeError(f'Cannot create backup directory: {dest_dir} — {e}')
+    if not os.access(dest_dir, os.W_OK):
+        raise RuntimeError(f'Backup directory is not writable: {dest_dir}')
+
+    # Collect all backup files
+    backup_files = sorted(
+        [f for f in os.listdir(backup_dir) if _is_backup_file(f)],
+        reverse=True,
+    )
+    _audit_logger.info('File path push: backup_dir=%s, found %d .db files (encrypted=%s) -> %s',
+                       backup_dir, len(backup_files), bool(encryption_password), dest_dir)
+    if not backup_files:
+        raise ValueError('No backup files to push')
+
+    zip_name = 'hp_connectivity_inventory_backup.zip'
+    zip_path = os.path.join(dest_dir, zip_name)
+    tmp_path = zip_path + '.tmp'
+
+    try:
+        if encryption_password:
+            import pyzipper
+            with pyzipper.AESZipFile(tmp_path, 'w',
+                                     compression=pyzipper.ZIP_DEFLATED,
+                                     encryption=pyzipper.WZ_AES) as zf:
+                zf.setpassword(encryption_password.encode('utf-8'))
+                for bf in backup_files:
+                    zf.write(os.path.join(backup_dir, bf), bf)
+                for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                    upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                    if os.path.isdir(upl_dir):
+                        for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                            for fname in filenames:
+                                full_path = os.path.join(dirpath, fname)
+                                arcname = os.path.relpath(full_path, DATA_DIR)
+                                zf.write(full_path, arcname)
+        else:
+            import zipfile
+            with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for bf in backup_files:
+                    zf.write(os.path.join(backup_dir, bf), bf)
+                for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                    upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                    if os.path.isdir(upl_dir):
+                        for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                            for fname in filenames:
+                                full_path = os.path.join(dirpath, fname)
+                                arcname = os.path.relpath(full_path, DATA_DIR)
+                                zf.write(full_path, arcname)
+
+        zip_size = os.path.getsize(tmp_path)
+
+        # Atomic-ish replace: rename tmp to final (avoids partial file on crash)
+        if os.path.exists(zip_path):
+            os.replace(tmp_path, zip_path)
+        else:
+            os.rename(tmp_path, zip_path)
+
+    except Exception:
+        # Clean up partial temp file
+        if os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+
+    config['last_filepath_push'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    config['last_filepath_backup_files'] = backup_files
+    save_backup_config(config)
+
+    elapsed_ms = round((_time.monotonic() - start_time) * 1000)
+    _audit_logger.info('File path push completed: %d files (%dKB zip) to %s in %dms',
+                       len(backup_files), zip_size // 1024, dest_dir, elapsed_ms)
+    return {
+        'files_pushed': len(backup_files),
+        'zip_size': zip_size,
+        'pushed_to': dest_dir,
+        'skipped': False,
+    }
+
+
 def _is_backup_file(filename):
     """Check if a filename is a recognized backup file."""
     return (filename.endswith('.db') and
@@ -2500,6 +2618,163 @@ def restore_from_git(filename):
 
         return {
             'restored_from': f'git:{filename}',
+            'safety_backup': safety['filename'],
+        }
+
+
+def list_filepath_backups():
+    """
+    Read the backup zip from the configured file path and list the .db files
+    inside it.  Handles both encrypted (AES) and unencrypted zips.
+    Returns list of dicts with filename and size info.
+    """
+    config = _get_backup_config()
+    dest_dir = config.get('filepath_path', '').strip()
+    encryption_password = config.get('filepath_encryption_password', '').strip()
+
+    if not dest_dir:
+        raise ValueError('No file path configured for backup')
+
+    zip_path = os.path.join(dest_dir, 'hp_connectivity_inventory_backup.zip')
+    if not os.path.isfile(zip_path):
+        raise ValueError('No backup zip found at the configured path.')
+
+    entries = []
+    try:
+        if encryption_password:
+            import pyzipper
+            with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                zf.setpassword(encryption_password.encode('utf-8'))
+                for info in zf.infolist():
+                    if _is_backup_file(info.filename):
+                        backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
+                        entries.append({
+                            'filename': info.filename,
+                            'size': info.file_size,
+                            'timestamp': _parse_backup_timestamp(info.filename),
+                            'type': backup_type,
+                        })
+        else:
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                for info in zf.infolist():
+                    if _is_backup_file(info.filename):
+                        backup_type = 'manual' if info.filename.startswith('manual_backup_') else 'auto'
+                        entries.append({
+                            'filename': info.filename,
+                            'size': info.file_size,
+                            'timestamp': _parse_backup_timestamp(info.filename),
+                            'type': backup_type,
+                        })
+    except Exception as e:
+        if encryption_password:
+            raise ValueError('Failed to read backup — check that the encryption password is correct.') from e
+        raise
+
+    entries.sort(key=lambda e: e['filename'], reverse=True)
+    return entries
+
+
+def restore_from_filepath(filename):
+    """
+    Extract a specific .db file from the file path backup zip and restore it.
+    Handles both encrypted (AES) and unencrypted zips.
+    Creates a safety backup first. Returns restore metadata.
+    """
+    import tempfile
+
+    if not _is_backup_file(filename) or '..' in filename:
+        raise ValueError('Invalid backup filename')
+
+    config = _get_backup_config()
+    dest_dir = config.get('filepath_path', '').strip()
+    encryption_password = config.get('filepath_encryption_password', '').strip()
+
+    if not dest_dir:
+        raise ValueError('No file path configured for backup')
+
+    zip_path = os.path.join(dest_dir, 'hp_connectivity_inventory_backup.zip')
+    if not os.path.isfile(zip_path):
+        raise ValueError('No backup zip found at the configured path.')
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            if encryption_password:
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    if filename not in zf.namelist():
+                        raise ValueError(f'File "{filename}" not found in backup zip.')
+                    zf.extract(filename, tmpdir)
+            else:
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    if filename not in zf.namelist():
+                        raise ValueError(f'File "{filename}" not found in backup zip.')
+                    zf.extract(filename, tmpdir)
+        except Exception as e:
+            if encryption_password and 'not found in backup' not in str(e):
+                raise ValueError('Failed to decrypt backup — check that the encryption password is correct.') from e
+            raise
+
+        extracted_path = os.path.join(tmpdir, filename)
+
+        # Validate
+        test_conn = sqlite3.connect(extracted_path)
+        try:
+            integrity = test_conn.execute('PRAGMA integrity_check').fetchone()[0]
+            if integrity != 'ok':
+                raise ValueError(f'Backup file failed integrity check: {integrity}')
+        except sqlite3.DatabaseError as e:
+            raise ValueError(f'File is not a valid database: {e}')
+        finally:
+            test_conn.close()
+
+        checkpoint_wal()
+        safety = backup_database(performed_by='pre-filepath-restore-safety', manual=True)
+
+        try:
+            src = sqlite3.connect(extracted_path)
+            dst = sqlite3.connect(DB_PATH)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+
+            verify_conn = sqlite3.connect(DB_PATH)
+            try:
+                post_integrity = verify_conn.execute('PRAGMA integrity_check').fetchone()[0]
+                if post_integrity != 'ok':
+                    raise RuntimeError(f'Post-restore integrity check failed: {post_integrity}')
+            finally:
+                verify_conn.close()
+
+        except Exception as e:
+            _audit_logger.error('File path restore from %s failed, rolling back: %s\n%s',
+                                filename, e, traceback.format_exc())
+            try:
+                safety_path = os.path.join(_get_backup_dir(), safety['filename'])
+                rb_src = sqlite3.connect(safety_path)
+                rb_dst = sqlite3.connect(DB_PATH)
+                try:
+                    rb_src.backup(rb_dst)
+                finally:
+                    rb_dst.close()
+                    rb_src.close()
+                _audit_logger.info('Rollback to safety backup %s succeeded', safety['filename'])
+            except Exception as rb_err:
+                _audit_logger.critical('ROLLBACK FAILED after filepath restore failure: %s', rb_err)
+            raise
+
+        init_db()
+        cfg = _get_backup_config()
+        cfg['last_backup_hash'] = _compute_db_hash()
+        save_backup_config(cfg)
+
+        _audit_logger.info('Database restored from filepath:%s (safety=%s)', filename, safety['filename'])
+        return {
+            'restored_from': f'filepath:{filename}',
             'safety_backup': safety['filename'],
         }
 

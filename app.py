@@ -1357,12 +1357,13 @@ _scheduler_stop = threading.Event()
 _scheduler_lock = threading.Lock()
 _next_backup_time = None
 _next_git_push_time = None
+_next_filepath_push_time = None
 _next_prune_time = None
 _next_verify_time = None
 
 # Consecutive failure counters for retry backoff (max 3 retries then normal interval)
 _RETRY_DELAYS_MIN = [2, 5, 15]  # minutes to wait before retry 1, 2, 3
-_fail_count = {'backup': 0, 'git_push': 0, 'prune': 0}
+_fail_count = {'backup': 0, 'git_push': 0, 'filepath_push': 0, 'prune': 0}
 
 
 def _scheduler_loop():
@@ -1374,6 +1375,7 @@ def _scheduler_loop():
             with _scheduler_lock:
                 run_backup = _next_backup_time is not None and now >= _next_backup_time
                 run_git = _next_git_push_time is not None and now >= _next_git_push_time
+                run_filepath = _next_filepath_push_time is not None and now >= _next_filepath_push_time
                 run_prune = _next_prune_time is not None and now >= _next_prune_time
                 run_verify = _next_verify_time is not None and now >= _next_verify_time
 
@@ -1383,6 +1385,9 @@ def _scheduler_loop():
             if run_git:
                 app_logger.info('Scheduler: running scheduled git push')
                 _exec_scheduled_git_push()
+            if run_filepath:
+                app_logger.info('Scheduler: running scheduled file path push')
+                _exec_scheduled_filepath_push()
             if run_prune:
                 app_logger.info('Scheduler: running scheduled prune')
                 _exec_scheduled_prune()
@@ -1455,6 +1460,23 @@ def _exec_scheduled_git_push():
                          'git_enabled', 'git_push_interval_hours')
 
 
+def _exec_scheduled_filepath_push():
+    """Run file path push and reschedule from latest config, with retry on failure."""
+    try:
+        result = db.push_backups_to_filepath()
+        if result.get('skipped'):
+            app_logger.info('Scheduled file path push skipped — backup zip unchanged')
+        else:
+            app_logger.info('Scheduled file path push completed: %d files to %s',
+                            result['files_pushed'], result['pushed_to'])
+        _fail_count['filepath_push'] = 0
+    except Exception as e:
+        app_logger.error('Scheduled file path push failed: %s\nTraceback:\n%s', e, traceback.format_exc())
+        _fail_count['filepath_push'] += 1
+    _retry_or_reschedule('filepath_push', _start_filepath_push_timer, _stop_filepath_push_timer,
+                         'filepath_enabled', 'filepath_push_interval_hours')
+
+
 def _exec_scheduled_prune():
     """Run prune and reschedule from latest config, with retry on failure."""
     try:
@@ -1519,6 +1541,22 @@ def _stop_git_push_timer():
         _next_git_push_time = None
 
 
+def _start_filepath_push_timer(interval_hours):
+    """Schedule the next file path push after interval_hours from now."""
+    global _next_filepath_push_time
+    seconds = max(interval_hours * 3600, 300)
+    with _scheduler_lock:
+        _next_filepath_push_time = datetime.now() + timedelta(seconds=seconds)
+    app_logger.info('File path push scheduler armed: next push in %s hours', interval_hours)
+
+
+def _stop_filepath_push_timer():
+    """Disable scheduled file path pushes."""
+    global _next_filepath_push_time
+    with _scheduler_lock:
+        _next_filepath_push_time = None
+
+
 def _start_prune_timer(interval_hours):
     """Schedule the next prune after interval_hours from now."""
     global _next_prune_time
@@ -1580,6 +1618,17 @@ if _startup_config.get('git_enabled') and _startup_config.get('git_repo'):
             _start_git_push_timer(_gp_interval - _gp_age_hours)
     else:
         _start_git_push_timer(_gp_interval)
+if _startup_config.get('filepath_enabled') and _startup_config.get('filepath_path'):
+    _last_fp = _startup_config.get('last_filepath_push', '')
+    _fp_interval = _startup_config['filepath_push_interval_hours']
+    if _last_fp:
+        _fp_age_hours = (datetime.now() - datetime.strptime(_last_fp, '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600
+        if _fp_age_hours > _fp_interval:
+            _start_filepath_push_timer(30 / 3600)
+        else:
+            _start_filepath_push_timer(_fp_interval - _fp_age_hours)
+    else:
+        _start_filepath_push_timer(_fp_interval)
 if _startup_config.get('prune_enabled'):
     _start_prune_timer(_startup_config['prune_interval_hours'])
 
@@ -1600,6 +1649,7 @@ def backup_list():
     with _scheduler_lock:
         next_backup = _next_backup_time.strftime('%Y-%m-%d %H:%M:%S') if _next_backup_time else None
         next_push = _next_git_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_git_push_time else None
+        next_filepath = _next_filepath_push_time.strftime('%Y-%m-%d %H:%M:%S') if _next_filepath_push_time else None
         next_prune = _next_prune_time.strftime('%Y-%m-%d %H:%M:%S') if _next_prune_time else None
     scheduler_alive = _scheduler_thread is not None and _scheduler_thread.is_alive()
     health = db.get_backup_health()
@@ -1610,10 +1660,13 @@ def backup_list():
             verify_msg += f' — {config["last_verify_result"]}'
         flash(verify_msg, 'error')
     cloud_files = set(config.get('last_cloud_backup_files', []))
+    filepath_files = set(config.get('last_filepath_backup_files', []))
     return render_template('backups.html', backups=backups, config=config,
                            next_backup_time=next_backup, next_git_push_time=next_push,
+                           next_filepath_push_time=next_filepath,
                            next_prune_time=next_prune, scheduler_alive=scheduler_alive,
-                           backup_health=health, cloud_backup_files=cloud_files)
+                           backup_health=health, cloud_backup_files=cloud_files,
+                           filepath_backup_files=filepath_files)
 
 
 @app.route('/backups/create', methods=['POST'])
@@ -1743,6 +1796,17 @@ def backup_config():
     except (ValueError, TypeError):
         config['git_push_interval_hours'] = 24
 
+    # File path / SharePoint backup settings
+    config['filepath_enabled'] = '1' in request.form.getlist('filepath_enabled')
+    filepath_path = request.form.get('filepath_path', '').strip()
+    if filepath_path:
+        config['filepath_path'] = filepath_path
+    config['filepath_encryption_password'] = request.form.get('filepath_encryption_password', '').strip()
+    try:
+        config['filepath_push_interval_hours'] = max(0.1, float(request.form.get('filepath_push_interval_hours', 24)))
+    except (ValueError, TypeError):
+        config['filepath_push_interval_hours'] = 24
+
     db.save_backup_config(config)
 
     # Manage backup timer
@@ -1760,6 +1824,14 @@ def backup_config():
                         config['git_push_interval_hours'], config['git_repo'], current_username())
     else:
         _stop_git_push_timer()
+
+    # Manage file path push timer
+    if config['filepath_enabled'] and config.get('filepath_path'):
+        _start_filepath_push_timer(config['filepath_push_interval_hours'])
+        app_logger.info('File path push schedule enabled: every %s hours to %s by=%s',
+                        config['filepath_push_interval_hours'], config['filepath_path'], current_username())
+    else:
+        _stop_filepath_push_timer()
 
     # Manage prune timer
     if config['prune_enabled']:
@@ -1814,13 +1886,16 @@ def backup_config_reset():
     defaults['git_repo'] = current.get('git_repo', '')
     defaults['git_branch'] = current.get('git_branch', 'backups')
     defaults['git_token'] = current.get('git_token', '')
+    defaults['filepath_path'] = current.get('filepath_path', '')
     # Preserve timestamps
     defaults['last_backup'] = current.get('last_backup', '')
     defaults['last_git_push'] = current.get('last_git_push', '')
+    defaults['last_filepath_push'] = current.get('last_filepath_push', '')
     defaults['last_backup_hash'] = current.get('last_backup_hash', '')
     db.save_backup_config(defaults)
     _stop_backup_timer()
     _stop_git_push_timer()
+    _stop_filepath_push_timer()
     _stop_prune_timer()
     app_logger.info('Backup config reset to defaults by=%s', current_username())
     flash('Backup configuration reset to defaults.', 'success')
@@ -1894,6 +1969,63 @@ def backup_git_restore():
     except Exception as e:
         app_logger.error('Git restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Restore from git failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/filepath/push', methods=['POST'])
+@permission_required('backups')
+def backup_push_filepath():
+    """Manually trigger a file path push of backup bundle."""
+    try:
+        result = db.push_backups_to_filepath()
+        app_logger.info('Manual file path push: %d files to %s by=%s',
+                        result['files_pushed'], result['pushed_to'], current_username())
+        flash(f'Backups pushed to file path: {result["files_pushed"]} .db files copied to {result["pushed_to"]}', 'success')
+    except Exception as e:
+        app_logger.error('File path push failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
+        flash(f'File path push failed: {e}', 'error')
+    return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/filepath/list')
+@permission_required('backups')
+def backup_filepath_list():
+    """API: list .db files available in the file path backup zip."""
+    try:
+        entries = db.list_filepath_backups()
+        return jsonify({'ok': True, 'backups': entries})
+    except Exception as e:
+        app_logger.error('File path backup list failed: %s\nTraceback:\n%s', e, traceback.format_exc())
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
+@app.route('/backups/filepath/restore', methods=['POST'])
+@permission_required('backups')
+def backup_filepath_restore():
+    """Restore database from a file in the file path backup zip. Requires admin password."""
+    filename = request.form.get('filename', '').strip()
+    if not filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('backup_list'))
+
+    admin_password = request.form.get('admin_password', '').strip()
+    if not admin_password:
+        flash('Admin password is required to restore from file path backup.', 'error')
+        return redirect(url_for('backup_list'))
+    user = db.authenticate_user(current_username(), admin_password)
+    if not user or user.get('role') != 'admin':
+        app_logger.warning('File path restore blocked: invalid admin password by=%s', current_username())
+        flash('Invalid admin password. Restore requires admin authentication.', 'error')
+        return redirect(url_for('backup_list'))
+
+    try:
+        result = db.restore_from_filepath(filename)
+        app_logger.info('Database restored from file path: %s (safety: %s) by=%s',
+                        result['restored_from'], result['safety_backup'], current_username())
+        flash(f'Database restored from file path backup: {filename}. Safety backup: {result["safety_backup"]}', 'success')
+    except Exception as e:
+        app_logger.error('File path restore failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
+        flash(f'Restore from file path failed: {e}', 'error')
     return redirect(url_for('backup_list'))
 
 
