@@ -1207,45 +1207,64 @@ _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 @app.route('/admin/update/check', methods=['POST'])
 @permission_required('settings')
 def app_update_check():
-    """Fetch latest changes from git and report if updates are available."""
+    """Check for new tagged releases (vX.Y.Z) on the remote."""
     try:
-        # Fetch latest from remote
+        # Fetch tags from remote
         fetch_result = subprocess.run(
-            ['git', 'fetch', '--all'],
+            ['git', 'fetch', '--tags', '--force'],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
         )
         if fetch_result.returncode != 0:
             return jsonify({'error': f'Git fetch failed: {fetch_result.stderr.strip()}'})
 
-        # Get current branch
-        branch_result = subprocess.run(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+        # Get all v* tags sorted by version (newest last)
+        tag_result = subprocess.run(
+            ['git', 'tag', '-l', 'v*', '--sort=version:refname'],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
         )
-        branch = branch_result.stdout.strip()
+        tags = [t.strip() for t in tag_result.stdout.strip().splitlines() if t.strip()]
 
-        # Check for differences (--first-parent avoids counting both sides of merges,
-        # and we exclude auto-generated version bump / merge commits from the count)
-        log_result = subprocess.run(
-            ['git', 'log', f'HEAD..origin/{branch}', '--oneline', '--no-decorate', '--first-parent'],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
-        )
-        commits = log_result.stdout.strip()
+        if not tags:
+            return jsonify({'updates_available': False,
+                            'output': f'Current: v{_app_version}\nNo releases found.'})
 
-        if commits:
-            lines = commits.splitlines()
-            # Filter out auto-generated commits (version bumps and merge commits)
-            meaningful = [l for l in lines
-                          if not l.split(' ', 1)[1].startswith(('Bump version to ', 'Merge branch '))]
-            count = len(meaningful)
-            display = '\n'.join(meaningful) if meaningful else '\n'.join(lines)
-            if count == 0:
-                count = len(lines)
-                display = '\n'.join(lines)
-            output = f'Branch: {branch}\n{count} update(s) available:\n\n{display}'
-            return jsonify({'updates_available': True, 'output': output, 'branch': branch})
+        latest_tag = tags[-1]
+        latest_version = latest_tag.lstrip('v')
+
+        # Compare with current version using tuple comparison
+        def _parse_ver(v):
+            """Parse 'X.Y.Z' into tuple of ints for comparison."""
+            try:
+                return tuple(int(x) for x in v.split('.'))
+            except (ValueError, AttributeError):
+                return (0,)
+
+        if _parse_ver(latest_version) > _parse_ver(_app_version):
+            # Get commit messages between current and latest tag
+            log_result = subprocess.run(
+                ['git', 'log', f'v{_app_version}..{latest_tag}',
+                 '--oneline', '--no-decorate', '--first-parent'],
+                cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
+            )
+            commits = log_result.stdout.strip()
+            lines = [l for l in commits.splitlines()
+                     if l and not l.split(' ', 1)[1].startswith(
+                         ('Bump version', 'Merge branch', 'Merge remote'))]
+            count = len(lines)
+            summary = '\n'.join(lines[:20])  # show up to 20 changes
+            if count > 20:
+                summary += f'\n... and {count - 20} more'
+
+            output = (f'Current: v{_app_version}\n'
+                      f'Available: {latest_tag}\n\n'
+                      f'{count} change(s):\n\n{summary}')
+            return jsonify({'updates_available': True, 'output': output,
+                            'tag': latest_tag})
         else:
-            return jsonify({'updates_available': False, 'output': f'Branch: {branch}\nNo new commits.', 'branch': branch})
+            return jsonify({'updates_available': False,
+                            'output': f'Current: v{_app_version}\n'
+                                      f'Latest release: {latest_tag}\n\n'
+                                      f'Application is up to date.'})
 
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Git operation timed out'})
@@ -1258,24 +1277,21 @@ def app_update_check():
 @app.route('/admin/update/apply', methods=['POST'])
 @permission_required('settings')
 def app_update_apply():
-    """Pull latest code, install dependencies, and restart the application."""
+    """Checkout a tagged release, install dependencies, and restart."""
     try:
-        # Get current branch
-        branch_result = subprocess.run(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
-        )
-        branch = branch_result.stdout.strip()
+        tag = request.json.get('tag') if request.is_json else request.form.get('tag')
+        if not tag or not tag.startswith('v'):
+            return jsonify({'error': 'No valid release tag specified'})
 
-        # Pull latest
-        pull_result = subprocess.run(
-            ['git', 'pull', 'origin', branch],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=60,
+        # Checkout the tagged release
+        checkout_result = subprocess.run(
+            ['git', 'checkout', tag],
+            cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
         )
-        if pull_result.returncode != 0:
-            return jsonify({'error': f'Git pull failed: {pull_result.stderr.strip()}'})
+        if checkout_result.returncode != 0:
+            return jsonify({'error': f'Git checkout failed: {checkout_result.stderr.strip()}'})
 
-        output = pull_result.stdout.strip()
+        output = f'Updated to {tag}\n{checkout_result.stdout.strip()}'
 
         # Install updated dependencies (best-effort, non-blocking)
         pip_cmd = [sys.executable, '-m', 'pip', 'install', '-r',

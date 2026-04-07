@@ -31,7 +31,7 @@
         Application Update
     </div>
     <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-        Pull the latest code from the git repository, install updated dependencies, and restart the application.
+        Check for new official releases and update the application.
     </p>
     <div id="updateStatus" style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-family: var(--font-mono, monospace); white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-color); color: var(--text-secondary);">
     </div>
@@ -48,12 +48,14 @@
 </div>
 
 <script>
+var _pendingTag = null;
+
 function checkForUpdates() {
     var status = document.getElementById('updateStatus');
     var applyBtn = document.getElementById('applyUpdateBtn');
     var checkBtn = document.getElementById('checkUpdateBtn');
     status.style.display = 'block';
-    status.textContent = 'Checking for updates...';
+    status.textContent = 'Checking for new releases...';
     applyBtn.style.display = 'none';
     checkBtn.disabled = true;
 
@@ -68,9 +70,9 @@ function checkForUpdates() {
                 status.textContent = data.output;
                 status.style.borderColor = 'var(--border-color)';
                 if (data.updates_available) {
+                    _pendingTag = data.tag;
                     applyBtn.style.display = 'inline-flex';
                 } else {
-                    status.textContent += '\n\nApplication is up to date.';
                     try { sessionStorage.removeItem('_inv_update_check'); } catch(e) {}
                     var b = document.getElementById('updateBanner');
                     if (b) b.style.display = 'none';
@@ -84,17 +86,22 @@ function checkForUpdates() {
 }
 
 function applyUpdate() {
-    if (!confirm('This will pull the latest code, install dependencies, and restart the server.\n\nAll active sessions will be briefly interrupted.\n\nContinue?')) return;
+    if (!_pendingTag) return;
+    if (!confirm('Update to ' + _pendingTag + '?\n\nThis will install the release, update dependencies, and restart the server.\n\nAll active sessions will be briefly interrupted.')) return;
     var status = document.getElementById('updateStatus');
     var applyBtn = document.getElementById('applyUpdateBtn');
     var checkBtn = document.getElementById('checkUpdateBtn');
     var banner = document.getElementById('updateBanner');
     if (banner) banner.style.display = 'none';
-    status.textContent = 'Pulling updates and restarting...';
+    status.textContent = 'Installing ' + _pendingTag + ' and restarting...';
     applyBtn.disabled = true;
     checkBtn.disabled = true;
 
-    fetch('{{ url_for("app_update_apply") }}', {method: 'POST'})
+    fetch('{{ url_for("app_update_apply") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tag: _pendingTag})
+    })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.error) {
