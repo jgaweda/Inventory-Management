@@ -129,8 +129,8 @@ class TestBackupEdgeCases(BaseTestCase):
         db.save_backup_config(config)
         resp = self.client.get('/backups')
         self.assertEqual(resp.status_code, 200)
-        # The cloud icon SVG should appear (contains the checkmark path)
-        self.assertIn(b'Uploaded to cloud', resp.data)
+        # The git status icon SVG should appear (contains the checkmark path)
+        self.assertIn(b'Pushed to Git', resp.data)
 
     def test_cloud_backup_files_stored_in_config(self):
         """last_cloud_backup_files persists through config save/load."""

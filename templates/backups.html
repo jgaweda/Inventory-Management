@@ -20,7 +20,11 @@
         </button>
         <button type="button" class="btn btn-secondary" onclick="openCloudRestoreDialog()">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
-            Restore from Cloud
+            Restore from Git
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="openFilepathRestoreDialog()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><path d="M12 18v-4M10 16l2 2 2-2"/></svg>
+            Restore from File Path
         </button>
     </div>
 </div>
@@ -97,104 +101,170 @@
             {% endif %}
         </div>
 
-        <!-- Git Push Settings -->
+        <!-- Cloud Backup Section -->
         <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-bottom: 16px;">
-            <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px; margin-right: 4px;"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
                 Cloud Backup
             </div>
-            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
-                Pushes your backups to a remote Git repository for off-site cloud storage. Use "Restore from Cloud" to pull the latest backup if your local data is lost.
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+                Push backups to one or more off-site destinations. Each method runs independently on its own schedule.
             </p>
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Git repository</label>
-                    <input type="text" name="git_repo" value="{{ config.git_repo }}"
-                           placeholder="Leave blank to use origin"
-                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+
+            <!-- Git Repository -->
+            <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6"/><path d="M5.64 5.64l4.24 4.24M14.12 14.12l4.24 4.24"/></svg>
+                    Git Repository
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Branch</label>
-                    <input type="text" name="git_branch" value="{{ config.git_branch }}"
-                           placeholder="backups"
-                           style="width: 160px; font-size: 13px; padding: 8px 12px;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Repository</label>
+                        <input type="text" name="git_repo" value="{{ config.git_repo }}"
+                               placeholder="Leave blank to use origin"
+                               style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Branch</label>
+                        <input type="text" name="git_branch" value="{{ config.git_branch }}"
+                               placeholder="backups"
+                               style="width: 160px; font-size: 13px; padding: 8px 12px;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Access token</label>
+                        <input type="password" name="git_token" value="{{ config.git_token }}"
+                               placeholder="ghp_... (Personal Access Token)"
+                               autocomplete="off"
+                               style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                        <span style="font-size: 11px; color: var(--text-muted);">GitHub PAT with repo Contents read/write</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Encryption password</label>
+                        <input type="password" name="git_encryption_password" value="{{ config.git_encryption_password }}"
+                               placeholder="Optional — encrypts backup zip with AES-256"
+                               autocomplete="off"
+                               style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px;">
+                        <span style="font-size: 11px; color: var(--text-muted);">{% if config.git_encryption_password %}Encryption active{% else %}Set to encrypt backups{% endif %}</span>
+                        {% if config.git_encryption_password %}
+                        <a href="{{ url_for('backup_export_encryption_key') }}" class="btn btn-secondary btn-sm"
+                           title="Download encryption key as a text file for safekeeping"
+                           style="font-size: 11px; padding: 4px 10px; white-space: nowrap;">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Export Key
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
+                            <input type="hidden" name="git_enabled" value="0">
+                            <input type="checkbox" name="git_enabled" value="1" {{ 'checked' if config.git_enabled }}
+                                   style="width: 16px; height: 16px;"
+                                   onchange="document.getElementById('gitPushInterval').disabled = !this.checked">
+                            Auto-push every
+                        </label>
+                        <input type="number" id="gitPushInterval" name="git_push_interval_hours" value="{{ config.git_push_interval_hours }}"
+                               min="0.1" step="any" {{ 'disabled' if not config.git_enabled }}
+                               style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
+                        <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                    </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Access token</label>
-                    <input type="password" name="git_token" value="{{ config.git_token }}"
-                           placeholder="ghp_... (Personal Access Token)"
-                           autocomplete="off"
-                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
-                    <span style="font-size: 11px; color: var(--text-muted);">GitHub PAT with repo Contents read/write</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Encryption password</label>
-                    <input type="password" name="git_encryption_password" value="{{ config.git_encryption_password }}"
-                           placeholder="Optional — encrypts backup zip with AES-256"
-                           autocomplete="off"
-                           style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px;">
-                    <span style="font-size: 11px; color: var(--text-muted);">{% if config.git_encryption_password %}Encryption active{% else %}Set to encrypt cloud backups{% endif %}</span>
-                    {% if config.git_encryption_password %}
-                    <a href="{{ url_for('backup_export_encryption_key') }}" class="btn btn-secondary btn-sm"
-                       title="Download encryption key as a text file for safekeeping"
-                       style="font-size: 11px; padding: 4px 10px; white-space: nowrap;">
-                        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -2px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Export Key
-                    </a>
+                <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gitPushForm').submit()">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
+                        Push Now
+                    </button>
+                    {% if config.last_git_push %}
+                    <span style="font-size: 11px; color: var(--text-muted);">Last: {{ config.last_git_push }}</span>
                     {% endif %}
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
-                        <input type="hidden" name="git_enabled" value="0">
-                        <input type="checkbox" name="git_enabled" value="1" {{ 'checked' if config.git_enabled }}
-                               style="width: 16px; height: 16px;"
-                               onchange="document.getElementById('gitPushInterval').disabled = !this.checked">
-                        Auto-push every
-                    </label>
-                    <input type="number" id="gitPushInterval" name="git_push_interval_hours" value="{{ config.git_push_interval_hours }}"
-                           min="0.1" step="any" {{ 'disabled' if not config.git_enabled }}
-                           style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
-                    <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                {% if config.git_enabled and config.git_repo %}
+                {% if not scheduler_alive %}
+                <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
+                    Scheduler thread is not running — scheduled tasks may not execute. Save configuration to restart it.
                 </div>
-            </div>
-            <div style="margin-top: 12px;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gitPushForm').submit()">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M12 12v6M9 15l3-3 3 3"/></svg>
-                    Push to Cloud Now
-                </button>
+                {% endif %}
+                {% set cloud_issues = [] %}{% for issue in backup_health.issues %}{% if 'loud' in issue %}{% if cloud_issues.append(issue) %}{% endif %}{% endif %}{% endfor %}
+                {% set cloud_ok = not cloud_issues %}
+                <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
+                    {% if not cloud_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
+                    {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
+                    Git backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
+                    {% if next_git_push_time %}
+                    <br>Next push: <strong>{{ next_git_push_time }}</strong>
+                    {% endif %}
+                    {% for issue in backup_health.issues if 'loud' in issue %}
+                    <br><strong>Warning:</strong> {{ issue }}
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
 
-            {% if config.git_enabled and config.git_repo %}
-            {% if not scheduler_alive %}
-            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15); font-size: 12px; color: var(--accent-red, #ef4444);">
-                Scheduler thread is not running — scheduled tasks may not execute. Save backup configuration to restart it.
-            </div>
-            {% endif %}
-            {% set cloud_issues = [] %}{% for issue in backup_health.issues %}{% if 'loud' in issue %}{% if cloud_issues.append(issue) %}{% endif %}{% endif %}{% endfor %}
-            {% set cloud_ok = not cloud_issues %}
-            <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
-                {% if not cloud_ok %}background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15); color: var(--accent-amber);
-                {% else %}background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);{% endif %}">
-                Cloud backup <strong>active</strong> — every {{ config.git_push_interval_hours }} hour{{ 's' if config.git_push_interval_hours != 1 else '' }} to {{ config.git_branch }}
-                {% if next_git_push_time %}
-                <br>Next cloud backup: <strong>{{ next_git_push_time }}</strong>
+            <!-- File Path / SharePoint -->
+            <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                    File Path / SharePoint
+                </div>
+                <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+                    Copy the backup bundle to a network share, USB drive, or SharePoint folder synced via OneDrive.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Destination path</label>
+                        <input type="text" name="filepath_path" value="{{ config.filepath_path }}"
+                               placeholder="\\server\share\backups or /mnt/nas/backups"
+                               style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Encryption password</label>
+                        <input type="password" name="filepath_encryption_password" value="{{ config.filepath_encryption_password }}"
+                               placeholder="Optional — encrypts backup zip with AES-256"
+                               autocomplete="off"
+                               style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px;">
+                        <span style="font-size: 11px; color: var(--text-muted);">{% if config.filepath_encryption_password %}Encryption active{% else %}Set to encrypt backups{% endif %}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
+                            <input type="hidden" name="filepath_enabled" value="0">
+                            <input type="checkbox" name="filepath_enabled" value="1" {{ 'checked' if config.filepath_enabled }}
+                                   style="width: 16px; height: 16px;"
+                                   onchange="document.getElementById('filepathPushInterval').disabled = !this.checked">
+                            Auto-push every
+                        </label>
+                        <input type="number" id="filepathPushInterval" name="filepath_push_interval_hours" value="{{ config.filepath_push_interval_hours }}"
+                               min="0.1" step="any" {{ 'disabled' if not config.filepath_enabled }}
+                               style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
+                        <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                    </div>
+                </div>
+                <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('filepathPushForm').submit()">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                        Push Now
+                    </button>
+                    {% if config.last_filepath_push %}
+                    <span style="font-size: 11px; color: var(--text-muted);">Last: {{ config.last_filepath_push }}</span>
+                    {% endif %}
+                </div>
+                {% if config.filepath_enabled and config.filepath_path %}
+                <div style="margin-top: 8px; padding: 8px 14px; border-radius: 8px; font-size: 12px;
+                    background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); color: var(--accent-green);">
+                    File path backup <strong>active</strong> — every {{ config.filepath_push_interval_hours }} hour{{ 's' if config.filepath_push_interval_hours != 1 else '' }} to {{ config.filepath_path }}
+                    {% if next_filepath_push_time %}
+                    <br>Next push: <strong>{{ next_filepath_push_time }}</strong>
+                    {% endif %}
+                </div>
                 {% endif %}
-                {% for issue in backup_health.issues if 'loud' in issue %}
-                <br><strong>Warning:</strong> {{ issue }}
-                {% endfor %}
             </div>
-            {% endif %}
         </div>
 
         <!-- Status + Save -->
         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
-            {% if config.last_git_push %}
-            <span style="font-size: 12px; color: var(--text-muted);">Last cloud backup: {{ config.last_git_push }}</span>
-            {% endif %}
         </div>
     </form>
     <form id="gitPushForm" method="POST" action="{{ url_for('backup_push_git') }}" style="display: none;"></form>
+    <form id="filepathPushForm" method="POST" action="{{ url_for('backup_push_filepath') }}" style="display: none;"></form>
     <div style="margin-top: 8px;">
         <form method="POST" action="{{ url_for('backup_config_reset') }}" style="margin: 0;"
               onsubmit="return confirm('Reset all backup settings to defaults?\n\nThis will disable auto-backup, auto-prune, and auto-push.\nGit credentials and backup history will be preserved.');">
@@ -217,7 +287,8 @@
                     <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Date</th>
                     <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Size</th>
                     <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Type</th>
-                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: center;">Cloud</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: center;">Git</th>
+                    <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: center;">File Path</th>
                     <th style="padding: 8px 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; text-align: right;">Actions</th>
                 </tr>
             </thead>
@@ -239,11 +310,22 @@
                     <td style="padding: 8px 12px;">
                         <div style="display: flex; align-items: center; justify-content: center;">
                         {% if b.filename in cloud_backup_files %}
-                        <svg width="16" height="16" fill="none" stroke="var(--accent-green, #10b981)" stroke-width="2" viewBox="0 0 24 24" title="Uploaded to cloud">
+                        <svg width="16" height="16" fill="none" stroke="var(--accent-green, #10b981)" stroke-width="2" viewBox="0 0 24 24" title="Pushed to Git">
                             <path d="M18 10h-1.26A8 8 0 103 16.3"/><path d="M20.39 18.39A5 5 0 0018 9h0"/><path d="M8 16l2.5 2.5L16 13"/>
                         </svg>
                         {% else %}
-                        <span style="color: var(--text-muted);" title="Not yet uploaded to cloud">&mdash;</span>
+                        <span style="color: var(--text-muted);" title="Not yet pushed to Git">&mdash;</span>
+                        {% endif %}
+                        </div>
+                    </td>
+                    <td style="padding: 8px 12px;">
+                        <div style="display: flex; align-items: center; justify-content: center;">
+                        {% if b.filename in filepath_backup_files %}
+                        <svg width="16" height="16" fill="none" stroke="var(--accent-green, #10b981)" stroke-width="2" viewBox="0 0 24 24" title="Copied to file path">
+                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><path d="M8 16l2.5 2.5L16 13"/>
+                        </svg>
+                        {% else %}
+                        <span style="color: var(--text-muted);" title="Not yet copied to file path">&mdash;</span>
                         {% endif %}
                         </div>
                     </td>
@@ -343,6 +425,52 @@
                     <button type="submit" class="btn btn-primary">
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
                         Restore Cloud Backup
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- File Path Restore Modal -->
+<div id="filepathRestoreModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 480px; width: 90%; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 18px; font-weight: 700;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -3px; margin-right: 6px;"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                Restore from File Path
+            </h3>
+            <button onclick="closeFilepathRestoreDialog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
+        </div>
+        <div id="filepathRestoreLoading" style="text-align: center; padding: 32px; color: var(--text-muted);">
+            <p>Reading backup from file path...</p>
+        </div>
+        <div id="filepathRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
+        </div>
+        <div id="filepathRestoreReady" style="display:none;">
+            <div style="padding: 16px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); margin-bottom: 16px;">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Latest file path backup</div>
+                <div id="filepathRestoreFilename" class="font-mono" style="font-size: 14px; font-weight: 600;"></div>
+                <div id="filepathRestoreMeta" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); margin-bottom: 16px;">
+                <p style="font-size: 12px; color: var(--accent-amber); margin: 0;">
+                    <strong>Warning:</strong> This will replace your current database with the file path backup. A safety backup of your current data will be created first.
+                </p>
+            </div>
+            <form id="filepathRestoreForm" method="POST" action="{{ url_for('backup_filepath_restore') }}">
+                <input type="hidden" id="filepathRestoreFilenameInput" name="filename" value="">
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Admin password (required)</label>
+                    <input type="password" name="admin_password" required autocomplete="off"
+                           placeholder="Enter your admin password to confirm"
+                           style="width: 100%; font-size: 13px; padding: 8px 12px; box-sizing: border-box;">
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeFilepathRestoreDialog()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                        Restore File Path Backup
                     </button>
                 </div>
             </form>
@@ -462,6 +590,52 @@ function closeCloudRestoreDialog() {
 
 document.getElementById('cloudRestoreModal').addEventListener('click', function(e) {
     if (e.target === this) closeCloudRestoreDialog();
+});
+
+// --- File Path Restore ---
+function openFilepathRestoreDialog() {
+    var modal = document.getElementById('filepathRestoreModal');
+    modal.style.display = 'flex';
+    document.getElementById('filepathRestoreLoading').style.display = 'block';
+    document.getElementById('filepathRestoreError').style.display = 'none';
+    document.getElementById('filepathRestoreReady').style.display = 'none';
+
+    fetch('{{ url_for("backup_filepath_list") }}')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('filepathRestoreLoading').style.display = 'none';
+            if (!data.ok) {
+                document.getElementById('filepathRestoreError').style.display = 'block';
+                document.getElementById('filepathRestoreError').textContent = data.error;
+                return;
+            }
+            if (data.backups.length === 0) {
+                document.getElementById('filepathRestoreError').style.display = 'block';
+                document.getElementById('filepathRestoreError').textContent = 'No backups found at the configured file path.';
+                return;
+            }
+            var latest = data.backups[0];
+            var sizeStr = latest.size >= 1048576
+                ? (latest.size / 1048576).toFixed(1) + ' MB'
+                : (latest.size / 1024).toFixed(1) + ' KB';
+            document.getElementById('filepathRestoreFilename').textContent = latest.filename;
+            document.getElementById('filepathRestoreMeta').textContent = latest.timestamp + ' \u00b7 ' + sizeStr;
+            document.getElementById('filepathRestoreFilenameInput').value = latest.filename;
+            document.getElementById('filepathRestoreReady').style.display = 'block';
+        })
+        .catch(function(err) {
+            document.getElementById('filepathRestoreLoading').style.display = 'none';
+            document.getElementById('filepathRestoreError').style.display = 'block';
+            document.getElementById('filepathRestoreError').textContent = 'Failed to connect: ' + err.message;
+        });
+}
+
+function closeFilepathRestoreDialog() {
+    document.getElementById('filepathRestoreModal').style.display = 'none';
+}
+
+document.getElementById('filepathRestoreModal').addEventListener('click', function(e) {
+    if (e.target === this) closeFilepathRestoreDialog();
 });
 
 // --- Loading overlay for long operations ---
