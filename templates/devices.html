@@ -107,6 +107,9 @@
                     data-assigned="{{ (device.assigned_to or '')|lower }}"
                     data-barcode="{{ (device.barcode_value or '')|lower }}"
                     data-source="{{ 'vendor supplied' if device.vendor_supplied else 'hp owned' }}"
+                    data-model="{{ (device.model_number or '')|lower }}"
+                    data-serial="{{ (device.serial_number or '')|lower }}"
+                    data-manufacturer="{{ (device.manufacturer or '')|lower }}"
                     onclick="if(!event.target.closest('input'))window.location='{{ url_for('device_detail', device_id=device.device_id) }}'">
                     <td style="font-weight: 600;">{{ device.name }}</td>
                     <td style="color: var(--text-secondary); font-size: 13px;">{{ device.category }}</td>
@@ -166,7 +169,10 @@
                     (row.getAttribute('data-location') || '') + ' ' +
                     (row.getAttribute('data-assigned') || '') + ' ' +
                     (row.getAttribute('data-barcode') || '') + ' ' +
-                    (row.getAttribute('data-source') || '');
+                    (row.getAttribute('data-source') || '') + ' ' +
+                    (row.getAttribute('data-model') || '') + ' ' +
+                    (row.getAttribute('data-serial') || '') + ' ' +
+                    (row.getAttribute('data-manufacturer') || '');
                 if (haystack.indexOf(q) === -1) show = false;
             }
 
