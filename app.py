@@ -17,6 +17,7 @@ import subprocess
 import sys
 import traceback
 import uuid
+import zipfile
 from functools import wraps
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
@@ -2182,15 +2183,20 @@ def product_reference_seed():
 @app.route('/reference/import', methods=['POST'])
 @permission_required('references')
 def product_reference_import():
-    """Import product references from an uploaded .xlsx or .csv file."""
+    """Import product references from an uploaded .xlsx, .csv, or .zip file.
+
+    ZIP files are expected to contain a product_reference.csv at the root
+    and an optional images/ directory with sub-folders named by codename,
+    each containing attachment files. This matches the ZIP export format.
+    """
     file = request.files.get('import_file')
     if not file or not file.filename:
         flash('No file selected.', 'error')
         return redirect(url_for('product_reference_list'))
 
     filename = file.filename.lower()
-    if not filename.endswith(('.xlsx', '.csv')):
-        flash('Unsupported file type. Use .xlsx or .csv', 'error')
+    if not filename.endswith(('.xlsx', '.csv', '.zip')):
+        flash('Unsupported file type. Use .xlsx, .csv, or .zip', 'error')
         return redirect(url_for('product_reference_list'))
 
     try:
@@ -2212,7 +2218,96 @@ def product_reference_import():
                 flash(f'Unrecognized columns ignored: {", ".join(unrecognized)}', 'warning')
             return mapped
 
-        if filename.endswith('.xlsx'):
+        def _import_csv_text(text):
+            """Import from CSV text, return (imported, skipped) counts."""
+            nonlocal imported, skipped
+            delimiter = '\t' if '\t' in text[:2048] else ','
+            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+            raw_headers = next(reader)
+            headers = _map_headers(raw_headers)
+            for row in reader:
+                if not any(cell.strip() for cell in row):
+                    continue
+                record = {}
+                for i, val in enumerate(row):
+                    if i < len(headers) and headers[i]:
+                        record[headers[i]] = val.strip()
+                codename = record.get('codename', '').strip()
+                if not codename:
+                    skipped += 1
+                    continue
+                db.add_product_reference(**record)
+                imported += 1
+
+        if filename.endswith('.zip'):
+            # --- ZIP bundle import (CSV + images) ---
+            raw_data = file.read()
+            zf = zipfile.ZipFile(io.BytesIO(raw_data))
+            # Find the CSV inside the ZIP
+            csv_names = [n for n in zf.namelist() if n.lower().endswith('.csv')]
+            if not csv_names:
+                flash('ZIP file does not contain a .csv file.', 'error')
+                return redirect(url_for('product_reference_list'))
+            csv_text = zf.read(csv_names[0]).decode('utf-8-sig')
+            _import_csv_text(csv_text)
+
+            # Attach images: look for images/<codename>/<file> entries
+            images_attached = 0
+            # Build codename -> ref_id lookup from DB (after CSV import)
+            all_refs = db.get_all_product_references()
+            codename_to_ref = {r['codename'].strip().lower(): r['ref_id'] for r in all_refs}
+
+            image_exts = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'pdf'}
+            for entry in zf.namelist():
+                # Expected path: images/<codename>/<filename>
+                parts = entry.replace('\\', '/').split('/')
+                if len(parts) < 3 or parts[0].lower() != 'images':
+                    continue
+                folder_name = parts[1]
+                orig_name = parts[-1]
+                if not orig_name:
+                    continue  # directory entry
+                ext = orig_name.rsplit('.', 1)[-1].lower() if '.' in orig_name else ''
+                if ext not in image_exts:
+                    continue
+
+                # Match folder to codename (case-insensitive, underscores = slashes)
+                lookup = folder_name.strip().replace('_', '/').lower()
+                ref_id = codename_to_ref.get(lookup)
+                if not ref_id:
+                    # Try exact folder name
+                    ref_id = codename_to_ref.get(folder_name.strip().lower())
+                if not ref_id:
+                    continue
+
+                # Save image to wiki_uploads
+                data = zf.read(entry)
+                upload_dir = os.path.join(WIKI_UPLOADS_DIR, str(ref_id))
+                os.makedirs(upload_dir, exist_ok=True)
+                safe_name = f'{uuid.uuid4().hex}.{ext}'
+                filepath = os.path.join(upload_dir, safe_name)
+                with open(filepath, 'wb') as f_out:
+                    f_out.write(data)
+
+                db.add_wiki_attachment(
+                    ref_id=ref_id,
+                    filename=safe_name,
+                    original_name=orig_name,
+                    content_type=f'image/{ext}' if ext != 'pdf' else 'application/pdf',
+                    size_bytes=len(data),
+                    uploaded_by=g.user['username'] if g.user else 'guest',
+                )
+                images_attached += 1
+
+            zf.close()
+            msg = f'Imported {imported} product{"s" if imported != 1 else ""}.'
+            if skipped:
+                msg += f' {skipped} rows skipped (no codename).'
+            if images_attached:
+                msg += f' {images_attached} images attached.'
+            flash(msg, 'success')
+
+        elif filename.endswith('.xlsx'):
             import openpyxl
             wb = openpyxl.load_workbook(file, read_only=True, data_only=True)
             ws = wb.active
@@ -2235,34 +2330,17 @@ def product_reference_import():
                 db.add_product_reference(**record)
                 imported += 1
             wb.close()
+            flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
+                  + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
         else:
-            import csv, io
             raw = file.read()
             text = raw.decode('utf-8-sig')
-            # Auto-detect delimiter
-            delimiter = '\t' if '\t' in text[:2048] else ','
-            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-            raw_headers = next(reader)
-            headers = _map_headers(raw_headers)
-
-            for row in reader:
-                if not any(cell.strip() for cell in row):
-                    continue
-                record = {}
-                for i, val in enumerate(row):
-                    if i < len(headers) and headers[i]:
-                        record[headers[i]] = val.strip()
-                codename = record.get('codename', '').strip()
-                if not codename:
-                    skipped += 1
-                    continue
-                db.add_product_reference(**record)
-                imported += 1
+            _import_csv_text(text)
+            flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
+                  + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
 
         app_logger.info('Product reference import: %d imported, %d skipped, file="%s" by=%s',
                         imported, skipped, file.filename, current_username())
-        flash(f'Imported {imported} product{"s" if imported != 1 else ""}.'
-              + (f' {skipped} rows skipped (no codename).' if skipped else ''), 'success')
     except Exception as e:
         app_logger.error('Product reference import failed: %s\nTraceback:\n%s', e, traceback.format_exc())
         flash(f'Import failed: {e}', 'error')
@@ -2338,6 +2416,45 @@ def product_reference_export_xlsx():
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers={'Content-Disposition': 'attachment; filename=product_reference.xlsx'}
     )
+
+
+@app.route('/reference/export/zip')
+@permission_required('references')
+def product_reference_export_zip():
+    """Export product references as a ZIP bundle with CSV + wiki attachment images."""
+    refs = db.get_all_product_references()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # --- CSV ---
+        csv_buf = io.StringIO()
+        writer = csv.writer(csv_buf)
+        writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner',
+                         'Wi-Fi Gen', 'Year', 'Wireless Chip Set Manufacturer',
+                         'Wireless Chipset Codename', 'FW Codebase', 'Variant'])
+        for r in refs:
+            writer.writerow([r['codename'], r['model_name'], r['print_technology'],
+                             r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
+                             r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
+                             r.get('variant', '')])
+        zf.writestr('product_reference.csv', csv_buf.getvalue().encode('utf-8-sig'))
+
+        # --- Attachments per product (grouped by codename) ---
+        for ref in refs:
+            attachments = db.get_wiki_attachments(ref['ref_id'])
+            if not attachments:
+                continue
+            folder = ref['codename'].strip().replace('/', '_').replace('\\', '_')
+            for att in attachments:
+                filepath = os.path.join(WIKI_UPLOADS_DIR, str(ref['ref_id']), att['filename'])
+                if os.path.isfile(filepath):
+                    arc_name = f'images/{folder}/{att["original_name"]}'
+                    zf.write(filepath, arc_name)
+
+    buf.seek(0)
+    app_logger.info('Product reference ZIP export: %d refs by=%s', len(refs), current_username())
+    return Response(buf.getvalue(), mimetype='application/zip',
+                    headers={'Content-Disposition': 'attachment; filename=product_reference_bundle.zip'})
 
 
 # ---------------------------------------------------------------------------

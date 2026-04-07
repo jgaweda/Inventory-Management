@@ -24,6 +24,7 @@ a = Analysis(
     datas=[
         (os.path.join(ROOT, 'templates'), 'templates'),
         (os.path.join(ROOT, 'static'), 'static'),
+        (os.path.join(ROOT, 'seed_data'), 'seed_data'),
     ],
     hiddenimports=[
         'waitress',

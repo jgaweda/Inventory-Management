@@ -118,6 +118,10 @@
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     Excel (.xlsx)
                 </a>
+                <a href="{{ url_for('product_reference_export_zip') }}" style="display:flex; align-items:center; gap:8px; padding:10px 14px; color:var(--text-primary); text-decoration:none; font-size:13px; border-top:1px solid var(--border-color); transition:background 0.1s;" onmouseover="this.style.background='var(--bg-card-hover)'" onmouseout="this.style.background='transparent'">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Bundle (.zip)
+                </a>
             </div>
         </div>
         {% endif %}
@@ -261,14 +265,15 @@
             </div>
             <div id="importFileSection">
                 <p style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
-                    Upload a <strong>.xlsx</strong> or <strong>.csv</strong> file with columns:<br>
+                    Upload a <strong>.xlsx</strong>, <strong>.csv</strong>, or <strong>.zip</strong> bundle with columns:<br>
                     <span class="font-mono" style="font-size:11px; color:var(--text-muted); line-height:1.8;">
                         Codename, Model Name, Wi-Fi Gen, Year,<br>
                         Wireless Chip Set Manufacturer, Wireless Chipset Codename, FW Codebase
-                    </span>
+                    </span><br>
+                    <span style="font-size:11px; color:var(--text-muted);">ZIP bundles include images and can be created via Export &rarr; Bundle (.zip)</span>
                 </p>
                 <div style="margin-bottom:16px;">
-                    <input type="file" name="import_file" id="importFileInput" accept=".xlsx,.csv"
+                    <input type="file" name="import_file" id="importFileInput" accept=".xlsx,.csv,.zip"
                            style="font-size:13px; width:100%; padding:8px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; color:var(--text-primary);">
                 </div>
             </div>
