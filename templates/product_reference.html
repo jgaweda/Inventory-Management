@@ -97,6 +97,16 @@
     .resize-handle:hover::after, .resize-handle.active::after {
         opacity: 1; background: var(--accent-blue);
     }
+
+    /* Sort styling */
+    .th-sort {
+        display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+        padding: 2px 4px; border-radius: 4px; transition: background 0.15s;
+    }
+    .th-sort:hover { background: rgba(255,255,255,0.06); }
+    .th-sort.sort-active { color: var(--accent-blue); }
+    .sort-arrow { font-size: 9px; opacity: 0.4; transition: opacity 0.15s; }
+    .th-sort.sort-active .sort-arrow { opacity: 1; }
     .table-resizing, .table-resizing * {
         cursor: col-resize !important; user-select: none !important;
     }
@@ -162,17 +172,17 @@
         <table class="ref-table" id="refTable">
             <thead>
                 <tr>
-                    <th>Codename<div class="resize-handle"></div></th>
+                    <th data-sort="codename"><div class="th-sort">Codename<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     <th style="width: 28px; cursor: default; padding: 0;"></th>
-                    <th>Model Name<div class="resize-handle"></div></th>
-                    <th>Type<div class="resize-handle"></div></th>
-                    <th>Cartridge/Toner<div class="resize-handle"></div></th>
-                    <th>Wi-Fi Gen<div class="resize-handle"></div></th>
-                    <th>Year<div class="resize-handle"></div></th>
-                    <th>Chipset Mfr<div class="resize-handle"></div></th>
-                    <th>Chipset Codename<div class="resize-handle"></div></th>
-                    <th>FW Codebase<div class="resize-handle"></div></th>
-                    <th style="text-align: center;">Inv<div class="resize-handle"></div></th>
+                    <th data-sort="model_name"><div class="th-sort">Model Name<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="print_technology"><div class="th-sort">Type<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="cartridge_toner"><div class="th-sort">Cartridge/Toner<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="wifi_gen"><div class="th-sort">Wi-Fi Gen<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="year"><div class="th-sort">Year<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="chip_manufacturer"><div class="th-sort">Chipset Mfr<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="chip_codename"><div class="th-sort">Chipset Codename<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="fw_codebase"><div class="th-sort">FW Codebase<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
+                    <th data-sort="inv" style="text-align: center;"><div class="th-sort">Inv<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     {% if has_permission('references') %}
                     <th style="width: 40px; cursor: default;"></th>
                     {% endif %}
@@ -498,12 +508,14 @@ function submitNewRow(row) {
 </script>
 {% endif %}
 
-<!-- Client-side Search and Resize -->
+<!-- Client-side Search, Sort, and Resize -->
 <script>
 (function() {
     var searchInput = document.getElementById('refSearch');
     var tbody = document.getElementById('refBody');
     var table = document.getElementById('refTable');
+    var headers = document.querySelectorAll('.ref-table th[data-sort]');
+    var sortKeys = [];
 
     // --- Search filtering ---
     searchInput.addEventListener('input', applySearch);
@@ -536,6 +548,81 @@ function submitNewRow(row) {
                 : total + ' product' + (total !== 1 ? 's' : '') + ' in catalog';
         }
     }
+
+    // --- Column sorting (click to sort, Shift+click for multi-sort) ---
+    var sortMap = {
+        codename:'codename', model_name:'model', print_technology:'type',
+        cartridge_toner:'cartridge', wifi_gen:'wifi', year:'year',
+        chip_manufacturer:'chipmfr', chip_codename:'chipcode',
+        fw_codebase:'fw', inv:'inv'
+    };
+
+    function getVal(row, field) {
+        if (field === 'inv') return parseInt(row.dataset.inv) || 0;
+        if (field === 'year') return parseInt(row.dataset.year) || 0;
+        return (row.dataset[sortMap[field]] || '').toLowerCase();
+    }
+
+    function updateSortVisuals() {
+        headers.forEach(function(h) {
+            var s = h.querySelector('.th-sort');
+            if (!s) return;
+            s.classList.remove('sort-active');
+            var arrow = s.querySelector('.sort-arrow');
+            if (arrow) arrow.innerHTML = '&#9650;';
+            var key = null;
+            for (var i = 0; i < sortKeys.length; i++) {
+                if (sortKeys[i].field === h.dataset.sort) { key = sortKeys[i]; break; }
+            }
+            if (key) {
+                s.classList.add('sort-active');
+                if (arrow) {
+                    var idx = sortKeys.indexOf(key) + 1;
+                    arrow.innerHTML = (key.asc ? '&#9650;' : '&#9660;') +
+                        (sortKeys.length > 1 ? '<sub style="font-size:8px;opacity:0.7;margin-left:1px;">' + idx + '</sub>' : '');
+                }
+            }
+        });
+    }
+
+    function doSort() {
+        if (!sortKeys.length) return;
+        var rows = Array.from(tbody.querySelectorAll('tr:not(.new-row)'));
+        rows.sort(function(a, b) {
+            for (var i = 0; i < sortKeys.length; i++) {
+                var k = sortKeys[i];
+                var va = getVal(a, k.field), vb = getVal(b, k.field);
+                if (va < vb) return k.asc ? -1 : 1;
+                if (va > vb) return k.asc ? 1 : -1;
+            }
+            return 0;
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+    }
+
+    headers.forEach(function(th) {
+        var sortDiv = th.querySelector('.th-sort');
+        if (!sortDiv) return;
+        sortDiv.addEventListener('click', function(e) {
+            var field = th.dataset.sort;
+            if (e.shiftKey && sortKeys.length > 0) {
+                var existing = null;
+                for (var i = 0; i < sortKeys.length; i++) {
+                    if (sortKeys[i].field === field) { existing = sortKeys[i]; break; }
+                }
+                if (existing) existing.asc = !existing.asc;
+                else sortKeys.push({ field: field, asc: true });
+            } else {
+                if (sortKeys.length === 1 && sortKeys[0].field === field) {
+                    sortKeys[0].asc = !sortKeys[0].asc;
+                } else {
+                    sortKeys = [{ field: field, asc: true }];
+                }
+            }
+            updateSortVisuals();
+            doSort();
+        });
+    });
 
     // --- Column Resize (non-persistent, resets on page load) ---
     (function() {

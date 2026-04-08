@@ -172,7 +172,7 @@
                 <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 3px;">{{ label }}</div>
                 <div style="font-size: 14px; color: var(--text-primary);">
                     {% if label == 'Predecessor' and predecessor_ref_id %}
-                    <a href="{{ url_for('product_wiki', ref_id=predecessor_ref_id) }}" style="color: var(--accent-color); text-decoration: none;">{{ value }}</a>
+                    <a href="{{ url_for('product_wiki', ref_id=predecessor_ref_id) }}" style="color: var(--accent-cyan); text-decoration: none; border-bottom: 1px dashed var(--accent-cyan);">{{ value }}</a>
                     {% else %}
                     {{ value }}
                     {% endif %}
