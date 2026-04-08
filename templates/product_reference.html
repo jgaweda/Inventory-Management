@@ -21,7 +21,7 @@
 
     /* Codename cell */
     .codename-cell {
-        display: flex; align-items: center; gap: 4px; padding: 4px 4px;
+        display: flex; align-items: center; gap: 4px; padding: 0;
     }
     .codename-text {
         font-weight: 600; color: var(--text-primary); font-size: 13px;
@@ -147,9 +147,6 @@
                     <th data-sort="chip_codename"><div class="th-sort">Chipset Codename<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     <th data-sort="fw_codebase"><div class="th-sort">FW Codebase<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     <th data-sort="inv" style="text-align: center;"><div class="th-sort">Inv<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
-                    {% if has_permission('references') %}
-                    <th style="width: 64px; cursor: default;"></th>
-                    {% endif %}
                 </tr>
             </thead>
             <tbody id="refBody">
@@ -189,17 +186,6 @@
                         <span style="color:var(--text-muted);">0</span>
                         {% endif %}
                     </td>
-                    {% if has_permission('references') %}
-                    <td style="text-align:center; white-space:nowrap;">
-                        <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="del-btn" title="Edit" style="opacity:0.5;">
-                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </a>
-                        <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
-                              onsubmit="return confirm('Delete {{ ref.codename }}?')" style="margin:0; display:inline;">
-                            <button type="submit" class="del-btn" title="Delete">&times;</button>
-                        </form>
-                    </td>
-                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
