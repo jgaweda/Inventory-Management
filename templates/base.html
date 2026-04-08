@@ -341,7 +341,7 @@
             {% endfor %}
         </div>
         {% endif %}
-        {% if current_user and has_permission('settings') %}
+        {% if current_user and has_permission('update') %}
         <div id="updateBanner" style="display: none; margin: 0 12px 4px; padding: 8px 12px; border-radius: 8px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); cursor: pointer; text-align: center; transition: opacity 0.2s;"
              onclick="window.location.href='{{ url_for('account') }}?check_updates=1'" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
             <div style="font-size: 11px; font-weight: 600; color: var(--accent-blue); white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px;">

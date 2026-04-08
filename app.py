@@ -175,7 +175,7 @@ def login_required(f):
 # Centralized permission model — single source of truth for all role access.
 # To change what a role can do, edit this dict. To add a role, add a line.
 ROLE_PERMISSIONS = {
-    'admin':  {'devices', 'references', 'wiki', 'users', 'backups', 'logs', 'settings', 'retire'},
+    'admin':  {'devices', 'references', 'wiki', 'users', 'backups', 'logs', 'settings', 'retire', 'update'},
     'custom': set(),  # custom users get permissions from their user record
 }
 
@@ -188,6 +188,7 @@ ASSIGNABLE_PERMISSIONS = [
     ('backups',      'Backups — View, create, restore, and configure backups'),
     ('logs',         'Logs — View and export application logs'),
     ('retire',       'Retire — Retire and unretire devices'),
+    ('update',       'Update — Check for and apply application updates'),
 ]
 
 # Permissions that can be granted to non-logged-in (guest/public) users.
@@ -1274,7 +1275,7 @@ _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 @app.route('/admin/update/check', methods=['POST'])
-@permission_required('settings')
+@permission_required('update')
 def app_update_check():
     """Check for new tagged releases (vX.Y.Z) on the remote."""
     try:
@@ -1344,7 +1345,7 @@ def app_update_check():
 
 
 @app.route('/admin/update/apply', methods=['POST'])
-@permission_required('settings')
+@permission_required('update')
 def app_update_apply():
     """Checkout a tagged release, install dependencies, and restart."""
     try:
