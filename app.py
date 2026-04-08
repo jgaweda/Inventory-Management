@@ -2336,8 +2336,6 @@ HEADER_MAP = {
     'cartridge': 'cartridge_toner',
     'toner': 'cartridge_toner',
     'cartridge / toner': 'cartridge_toner',
-    # Variant
-    'variant': 'variant',
     # Predecessor
     'predecessor': 'predecessor',
     'predecessor codename': 'predecessor',
@@ -2383,7 +2381,6 @@ def _import_seed_data():
                     fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
                     print_technology=norm.get('print technology', norm.get('print_technology', '')),
                     cartridge_toner=norm.get('cartridge/toner', norm.get('cartridge_toner', '')),
-                    variant=norm.get('variant', ''),
                 )
                 if action == 'added':
                     added += 1
@@ -2574,12 +2571,12 @@ def product_reference_export():
     writer = csv.writer(output)
     writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner', 'Wi-Fi Gen', 'Year',
                      'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
-                     'Variant', 'Predecessor'])
+                     'Predecessor'])
     for r in refs:
         writer.writerow([r['codename'], r['model_name'], r['print_technology'],
                          r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
                          r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
-                         r.get('variant', ''), r.get('predecessor', '')])
+                         r.get('predecessor', '')])
     csv_bytes = output.getvalue().encode('utf-8-sig')
     app_logger.info('Product reference CSV export: %d refs by=%s', len(refs), current_username())
     return Response(csv_bytes, mimetype='text/csv',
@@ -2604,7 +2601,7 @@ def product_reference_export_xlsx():
 
     headers = ['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner', 'Wi-Fi Gen', 'Year',
                'Wireless Chip Set Manufacturer', 'Wireless Chipset Codename', 'FW Codebase',
-               'Variant', 'Predecessor']
+               'Predecessor']
     ws.append(headers)
     header_font = Font(bold=True, size=11)
     header_fill = PatternFill(start_color='E2EFDA', end_color='E2EFDA', fill_type='solid')
@@ -2617,7 +2614,7 @@ def product_reference_export_xlsx():
         ws.append([r['codename'], r['model_name'], r['print_technology'],
                    r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
                    r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
-                   r.get('variant', ''), r.get('predecessor', '')])
+                   r.get('predecessor', '')])
 
     for col in ws.columns:
         max_len = max((len(str(cell.value or '')) for cell in col), default=10)
@@ -2651,12 +2648,12 @@ def product_reference_export_zip():
         writer = csv.writer(csv_buf)
         writer.writerow(['Codename', 'Model Name', 'Print Technology', 'Cartridge/Toner',
                          'Wi-Fi Gen', 'Year', 'Wireless Chip Set Manufacturer',
-                         'Wireless Chipset Codename', 'FW Codebase', 'Variant', 'Predecessor'])
+                         'Wireless Chipset Codename', 'FW Codebase', 'Predecessor'])
         for r in refs:
             writer.writerow([r['codename'], r['model_name'], r['print_technology'],
                              r.get('cartridge_toner', ''), r['wifi_gen'], r['year'],
                              r['chip_manufacturer'], r['chip_codename'], r['fw_codebase'],
-                             r.get('variant', ''), r.get('predecessor', '')])
+                             r.get('predecessor', '')])
         outer.writestr('product_reference.csv', csv_buf.getvalue().encode('utf-8-sig'))
 
         # --- printer_images.zip (inner ZIP with wiki attachment images) ---

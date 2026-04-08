@@ -442,7 +442,6 @@ def _seed_product_references():
                     fw_codebase=norm.get('fw codebase', norm.get('fw_codebase', '')),
                     print_technology=norm.get('print technology', norm.get('print_technology', '')),
                     cartridge_toner=norm.get('cartridge/toner', norm.get('cartridge_toner', '')),
-                    variant=norm.get('variant', ''),
                 )
                 imported += 1
 
@@ -2858,15 +2857,15 @@ def get_product_reference_by_codename(codename):
 
 def add_product_reference(codename, model_name='', wifi_gen='', year='',
                           chip_manufacturer='', chip_codename='', fw_codebase='',
-                          print_technology='', cartridge_toner='', variant='',
-                          predecessor=''):
+                          print_technology='', cartridge_toner='', predecessor='',
+                          **_kwargs):
     """Add a single product reference entry. Returns the new ref_id."""
     with db_transaction() as conn:
         cursor = conn.execute('''
             INSERT INTO product_reference
-                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, variant, predecessor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, variant, predecessor))
+                (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, predecessor)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (codename, model_name, wifi_gen, year, chip_manufacturer, chip_codename, fw_codebase, print_technology, cartridge_toner, predecessor))
         ref_id = cursor.lastrowid
         # Auto-create a wiki page for the new product
         conn.execute('''
@@ -2878,8 +2877,8 @@ def add_product_reference(codename, model_name='', wifi_gen='', year='',
 
 def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                              chip_manufacturer='', chip_codename='', fw_codebase='',
-                             print_technology='', cartridge_toner='', variant='',
-                             predecessor=''):
+                             print_technology='', cartridge_toner='', predecessor='',
+                             **_kwargs):
     """Update an existing product reference by codename, or insert if missing.
 
     For existing entries, only non-empty values are applied (preserves
@@ -2895,7 +2894,7 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                 UPDATE product_reference
                 SET model_name = ?, wifi_gen = ?, year = ?,
                     chip_manufacturer = ?, chip_codename = ?, fw_codebase = ?,
-                    print_technology = ?, cartridge_toner = ?, variant = ?,
+                    print_technology = ?, cartridge_toner = ?,
                     predecessor = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE ref_id = ?
             ''', (
@@ -2907,7 +2906,6 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
                 fw_codebase or ref['fw_codebase'],
                 print_technology or ref['print_technology'],
                 cartridge_toner or ref.get('cartridge_toner', ''),
-                variant or ref.get('variant', ''),
                 predecessor or ref.get('predecessor', ''),
                 ref_id,
             ))
@@ -2918,7 +2916,7 @@ def upsert_product_reference(codename, model_name='', wifi_gen='', year='',
             year=year, chip_manufacturer=chip_manufacturer,
             chip_codename=chip_codename, fw_codebase=fw_codebase,
             print_technology=print_technology, cartridge_toner=cartridge_toner,
-            variant=variant, predecessor=predecessor,
+            predecessor=predecessor,
         )
         return ref_id, 'added'
 
