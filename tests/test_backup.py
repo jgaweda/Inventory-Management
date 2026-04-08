@@ -779,7 +779,7 @@ class TestBackwardsCompatibility(BaseTestCase):
         self.login_admin()
         import io
         # Use snake_case headers (exported format) instead of display names
-        csv_content = 'codename,model_name,wifi_gen,year,variant\nTestFlex,FlexModel,6E,2025,Base\n'
+        csv_content = 'codename,model_name,wifi_gen,year\nTestFlex,FlexModel,6E,2025\n'
         data = {
             'import_file': (io.BytesIO(csv_content.encode('utf-8')), 'refs.csv'),
             'import_mode': 'add',
@@ -822,13 +822,13 @@ class TestBackwardsCompatibility(BaseTestCase):
                                 follow_redirects=True)
         self.assertIn(b'No', resp.data)  # "No Codename column found" warning
 
-    def test_product_ref_export_includes_variant(self):
-        """Product reference CSV export includes Variant column."""
+    def test_product_ref_export_includes_predecessor(self):
+        """Product reference CSV export includes Predecessor column."""
         self.login_admin()
-        db.add_product_reference(codename='VarTest', model_name='VarModel')
+        db.add_product_reference(codename='PredTest', model_name='PredModel')
         resp = self.client.get('/reference/export')
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'Variant', resp.data)
+        self.assertIn(b'Predecessor', resp.data)
 
     def test_device_export_headers_consistent(self):
         """Device CSV export uses user-friendly headers matching UI."""

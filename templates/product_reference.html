@@ -7,17 +7,11 @@
     .ref-table th {
         text-align: left; font-size: 11px; font-weight: 600;
         text-transform: uppercase; letter-spacing: 0.04em;
-        color: var(--text-muted); padding: 8px 10px 6px 8px;
+        color: var(--text-muted); padding: 10px 8px;
         border-bottom: 2px solid var(--border-color);
         position: sticky; top: 0; background: var(--bg-card); z-index: 2;
-        white-space: nowrap; vertical-align: top; position: relative;
+        white-space: nowrap; user-select: none; position: relative;
     }
-    .ref-table th .th-sort {
-        cursor: pointer; user-select: none; transition: color 0.15s;
-    }
-    .ref-table th .th-sort:hover { color: var(--text-primary); }
-    .ref-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.4; }
-    .ref-table th .th-sort.sort-active .sort-arrow { opacity: 1; color: var(--accent-blue); }
     .ref-table td {
         padding: 2px 4px; border-bottom: 1px solid var(--border-color);
         vertical-align: middle;
@@ -90,23 +84,6 @@
     }
     .table-scroll { overflow-x: auto; max-height: calc(100vh - 240px); overflow-y: auto; }
 
-    /* Column filters */
-    .col-filter {
-        width: 100%; box-sizing: border-box;
-        background: var(--bg-primary); color: var(--text-primary);
-        border: 1px solid transparent; border-radius: 4px;
-        padding: 3px 6px; font-size: 11px; font-family: 'DM Sans', sans-serif;
-        margin-top: 4px; display: block; transition: border-color 0.15s;
-    }
-    .col-filter:hover { border-color: var(--border-color); }
-    .col-filter:focus {
-        outline: none; border-color: var(--accent-blue);
-        background: var(--bg-primary);
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
-    }
-    .col-filter.active { border-color: var(--accent-blue); background: rgba(59,130,246,0.06); }
-    select.col-filter { cursor: pointer; appearance: auto; padding: 3px 4px; }
-
     /* Resize handles */
     .resize-handle {
         position: absolute; right: -2px; top: 0; bottom: 0; width: 5px;
@@ -123,18 +100,6 @@
     .table-resizing, .table-resizing * {
         cursor: col-resize !important; user-select: none !important;
     }
-
-    /* Filter status bar */
-    .active-filter-count {
-        font-size: 12px; color: var(--accent-blue); font-weight: 600;
-        display: none; align-items: center; gap: 6px;
-    }
-    .active-filter-count.visible { display: flex; }
-    .clear-all-filters {
-        color: var(--text-muted); cursor: pointer; font-weight: 400;
-        font-size: 12px; text-decoration: none; transition: color 0.15s;
-    }
-    .clear-all-filters:hover { color: var(--accent-blue); text-decoration: underline; }
 
 </style>
 {% endblock %}
@@ -189,11 +154,6 @@
         <input type="text" id="refSearch" value="{{ search }}" placeholder="Search codename, model, chipset..."
                autocomplete="off" style="font-size: 13px; padding: 8px 12px 8px 34px; width: 100%;">
     </div>
-    <div class="active-filter-count" id="filterStatus">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-        <span id="filterCountText"></span>
-        <a href="#" class="clear-all-filters" id="clearAllFilters">Clear all</a>
-    </div>
 </div>
 
 <!-- Spreadsheet -->
@@ -202,62 +162,17 @@
         <table class="ref-table" id="refTable">
             <thead>
                 <tr>
-                    <th data-sort="codename">
-                        <div class="th-sort">Codename <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="codename" placeholder="Filter...">
-                        <div class="resize-handle"></div>
-                    </th>
+                    <th>Codename<div class="resize-handle"></div></th>
                     <th style="width: 28px; cursor: default; padding: 0;"></th>
-                    <th data-sort="model_name">
-                        <div class="th-sort">Model Name <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="model" placeholder="Filter...">
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="print_technology">
-                        <div class="th-sort">Type <span class="sort-arrow">&#9650;</span></div>
-                        <select class="col-filter" data-col="type">
-                            <option value="">All</option>
-                            <option value="Ink">Ink</option>
-                            <option value="Laser">Laser</option>
-                            <option value="Large Format">Large Format</option>
-                        </select>
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="cartridge_toner">
-                        <div class="th-sort">Cartridge/Toner <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="cartridge" placeholder="Filter...">
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="wifi_gen">
-                        <div class="th-sort">Wi-Fi Gen <span class="sort-arrow">&#9650;</span></div>
-                        <select class="col-filter" data-col="wifi"><option value="">All</option></select>
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="year">
-                        <div class="th-sort">Year <span class="sort-arrow">&#9650;</span></div>
-                        <select class="col-filter" data-col="year"><option value="">All</option></select>
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="chip_manufacturer">
-                        <div class="th-sort">Chipset Mfr <span class="sort-arrow">&#9650;</span></div>
-                        <select class="col-filter" data-col="chipmfr"><option value="">All</option></select>
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="chip_codename">
-                        <div class="th-sort">Chipset Codename <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="chipcode" placeholder="Filter...">
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th data-sort="fw_codebase">
-                        <div class="th-sort">FW Codebase <span class="sort-arrow">&#9650;</span></div>
-                        <select class="col-filter" data-col="fw"><option value="">All</option></select>
-                        <div class="resize-handle"></div>
-                    </th>
-                    <th style="text-align: center;" data-sort="inv">
-                        <div class="th-sort">Inv <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="inv" placeholder="#" title="e.g. >0, >=2, <5" style="width:40px; text-align:center;">
-                        <div class="resize-handle"></div>
-                    </th>
+                    <th>Model Name<div class="resize-handle"></div></th>
+                    <th>Type<div class="resize-handle"></div></th>
+                    <th>Cartridge/Toner<div class="resize-handle"></div></th>
+                    <th>Wi-Fi Gen<div class="resize-handle"></div></th>
+                    <th>Year<div class="resize-handle"></div></th>
+                    <th>Chipset Mfr<div class="resize-handle"></div></th>
+                    <th>Chipset Codename<div class="resize-handle"></div></th>
+                    <th>FW Codebase<div class="resize-handle"></div></th>
+                    <th style="text-align: center;">Inv<div class="resize-handle"></div></th>
                     {% if has_permission('references') %}
                     <th style="width: 40px; cursor: default;"></th>
                     {% endif %}
@@ -583,73 +498,23 @@ function submitNewRow(row) {
 </script>
 {% endif %}
 
-<!-- Client-side Search, Filter, Sort, and Resize -->
+<!-- Client-side Search and Resize -->
 <script>
 (function() {
     var searchInput = document.getElementById('refSearch');
     var tbody = document.getElementById('refBody');
     var table = document.getElementById('refTable');
-    var headers = document.querySelectorAll('.ref-table th[data-sort]');
-    var colFilters = document.querySelectorAll('.col-filter');
-    var filterStatus = document.getElementById('filterStatus');
-    var filterCountText = document.getElementById('filterCountText');
-    var clearAllBtn = document.getElementById('clearAllFilters');
-    var sortKeys = [];
 
-    // --- Populate filter dropdowns from table data ---
-    var autoDropdowns = { wifi: 'wifi', year: 'year', chipmfr: 'chipmfr', fw: 'fw' };
-    var allRows = tbody.querySelectorAll('tr:not(.new-row)');
-    Object.keys(autoDropdowns).forEach(function(col) {
-        var key = autoDropdowns[col];
-        var sel = document.querySelector('select.col-filter[data-col="' + col + '"]');
-        if (!sel) return;
-        var vals = {};
-        allRows.forEach(function(r) {
-            var v = (r.dataset[key] || '').trim();
-            if (v) vals[v] = true;
-        });
-        var sorted = Object.keys(vals);
-        if (col === 'year') sorted.sort(function(a, b) { return parseInt(b) - parseInt(a); });
-        else sorted.sort();
-        sorted.forEach(function(v) {
-            var opt = document.createElement('option');
-            opt.value = v; opt.textContent = v;
-            sel.appendChild(opt);
-        });
-    });
+    // --- Search filtering ---
+    searchInput.addEventListener('input', applySearch);
 
-    // --- Filter event listeners ---
-    searchInput.addEventListener('input', applyFilters);
-    colFilters.forEach(function(f) {
-        f.addEventListener('input', applyFilters);
-        f.addEventListener('change', applyFilters);
-        f.addEventListener('click', function(e) { e.stopPropagation(); });
-        f.addEventListener('mousedown', function(e) { e.stopPropagation(); });
-    });
-
-    clearAllBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        searchInput.value = '';
-        colFilters.forEach(function(f) { f.value = ''; f.classList.remove('active'); });
-        applyFilters();
-    });
-
-    function applyFilters() {
+    function applySearch() {
         var q = searchInput.value.trim().toLowerCase();
         var rows = tbody.querySelectorAll('tr:not(.new-row)');
-        var visible = 0, activeCount = 0;
-
-        var filters = {};
-        colFilters.forEach(function(f) {
-            var val = f.value.trim();
-            if (val) { filters[f.dataset.col] = val; f.classList.add('active'); activeCount++; }
-            else { f.classList.remove('active'); }
-        });
+        var visible = 0;
 
         rows.forEach(function(row) {
             var show = true;
-
-            // Global search
             if (q) {
                 var text = [
                     row.dataset.codename, row.dataset.model, row.dataset.type,
@@ -658,129 +523,18 @@ function submitNewRow(row) {
                 ].join(' ').toLowerCase();
                 if (text.indexOf(q) === -1) show = false;
             }
-
-            // Per-column filters
-            if (show) {
-                for (var col in filters) {
-                    var fv = filters[col];
-                    var cv = (row.dataset[col] || '');
-
-                    if (col === 'inv') {
-                        var num = parseInt(row.dataset.inv) || 0;
-                        var m = fv.match(/^([><!]=?|={1,2})\s*(\d+)$/);
-                        if (m) {
-                            var op = m[1], n = parseInt(m[2]);
-                            if (op === '>' && !(num > n)) { show = false; break; }
-                            else if (op === '<' && !(num < n)) { show = false; break; }
-                            else if (op === '>=' && !(num >= n)) { show = false; break; }
-                            else if (op === '<=' && !(num <= n)) { show = false; break; }
-                            else if ((op === '=' || op === '==') && num !== n) { show = false; break; }
-                            else if (op === '!=' && num === n) { show = false; break; }
-                        } else if (/^\d+$/.test(fv)) {
-                            if (num !== parseInt(fv)) { show = false; break; }
-                        }
-                    } else if (col === 'type' || col === 'wifi' || col === 'year' || col === 'chipmfr' || col === 'fw') {
-                        if (cv !== fv) { show = false; break; }
-                    } else {
-                        if (cv.toLowerCase().indexOf(fv.toLowerCase()) === -1) { show = false; break; }
-                    }
-                }
-            }
-
             if (show) { row.classList.remove('hidden-row'); visible++; }
             else { row.classList.add('hidden-row'); }
         });
 
-        // Update counts
         var total = rows.length;
         var countEl = document.getElementById('refCount');
         if (countEl) {
-            countEl.textContent = (q || activeCount)
+            countEl.textContent = q
                 ? visible + ' of ' + total + ' product' + (total !== 1 ? 's' : '') + ' shown'
                 : total + ' product' + (total !== 1 ? 's' : '') + ' in catalog';
         }
-
-        if (activeCount > 0) {
-            filterCountText.textContent = activeCount + ' column filter' + (activeCount !== 1 ? 's' : '') + ' active';
-            filterStatus.classList.add('visible');
-        } else {
-            filterStatus.classList.remove('visible');
-        }
     }
-
-    // --- Column sorting (Shift+click for multi-sort) ---
-    function getVal(row, field) {
-        if (field === 'inv') return parseInt(row.dataset.inv) || 0;
-        if (field === 'year') return parseInt(row.dataset.year) || 0;
-        var map = {
-            codename:'codename', model_name:'model', print_technology:'type',
-            cartridge_toner:'cartridge', wifi_gen:'wifi',
-            chip_manufacturer:'chipmfr', chip_codename:'chipcode',
-            fw_codebase:'fw'
-        };
-        return (row.dataset[map[field]] || '').toLowerCase();
-    }
-
-    function updateSortVisuals() {
-        headers.forEach(function(h) {
-            var s = h.querySelector('.th-sort');
-            if (!s) return;
-            s.classList.remove('sort-active');
-            var arrow = s.querySelector('.sort-arrow');
-            if (arrow) arrow.innerHTML = '&#9650;';
-            var key = null;
-            for (var i = 0; i < sortKeys.length; i++) {
-                if (sortKeys[i].field === h.dataset.sort) { key = sortKeys[i]; break; }
-            }
-            if (key) {
-                s.classList.add('sort-active');
-                if (arrow) {
-                    var idx = sortKeys.indexOf(key) + 1;
-                    arrow.innerHTML = (key.asc ? '&#9650;' : '&#9660;') +
-                        (sortKeys.length > 1 ? '<sub style="font-size:8px;opacity:0.7;margin-left:1px;">' + idx + '</sub>' : '');
-                }
-            }
-        });
-    }
-
-    function doSort() {
-        if (!sortKeys.length) return;
-        var rows = Array.from(tbody.querySelectorAll('tr:not(.new-row)'));
-        rows.sort(function(a, b) {
-            for (var i = 0; i < sortKeys.length; i++) {
-                var k = sortKeys[i];
-                var va = getVal(a, k.field), vb = getVal(b, k.field);
-                if (va < vb) return k.asc ? -1 : 1;
-                if (va > vb) return k.asc ? 1 : -1;
-            }
-            return 0;
-        });
-        rows.forEach(function(r) { tbody.appendChild(r); });
-    }
-
-    headers.forEach(function(th) {
-        var sortDiv = th.querySelector('.th-sort');
-        if (!sortDiv) return;
-        sortDiv.addEventListener('click', function(e) {
-            var field = th.dataset.sort;
-            if (e.shiftKey && sortKeys.length > 0) {
-                var existing = null;
-                for (var i = 0; i < sortKeys.length; i++) {
-                    if (sortKeys[i].field === field) { existing = sortKeys[i]; break; }
-                }
-                if (existing) existing.asc = !existing.asc;
-                else sortKeys.push({ field: field, asc: true });
-            } else {
-                if (sortKeys.length === 1 && sortKeys[0].field === field) {
-                    sortKeys[0].asc = !sortKeys[0].asc;
-                } else {
-                    sortKeys = [{ field: field, asc: true }];
-                }
-            }
-            updateSortVisuals();
-            doSort();
-        });
-    });
 
     // --- Column Resize (non-persistent, resets on page load) ---
     (function() {

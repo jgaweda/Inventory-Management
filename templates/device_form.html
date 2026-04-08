@@ -162,12 +162,6 @@
         document.getElementById('codenameInput').value = ref.codename;
         document.getElementById('codenameSuggestions').style.display = 'none';
 
-        // Auto-set variant from product reference
-        var variantSel = document.getElementById('variantSelect');
-        if (variantSel && ref.variant) {
-            variantSel.value = ref.variant;
-        }
-
         // Auto-fill manufacturer and model from product reference
         if (ref.model_name) {
             var mfgField = document.querySelector('input[name="manufacturer"]');
