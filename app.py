@@ -2716,9 +2716,16 @@ def product_wiki(ref_id):
     updated_by = wiki['updated_by'] if wiki else ''
     updated_at = wiki['updated_at'] if wiki else ''
     attachments = db.get_wiki_attachments(ref_id)
+    predecessor_ref_id = None
+    if ref.get('predecessor'):
+        for r in refs:
+            if r['codename'] == ref['predecessor']:
+                predecessor_ref_id = r['ref_id']
+                break
     return render_template('product_wiki.html', ref=ref, content=content,
                            updated_by=updated_by, updated_at=updated_at,
-                           attachments=attachments)
+                           attachments=attachments,
+                           predecessor_ref_id=predecessor_ref_id)
 
 
 @app.route('/wiki/<int:ref_id>/save', methods=['POST'])
