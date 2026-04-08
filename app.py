@@ -2247,6 +2247,7 @@ def product_reference_edit(ref_id):
             fw_codebase=request.form.get('fw_codebase', '').strip(),
             print_technology=request.form.get('print_technology', '').strip(),
             cartridge_toner=request.form.get('cartridge_toner', '').strip(),
+            predecessor=request.form.get('predecessor', '').strip(),
         )
         app_logger.info('Product reference updated: ref_id=%d codename="%s" by=%s', ref_id, codename, current_username())
         flash(f'Product reference "{codename}" updated.', 'success')
