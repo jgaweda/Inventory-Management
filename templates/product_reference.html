@@ -180,7 +180,7 @@
             </thead>
             <tbody id="refBody">
                 {% for ref in refs %}
-                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
+                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-predecessor="{{ ref.predecessor or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
                             <span class="codename-text{% if has_permission('references') %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
@@ -519,7 +519,8 @@ function submitNewRow(row) {
                 var text = [
                     row.dataset.codename, row.dataset.model, row.dataset.type,
                     row.dataset.cartridge, row.dataset.wifi, row.dataset.year,
-                    row.dataset.chipmfr, row.dataset.chipcode, row.dataset.fw
+                    row.dataset.chipmfr, row.dataset.chipcode, row.dataset.fw,
+                    row.dataset.predecessor
                 ].join(' ').toLowerCase();
                 if (text.indexOf(q) === -1) show = false;
             }
