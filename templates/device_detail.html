@@ -375,11 +375,10 @@
                 </div>
                 {% endfor %}
             </div>
-            {% elif not current_user %}
+            {% else %}
             <p style="color: var(--text-muted); font-size: 13px; margin-top: 12px;">No attachments yet.</p>
             {% endif %}
 
-            {% if current_user %}
             <form method="POST" action="{{ url_for('device_upload', device_id=device.device_id) }}" enctype="multipart/form-data" id="deviceUploadForm">
                 <div class="upload-area" id="deviceUploadArea" onclick="document.getElementById('deviceFileInput').click()">
                     <svg width="24" height="24" fill="none" stroke="var(--text-muted)" stroke-width="2" viewBox="0 0 24 24" style="margin-bottom: 8px;">
@@ -414,7 +413,6 @@
                 document.addEventListener('drop', function(e) { e.preventDefault(); });
             })();
             </script>
-            {% endif %}
         </div>
 
         <!-- Activity History -->

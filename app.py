@@ -2944,9 +2944,8 @@ def wiki_repair_attachments():
 # ---------------------------------------------------------------------------
 
 @app.route('/devices/<device_id>/upload', methods=['POST'])
-@permission_required('devices')
 def device_upload(device_id):
-    """Upload an attachment to a device."""
+    """Upload an attachment to a device. Anyone can upload."""
     device = db.get_device(device_id)
     if not device:
         flash('Device not found.', 'error')
