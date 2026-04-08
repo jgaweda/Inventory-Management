@@ -464,7 +464,9 @@ def device_detail(device_id):
         barcode_utils.generate_label(device_id, device['barcode_value'], _label_name(device))
         app_logger.debug('Label generated on-the-fly: id=%s', device_id)
 
-    app_logger.info('Device viewed: id=%s name="%s" ip=%s', device_id, device['name'], request.remote_addr)
+    # Log the view in the audit trail so it shows in Recent Activity
+    with db.db_transaction() as conn:
+        db.log_action(conn, device_id, 'viewed', performed_by=current_username())
     audit = db.get_audit_log(device_id=device_id, limit=50)
 
     # Look up product reference data if this is a printer with a codename
