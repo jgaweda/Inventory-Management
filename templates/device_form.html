@@ -168,6 +168,7 @@
         var mfgReq = document.getElementById('manufacturerReq');
         var modelReq = document.getElementById('modelReq');
         var serialReq = document.getElementById('serialReq');
+        var ownershipRow = document.getElementById('ownershipRow');
         var isEdit = {{ 'true' if is_edit else 'false' }};
 
         // Reset all
@@ -178,14 +179,24 @@
         modelReq.style.display = 'none';
         serialReq.style.display = 'none';
 
+        // Ownership is only visible for Connectivity Devices (partner program)
+        if (ownershipRow) {
+            ownershipRow.style.display = (cat === 'Connectivity Device') ? 'block' : 'none';
+        }
+
         if (cat === 'Printer') {
-            // Default manufacturer to HP on new devices if empty
-            if (!isEdit && !mfgInput.value) mfgInput.value = 'HP';
-            // Codename is already required via its own asterisk; serial is required
+            // Default manufacturer to HP
+            if (!mfgInput.value) mfgInput.value = 'HP';
             serialInput.setAttribute('required', 'required');
             serialReq.style.display = 'inline';
+        } else if (cat === 'Connectivity Device' || cat === 'Endpoint Device') {
+            mfgInput.setAttribute('required', 'required');
+            modelInput.setAttribute('required', 'required');
+            serialInput.setAttribute('required', 'required');
+            mfgReq.style.display = 'inline';
+            modelReq.style.display = 'inline';
+            serialReq.style.display = 'inline';
         }
-        // Connectivity Device, Endpoint Device, Other: no required fields — all empty by default
     }
 
     var _searchTimeout = null;
@@ -284,7 +295,7 @@
                 </label>
                 <input type="text" name="serial_number" id="serialInput" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
             </div>
-            <div>
+            <div id="ownershipRow" style="display: none;">
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Ownership</label>
                 <select name="vendor_supplied">
                     <option value="0" {% if not (device.get('vendor_supplied', 0) if device is mapping else device.vendor_supplied if device else 0)|int %}selected{% endif %}>HP Owned</option>

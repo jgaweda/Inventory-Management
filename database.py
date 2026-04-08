@@ -739,8 +739,8 @@ def _insert_device(conn, data, performed_by='system'):
     conn.execute('''
         INSERT INTO devices (device_id, barcode_value, name, category, manufacturer,
             model_number, serial_number, connectivity, vendor_supplied, status,
-            location, assigned_to, notes, codename, variant)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            location, assigned_to, notes, codename, variant, device_type, is_mesh)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         device_id,
         barcode_value,
@@ -757,6 +757,8 @@ def _insert_device(conn, data, performed_by='system'):
         data.get('notes', ''),
         data.get('codename', ''),
         data.get('variant', ''),
+        data.get('device_type', ''),
+        int(data.get('is_mesh', 0)),
     ))
 
     log_action(conn, device_id, 'added', performed_by, f'Device "{data.get("name", "")}" added')
@@ -3236,12 +3238,12 @@ def delete_wiki_attachment(attachment_id):
 
 
 def convert_png_uploads_to_jpg(uploads_base_dir=None):
-    """Convert all PNG wiki/device upload images to JPG to save disk space.
+    """Convert all raster image uploads (PNG, BMP, GIF, WebP) to JPG to save disk space.
 
-    Walks the uploads directories, converts each .png file to .jpg using
+    Walks the uploads directories, converts each convertible image to .jpg using
     Pillow (flattening RGBA transparency to white background), updates
     the corresponding database record (filename, content_type, size_bytes),
-    and removes the original .png file.
+    and removes the original file.
 
     Returns dict with conversion stats.
     """
@@ -3265,7 +3267,8 @@ def convert_png_uploads_to_jpg(uploads_base_dir=None):
         with db_transaction() as conn:
             rows = conn.execute(
                 f"SELECT {pk_col}, filename, original_name, size_bytes FROM {table_name} "
-                f"WHERE filename LIKE '%.png'"
+                f"WHERE filename LIKE '%.png' OR filename LIKE '%.bmp' "
+                f"OR filename LIKE '%.gif' OR filename LIKE '%.webp'"
             ).fetchall()
 
         for row in rows:

@@ -213,6 +213,86 @@ class TestFormatToolbar(BaseTestCase):
         self.assertIn(b'wikiReadOnly', resp.data)
 
 
+class TestPngToJpgConversion(BaseTestCase):
+    """Test PNG→JPG auto-conversion on upload and migration."""
+
+    def _create_product(self):
+        db.add_product_reference(codename='PngTest')
+        refs = db.get_all_product_references()
+        return refs[0]['ref_id']
+
+    def test_png_upload_auto_converts_to_jpg(self):
+        """Uploading a PNG image auto-converts it to JPG."""
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        # Create a minimal valid PNG (1x1 red pixel)
+        from PIL import Image
+        buf = io.BytesIO()
+        img = Image.new('RGB', (10, 10), (255, 0, 0))
+        img.save(buf, 'PNG')
+        buf.seek(0)
+        resp = self.client.post(f'/wiki/{ref_id}/upload',
+                                data={'attachment': (buf, 'test_image.png')},
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertTrue(attachments[0]['filename'].endswith('.jpg'))
+        self.assertEqual(attachments[0]['original_name'], 'test_image.jpg')
+        self.assertEqual(attachments[0]['content_type'], 'image/jpeg')
+
+    def test_jpg_upload_unchanged(self):
+        """Uploading a JPG image is not converted."""
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        img = Image.new('RGB', (10, 10), (0, 255, 0))
+        img.save(buf, 'JPEG')
+        buf.seek(0)
+        resp = self.client.post(f'/wiki/{ref_id}/upload',
+                                data={'attachment': (buf, 'photo.jpg')},
+                                content_type='multipart/form-data',
+                                follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertTrue(attachments[0]['filename'].endswith('.jpg'))
+        self.assertEqual(attachments[0]['original_name'], 'photo.jpg')
+
+    def test_convert_png_uploads_to_jpg_migration(self):
+        """convert_png_uploads_to_jpg migrates existing PNGs to JPG."""
+        ref_id = self._create_product()
+        import io
+        from PIL import Image
+        # Manually create a PNG upload (bypassing auto-conversion)
+        upload_dir = os.path.join(_test_dir, 'wiki_uploads', str(ref_id))
+        os.makedirs(upload_dir, exist_ok=True)
+        buf = io.BytesIO()
+        Image.new('RGBA', (10, 10), (255, 0, 0, 128)).save(buf, 'PNG')
+        png_data = buf.getvalue()
+        fname = 'abcdef123456.png'
+        with open(os.path.join(upload_dir, fname), 'wb') as f:
+            f.write(png_data)
+        db.add_wiki_attachment(ref_id, fname, 'original.png', 'image/png', len(png_data), 'test')
+        # Run migration
+        stats = db.convert_png_uploads_to_jpg(_test_dir)
+        self.assertEqual(stats['converted'], 1)
+        self.assertEqual(stats['errors'], 0)
+        # bytes_saved may be negative for tiny test images; just verify conversion ran
+        # Verify DB record updated
+        attachments = db.get_wiki_attachments(ref_id)
+        self.assertEqual(len(attachments), 1)
+        self.assertTrue(attachments[0]['filename'].endswith('.jpg'))
+        self.assertEqual(attachments[0]['content_type'], 'image/jpeg')
+        # Verify file on disk
+        self.assertFalse(os.path.exists(os.path.join(upload_dir, fname)))
+        self.assertTrue(os.path.exists(os.path.join(upload_dir, fname.replace('.png', '.jpg'))))
+
+
 class TestAttachmentIntegrity(BaseTestCase):
     """Test wiki attachment integrity checking."""
 

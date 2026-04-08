@@ -391,6 +391,8 @@ def device_add():
         # Category-specific validation
         errors = []
         if category == 'Printer':
+            if not manufacturer:
+                manufacturer = 'HP'
             if not codename:
                 errors.append('Codename is required for printers.')
             if not serial_number:
@@ -421,14 +423,17 @@ def device_add():
                 flash(f'A device with serial number "{serial_number}" already exists: {existing["name"]}', 'error')
                 return render_template('device_form.html', device=request.form, is_edit=False)
 
+        # Only Connectivity Devices can be vendor-supplied; all others are HP Owned
+        vendor_supplied = 1 if (category == 'Connectivity Device' and request.form.get('vendor_supplied') == '1') else 0
+
         data = {
             'name': name,
             'category': category,
-            'manufacturer': request.form.get('manufacturer', ''),
-            'model_number': request.form.get('model_number', ''),
+            'manufacturer': manufacturer,
+            'model_number': model_number,
             'serial_number': serial_number,
             'connectivity': request.form.get('connectivity', ''),
-            'vendor_supplied': 1 if request.form.get('vendor_supplied') == '1' else 0,
+            'vendor_supplied': vendor_supplied,
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
             'codename': codename or ('N/A' if category != 'Printer' else ''),
@@ -553,6 +558,8 @@ def device_edit(device_id):
         # Category-specific validation
         errors = []
         if category == 'Printer':
+            if not manufacturer:
+                manufacturer = 'HP'
             if not codename:
                 errors.append('Codename is required for printers.')
             if not serial_number:
@@ -578,6 +585,9 @@ def device_edit(device_id):
         else:
             name = f'{manufacturer} {model_number}'.strip()
 
+        # Only Connectivity Devices can be vendor-supplied; all others are HP Owned
+        vendor_supplied = 1 if (category == 'Connectivity Device' and request.form.get('vendor_supplied') == '1') else 0
+
         data = {
             'name': name,
             'category': category,
@@ -585,7 +595,7 @@ def device_edit(device_id):
             'model_number': model_number,
             'serial_number': serial_number,
             'connectivity': request.form.get('connectivity', ''),
-            'vendor_supplied': 1 if request.form.get('vendor_supplied') == '1' else 0,
+            'vendor_supplied': vendor_supplied,
             'status': request.form.get('status', device['status']),
             'location': request.form.get('location', ''),
             'assigned_to': request.form.get('assigned_to', ''),
@@ -2721,9 +2731,13 @@ ALLOWED_EXTENSIONS = {
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
-def _convert_png_data_to_jpg(data):
-    """Convert PNG image bytes to JPG. Returns (jpg_bytes, True) on success,
-    or (original_data, False) if conversion fails or is not applicable."""
+# Raster image extensions that should be auto-converted to JPG on upload
+_CONVERTIBLE_IMAGE_EXTS = {'png', 'bmp', 'gif', 'webp'}
+
+
+def _convert_image_to_jpg(data):
+    """Convert raster image bytes (PNG, BMP, GIF, WebP) to JPG.
+    Returns (jpg_bytes, True) on success, or (original_data, False) on failure."""
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(data))
@@ -2803,9 +2817,9 @@ def wiki_upload(ref_id):
         flash('File exceeds 25 MB limit.', 'error')
         return redirect(url_for('product_wiki', ref_id=ref_id))
 
-    # Auto-convert PNG images to JPG to save space
-    if ext == 'png':
-        jpg_data, converted = _convert_png_data_to_jpg(data)
+    # Auto-convert raster images (PNG, BMP, GIF, WebP) to JPG to save space
+    if ext in _CONVERTIBLE_IMAGE_EXTS:
+        jpg_data, converted = _convert_image_to_jpg(data)
         if converted:
             data = jpg_data
             ext = 'jpg'
@@ -2920,9 +2934,9 @@ def device_upload(device_id):
         flash('File exceeds 25 MB limit.', 'error')
         return redirect(url_for('device_detail', device_id=device_id))
 
-    # Auto-convert PNG images to JPG to save space
-    if ext == 'png':
-        jpg_data, converted = _convert_png_data_to_jpg(data)
+    # Auto-convert raster images (PNG, BMP, GIF, WebP) to JPG to save space
+    if ext in _CONVERTIBLE_IMAGE_EXTS:
+        jpg_data, converted = _convert_image_to_jpg(data)
         if converted:
             data = jpg_data
             ext = 'jpg'

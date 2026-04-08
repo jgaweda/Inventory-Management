@@ -416,24 +416,141 @@ class TestOwnershipDropdown(BaseTestCase):
         self.assertIn(b'Vendor Supplied', resp.data)
 
     def test_vendor_supplied_persists(self):
+        """Connectivity Devices can be set as vendor-supplied."""
         self.login_admin()
         self.client.post('/devices/add', data={
             'manufacturer': 'TP-Link', 'model_number': 'AX55',
-            'category': 'Router', 'vendor_supplied': '1',
+            'serial_number': 'SN-001',
+            'category': 'Connectivity Device', 'vendor_supplied': '1',
         }, follow_redirects=True)
         devices = db.get_all_devices()
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0]['vendor_supplied'], 1)
 
     def test_hp_owned_default(self):
+        """Non-Connectivity devices are always HP Owned regardless of form input."""
         self.login_admin()
         self.client.post('/devices/add', data={
             'manufacturer': 'HP', 'model_number': 'AX55',
-            'category': 'Router', 'vendor_supplied': '0',
+            'serial_number': 'SN-002',
+            'category': 'Endpoint Device', 'vendor_supplied': '1',
         }, follow_redirects=True)
         devices = db.get_all_devices()
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0]['vendor_supplied'], 0)
+
+
+class TestDeviceTypeAndMesh(BaseTestCase):
+    """Test device_type dropdown and is_mesh checkbox."""
+
+    def test_connectivity_device_type_persists(self):
+        """device_type is stored for Connectivity Devices."""
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'Cisco', 'model_number': 'MR46',
+            'serial_number': 'SN-MR46-001',
+            'category': 'Connectivity Device',
+            'device_type': 'AP', 'is_mesh': '1',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['device_type'], 'AP')
+        self.assertEqual(devices[0]['is_mesh'], 1)
+
+    def test_endpoint_device_type_persists(self):
+        """device_type is stored for Endpoint Devices."""
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'manufacturer': 'Dell', 'model_number': 'Latitude 5540',
+            'serial_number': 'SN-DELL-001',
+            'category': 'Endpoint Device',
+            'device_type': 'Laptop',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['device_type'], 'Laptop')
+        self.assertEqual(devices[0]['is_mesh'], 0)
+
+    def test_printer_device_type_defaults_na(self):
+        """Printers get N/A for device_type."""
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'category': 'Printer', 'codename': 'Cherry',
+            'serial_number': 'SN-PR-001',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['device_type'], 'N/A')
+
+
+class TestDeviceValidation(BaseTestCase):
+    """Test category-specific form validation."""
+
+    def test_connectivity_requires_manufacturer(self):
+        self.login_admin()
+        resp = self.client.post('/devices/add', data={
+            'category': 'Connectivity Device', 'model_number': 'AX55',
+            'serial_number': 'SN-001',
+        }, follow_redirects=True)
+        self.assertIn(b'Manufacturer is required', resp.data)
+
+    def test_connectivity_requires_model(self):
+        self.login_admin()
+        resp = self.client.post('/devices/add', data={
+            'category': 'Connectivity Device', 'manufacturer': 'TP-Link',
+            'serial_number': 'SN-001',
+        }, follow_redirects=True)
+        self.assertIn(b'Model number is required', resp.data)
+
+    def test_connectivity_requires_serial(self):
+        self.login_admin()
+        resp = self.client.post('/devices/add', data={
+            'category': 'Connectivity Device', 'manufacturer': 'TP-Link',
+            'model_number': 'AX55',
+        }, follow_redirects=True)
+        self.assertIn(b'Serial number is required', resp.data)
+
+    def test_endpoint_requires_all_fields(self):
+        self.login_admin()
+        resp = self.client.post('/devices/add', data={
+            'category': 'Endpoint Device',
+        }, follow_redirects=True)
+        self.assertIn(b'Manufacturer is required', resp.data)
+        self.assertIn(b'Model number is required', resp.data)
+        self.assertIn(b'Serial number is required', resp.data)
+
+    def test_printer_defaults_hp_manufacturer(self):
+        """Printer with empty manufacturer defaults to HP."""
+        self.login_admin()
+        self.client.post('/devices/add', data={
+            'category': 'Printer', 'codename': 'Cherry',
+            'serial_number': 'SN-HP-001',
+        }, follow_redirects=True)
+        devices = db.get_all_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]['manufacturer'], 'HP')
+
+
+class TestDeviceViewedAudit(BaseTestCase):
+    """Test that viewing a device creates an audit log entry."""
+
+    def test_view_creates_audit_entry(self):
+        device_id = db.add_device({'name': 'Audit Test'})
+        self.client.get(f'/devices/{device_id}')
+        log = db.get_audit_log(device_id=device_id)
+        actions = [e['action'] for e in log]
+        self.assertIn('viewed', actions)
+
+    def test_scan_redirect_creates_viewed(self):
+        """Barcode scan that finds a device logs a viewed action on redirect."""
+        device_id = db.add_device({'name': 'Scan Test'})
+        device = db.get_device(device_id)
+        # The scan API returns the device_id, then the client redirects to the detail page
+        resp = self.client.get(f'/devices/{device_id}')
+        self.assertEqual(resp.status_code, 200)
+        log = db.get_audit_log(device_id=device_id)
+        viewed = [e for e in log if e['action'] == 'viewed']
+        self.assertGreaterEqual(len(viewed), 1)
 
 
 class TestDeviceAttachments(BaseTestCase):
