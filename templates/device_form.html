@@ -13,7 +13,7 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
-                <select name="category" id="categorySelect" onchange="toggleCodename(); toggleOtherCategory()">
+                <select name="category" id="categorySelect" onchange="toggleCodename(); toggleOtherCategory(); updateRequiredFields()">
                     <option value="">Select category...</option>
                     {% set current_cat = device.get('category', '') if device is mapping else device.category if device else '' %}
                     {% set is_other_custom = current_cat.startswith('Other - ') %}
@@ -53,6 +53,7 @@
                         {% set dev_variant = device.get('variant', '') if device is mapping else (device.variant if device and device.variant is defined else '') %}
                         <option value="Base" {% if dev_variant == 'Base' %}selected{% endif %}>Base</option>
                         <option value="Plus" {% if dev_variant == 'Plus' %}selected{% endif %}>Plus</option>
+                        <option value="Hi" {% if dev_variant == 'Hi' %}selected{% endif %}>Hi</option>
                         <option value="Lite" {% if dev_variant == 'Lite' %}selected{% endif %}>Lite</option>
                     </select>
                 </div>
@@ -94,6 +95,42 @@
     }
     toggleCodename();
     toggleOtherCategory();
+    updateRequiredFields();
+
+    function updateRequiredFields() {
+        var cat = document.getElementById('categorySelect').value;
+        var mfgInput = document.getElementById('manufacturerInput');
+        var modelInput = document.getElementById('modelInput');
+        var serialInput = document.getElementById('serialInput');
+        var mfgReq = document.getElementById('manufacturerReq');
+        var modelReq = document.getElementById('modelReq');
+        var serialReq = document.getElementById('serialReq');
+        var isEdit = {{ 'true' if is_edit else 'false' }};
+
+        // Reset all
+        mfgInput.removeAttribute('required');
+        modelInput.removeAttribute('required');
+        serialInput.removeAttribute('required');
+        mfgReq.style.display = 'none';
+        modelReq.style.display = 'none';
+        serialReq.style.display = 'none';
+
+        if (cat === 'Printer') {
+            // Default manufacturer to HP on new devices if empty
+            if (!isEdit && !mfgInput.value) mfgInput.value = 'HP';
+            // Codename is already required via its own asterisk; serial is required
+            serialInput.setAttribute('required', 'required');
+            serialReq.style.display = 'inline';
+        } else if (cat === 'Laptop/Phone/Tablet' || cat === 'Router/AP') {
+            mfgInput.setAttribute('required', 'required');
+            modelInput.setAttribute('required', 'required');
+            serialInput.setAttribute('required', 'required');
+            mfgReq.style.display = 'inline';
+            modelReq.style.display = 'inline';
+            serialReq.style.display = 'inline';
+        }
+        // Other: no requirements — all hidden/removed
+    }
 
     var _searchTimeout = null;
     function searchCodename(query) {
@@ -178,20 +215,24 @@
         <div class="section-label">Hardware Details</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div style="position: relative;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
-                    Manufacturer <span style="color: var(--accent-red);">*</span>
+                <label id="manufacturerLabel" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                    Manufacturer <span id="manufacturerReq" style="color: var(--accent-red);">*</span>
                 </label>
-                <input type="text" name="manufacturer" autocomplete="off" data-ac-field="manufacturer"
-                       value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" required placeholder="e.g. Intel">
+                <input type="text" name="manufacturer" id="manufacturerInput" autocomplete="off" data-ac-field="manufacturer"
+                       value="{{ device.get('manufacturer', '') if device is mapping else device.manufacturer if device else '' }}" placeholder="e.g. Intel">
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Model Number</label>
-                <input type="text" name="model_number"
+                <label id="modelLabel" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                    Model Number <span id="modelReq" style="color: var(--accent-red); display: none;">*</span>
+                </label>
+                <input type="text" name="model_number" id="modelInput"
                        value="{{ device.get('model_number', '') if device is mapping else device.model_number if device else '' }}" placeholder="e.g. AX211NGW">
             </div>
             <div>
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Serial Number</label>
-                <input type="text" name="serial_number" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
+                <label id="serialLabel" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">
+                    Serial Number <span id="serialReq" style="color: var(--accent-red); display: none;">*</span>
+                </label>
+                <input type="text" name="serial_number" id="serialInput" value="{{ device.get('serial_number', '') if device is mapping else device.serial_number if device else '' }}" placeholder="e.g. SN-AX211-001">
             </div>
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Ownership</label>

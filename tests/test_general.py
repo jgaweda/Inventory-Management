@@ -696,7 +696,9 @@ class TestEdgeCase(BaseTestCase):
         """Admin can retire a device."""
         self.login_admin()
         did = db.add_device({'name': 'Retire Me'})
-        resp = self.client.post(f'/devices/{did}/retire', follow_redirects=True)
+        resp = self.client.post(f'/devices/{did}/retire', data={
+            'retire_reason': 'End of life',
+        }, follow_redirects=True)
         device = db.get_device(did)
         self.assertEqual(device['status'], 'retired')
 
@@ -747,6 +749,7 @@ class TestSQLInjectionPrevention(BaseTestCase):
         malicious = "'; DROP TABLE devices; --"
         self.client.post('/devices/add', data={
             'manufacturer': malicious, 'model_number': 'Test',
+            'serial_number': 'SN-INJECT-001',
             'category': 'Router/AP',
         }, follow_redirects=True)
         devices = db.get_all_devices()
@@ -778,6 +781,7 @@ class TestUnicodeHandling(BaseTestCase):
         self.login_admin()
         resp = self.client.post('/devices/add', data={
             'manufacturer': 'HP \u00ae', 'model_number': 'M\u00f6del',
+            'serial_number': 'SN-UNI-001',
             'category': 'Router/AP', 'notes': 'C\u00e9sar\u2019s printer',
         }, follow_redirects=True)
         self.assertIn(b'added successfully', resp.data)

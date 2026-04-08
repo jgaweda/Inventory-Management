@@ -74,9 +74,7 @@
             Edit
         </a>
         {% if device.status != 'retired' and has_permission('retire') %}
-        <form method="POST" action="{{ url_for('device_retire', device_id=device.device_id) }}" onsubmit="return confirm('Are you sure you want to retire this device? It will be hidden from the default device list.')">
-            <button type="submit" class="btn btn-danger btn-sm">Retire</button>
-        </form>
+        <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('retireModal').style.display='flex'">Retire</button>
         {% endif %}
     </div>
     {% endif %}
@@ -241,6 +239,12 @@
                 <div>
                     <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Chip Codename</div>
                     <div class="font-mono" style="font-size: 14px;">{{ prod_ref.chip_codename }}</div>
+                </div>
+                {% endif %}
+                {% if prod_ref.predecessor %}
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Predecessor</div>
+                    <div style="font-size: 14px;">{{ prod_ref.predecessor }}</div>
                 </div>
                 {% endif %}
             </div>
@@ -523,4 +527,23 @@ function printLabel() {
     inp.addEventListener('blur', function() { setTimeout(function() { dd.style.display = 'none'; }, 150); });
 })();
 </script>
+
+{% if device.status != 'retired' and has_permission('retire') %}
+<!-- Retire Modal -->
+<div id="retireModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 440px; width: 90%;">
+        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">Retire Device</h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">This device will be hidden from the default inventory list.</p>
+        <form method="POST" action="{{ url_for('device_retire', device_id=device.device_id) }}">
+            <label style="display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">Reason for retirement <span style="color: var(--accent-red);">*</span></label>
+            <textarea name="retire_reason" required rows="3" placeholder="e.g. Damaged, replaced, returned to vendor..."
+                      style="width: 100%; font-size: 13px; padding: 10px 12px; box-sizing: border-box; resize: vertical;"></textarea>
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('retireModal').style.display='none'">Cancel</button>
+                <button type="submit" class="btn btn-danger">Retire Device</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
