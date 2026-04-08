@@ -253,11 +253,6 @@
                         <select class="col-filter" data-col="fw"><option value="">All</option></select>
                         <div class="resize-handle"></div>
                     </th>
-                    <th data-sort="predecessor">
-                        <div class="th-sort">Predecessor <span class="sort-arrow">&#9650;</span></div>
-                        <input type="text" class="col-filter" data-col="predecessor" placeholder="Filter...">
-                        <div class="resize-handle"></div>
-                    </th>
                     <th style="text-align: center;" data-sort="inv">
                         <div class="th-sort">Inv <span class="sort-arrow">&#9650;</span></div>
                         <input type="text" class="col-filter" data-col="inv" placeholder="#" title="e.g. >0, >=2, <5" style="width:40px; text-align:center;">
@@ -270,7 +265,7 @@
             </thead>
             <tbody id="refBody">
                 {% for ref in refs %}
-                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-predecessor="{{ ref.predecessor or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
+                <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
                             <span class="codename-text{% if has_permission('references') %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
@@ -297,7 +292,6 @@
                     <td><input class="cell-edit" data-field="chip_manufacturer" value="{{ ref.chip_manufacturer or '' }}"></td>
                     <td><input class="cell-edit" data-field="chip_codename" value="{{ ref.chip_codename or '' }}"></td>
                     <td><input class="cell-edit" data-field="fw_codebase" value="{{ ref.fw_codebase or '' }}"></td>
-                    <td><input class="cell-edit predecessor-input" data-field="predecessor" value="{{ ref.predecessor or '' }}" autocomplete="off" placeholder="Predecessor..."></td>
                     {% else %}
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size:13px; text-align:center;">
@@ -311,7 +305,6 @@
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
                     <td class="font-mono" style="font-size:13px;">{{ ref.chip_codename or '—' }}</td>
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
-                    <td style="font-size:13px; color:var(--text-secondary);">{{ ref.predecessor or '—' }}</td>
                     {% endif %}
                     <td class="inv-count">
                         {% set counts = inv_counts.get(ref.codename, {}) %}
@@ -497,7 +490,6 @@ function saveCell(el) {
     if (field === 'chip_manufacturer') row.dataset.chipmfr = value;
     if (field === 'chip_codename') row.dataset.chipcode = value;
     if (field === 'fw_codebase') row.dataset.fw = value;
-    if (field === 'predecessor') row.dataset.predecessor = value;
 
     fetch('/api/reference/' + refId, {
         method: 'PATCH',
@@ -557,7 +549,6 @@ function addNewRow() {
         '<td><input class="cell-edit" data-field="chip_manufacturer" value="" placeholder="Manufacturer..."></td>' +
         '<td><input class="cell-edit" data-field="chip_codename" value="" placeholder="Chipset..."></td>' +
         '<td><input class="cell-edit" data-field="fw_codebase" value="" placeholder="FW..."></td>' +
-        '<td><input class="cell-edit predecessor-input" data-field="predecessor" value="" autocomplete="off" placeholder="Predecessor..."></td>' +
         '<td class="inv-count"><span style="color:var(--text-muted);">0</span></td>' +
         '<td style="text-align:center;"><button class="del-btn" title="Remove" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
     tbody.insertBefore(tr, tbody.firstChild);
@@ -589,70 +580,6 @@ function submitNewRow(row) {
     });
 }
 
-// --- Predecessor autocomplete (suggests existing codenames) ---
-(function() {
-    var acBox = null, acInput = null;
-
-    function getCodenames() {
-        var names = [];
-        document.querySelectorAll('#refBody tr:not(.new-row)').forEach(function(row) {
-            var cn = (row.dataset.codename || '').trim();
-            if (cn && names.indexOf(cn) === -1) names.push(cn);
-        });
-        return names.sort();
-    }
-
-    function showAC(input) {
-        var q = input.value.trim().toLowerCase();
-        var codenames = getCodenames();
-        var filtered = q ? codenames.filter(function(c) { return c.toLowerCase().indexOf(q) >= 0; }) : codenames;
-        if (!filtered.length) { hideAC(); return; }
-
-        if (!acBox) {
-            acBox = document.createElement('div');
-            acBox.style.cssText = 'position:absolute; z-index:200; background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; max-height:180px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3); min-width:140px;';
-            document.body.appendChild(acBox);
-        }
-        acBox.innerHTML = '';
-        filtered.slice(0, 20).forEach(function(cn) {
-            var item = document.createElement('div');
-            item.textContent = cn;
-            item.style.cssText = 'padding:6px 10px; cursor:pointer; font-size:12px; border-bottom:1px solid var(--border-color);';
-            item.addEventListener('mouseenter', function() { item.style.background = 'var(--bg-card-hover)'; });
-            item.addEventListener('mouseleave', function() { item.style.background = 'transparent'; });
-            item.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                input.value = cn;
-                hideAC();
-                input.blur(); // triggers save
-            });
-            acBox.appendChild(item);
-        });
-        var rect = input.getBoundingClientRect();
-        acBox.style.left = rect.left + window.scrollX + 'px';
-        acBox.style.top = rect.bottom + window.scrollY + 2 + 'px';
-        acBox.style.width = Math.max(rect.width, 140) + 'px';
-        acBox.style.display = 'block';
-        acInput = input;
-    }
-
-    function hideAC() {
-        if (acBox) acBox.style.display = 'none';
-        acInput = null;
-    }
-
-    document.getElementById('refTable').addEventListener('focus', function(e) {
-        if (e.target.classList.contains('predecessor-input')) showAC(e.target);
-    }, true);
-    document.getElementById('refTable').addEventListener('input', function(e) {
-        if (e.target.classList.contains('predecessor-input')) showAC(e.target);
-    });
-    document.addEventListener('click', function(e) {
-        if (acInput && !e.target.classList.contains('predecessor-input') && (!acBox || !acBox.contains(e.target))) {
-            hideAC();
-        }
-    });
-})();
 </script>
 {% endif %}
 
@@ -727,8 +654,7 @@ function submitNewRow(row) {
                 var text = [
                     row.dataset.codename, row.dataset.model, row.dataset.type,
                     row.dataset.cartridge, row.dataset.wifi, row.dataset.year,
-                    row.dataset.chipmfr, row.dataset.chipcode, row.dataset.fw,
-                    row.dataset.predecessor
+                    row.dataset.chipmfr, row.dataset.chipcode, row.dataset.fw
                 ].join(' ').toLowerCase();
                 if (text.indexOf(q) === -1) show = false;
             }
@@ -790,7 +716,7 @@ function submitNewRow(row) {
             codename:'codename', model_name:'model', print_technology:'type',
             cartridge_toner:'cartridge', wifi_gen:'wifi',
             chip_manufacturer:'chipmfr', chip_codename:'chipcode',
-            fw_codebase:'fw', predecessor:'predecessor'
+            fw_codebase:'fw'
         };
         return (row.dataset[map[field]] || '').toLowerCase();
     }

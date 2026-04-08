@@ -241,6 +241,12 @@
                     <div class="font-mono" style="font-size: 14px;">{{ prod_ref.chip_codename }}</div>
                 </div>
                 {% endif %}
+                {% if prod_ref.predecessor %}
+                <div>
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Predecessor</div>
+                    <div style="font-size: 14px;">{{ prod_ref.predecessor }}</div>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
