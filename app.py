@@ -387,21 +387,35 @@ def device_add():
             if other_detail:
                 category = f'Other - {other_detail}'
 
+        serial_number = request.form.get('serial_number', '').strip()
+
+        # Category-specific validation
+        errors = []
         if category == 'Printer':
             if not codename:
-                flash('Codename is required for printers.', 'error')
-                return render_template('device_form.html', device=request.form, is_edit=False)
+                errors.append('Codename is required for printers.')
+            if not serial_number:
+                errors.append('Serial number is required for printers.')
+        elif category in ('Laptop/Phone/Tablet', 'Router/AP'):
+            if not manufacturer:
+                errors.append('Manufacturer is required.')
+            if not model_number:
+                errors.append('Model number is required.')
+            if not serial_number:
+                errors.append('Serial number is required.')
+
+        if errors:
+            for e in errors:
+                flash(e, 'error')
+            return render_template('device_form.html', device=request.form, is_edit=False)
+
+        if category == 'Printer':
             variant = request.form.get('variant', '').strip()
             codename_display = f'{codename} {variant}'.strip() if variant else codename
             mfg_model = f'{manufacturer} {model_number}'.strip()
             name = f'{codename_display} ({mfg_model})' if mfg_model else codename_display
         else:
-            if not manufacturer:
-                flash('Manufacturer is required.', 'error')
-                return render_template('device_form.html', device=request.form, is_edit=False)
             name = f'{manufacturer} {model_number}'.strip()
-
-        serial_number = request.form.get('serial_number', '').strip()
         if serial_number:
             existing = db.get_device_by_serial(serial_number)
             if existing:
@@ -531,18 +545,34 @@ def device_edit(device_id):
             if other_detail:
                 category = f'Other - {other_detail}'
 
+        serial_number = request.form.get('serial_number', '').strip()
+
+        # Category-specific validation
+        errors = []
         if category == 'Printer':
             if not codename:
-                flash('Codename is required for printers.', 'error')
-                return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+                errors.append('Codename is required for printers.')
+            if not serial_number:
+                errors.append('Serial number is required for printers.')
+        elif category in ('Laptop/Phone/Tablet', 'Router/AP'):
+            if not manufacturer:
+                errors.append('Manufacturer is required.')
+            if not model_number:
+                errors.append('Model number is required.')
+            if not serial_number:
+                errors.append('Serial number is required.')
+
+        if errors:
+            for e in errors:
+                flash(e, 'error')
+            return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
+
+        if category == 'Printer':
             variant = request.form.get('variant', '').strip()
             codename_display = f'{codename} {variant}'.strip() if variant else codename
             mfg_model = f'{manufacturer} {model_number}'.strip()
             name = f'{codename_display} ({mfg_model})' if mfg_model else codename_display
         else:
-            if not manufacturer:
-                flash('Manufacturer is required.', 'error')
-                return render_template('device_form.html', device=request.form, is_edit=True, device_id=device_id)
             name = f'{manufacturer} {model_number}'.strip()
 
         data = {
@@ -550,7 +580,7 @@ def device_edit(device_id):
             'category': category,
             'manufacturer': manufacturer,
             'model_number': model_number,
-            'serial_number': request.form.get('serial_number', ''),
+            'serial_number': serial_number,
             'connectivity': request.form.get('connectivity', ''),
             'vendor_supplied': 1 if request.form.get('vendor_supplied') == '1' else 0,
             'status': request.form.get('status', device['status']),
@@ -578,8 +608,12 @@ def device_edit(device_id):
 @app.route('/devices/<device_id>/retire', methods=['POST'])
 @permission_required('retire')
 def device_retire(device_id):
-    db.retire_device(device_id, performed_by=current_username())
-    app_logger.info('Device retired: id=%s by=%s', device_id, current_username())
+    reason = request.form.get('retire_reason', '').strip()
+    if not reason:
+        flash('A reason is required to retire a device.', 'error')
+        return redirect(url_for('device_detail', device_id=device_id))
+    db.retire_device(device_id, performed_by=current_username(), reason=reason)
+    app_logger.info('Device retired: id=%s reason="%s" by=%s', device_id, reason, current_username())
     flash('Device retired successfully.', 'success')
     return redirect(url_for('device_list'))
 

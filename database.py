@@ -874,14 +874,15 @@ def get_all_devices(include_retired=False):
         return [dict(r) for r in rows]
 
 
-def retire_device(device_id, performed_by='system'):
+def retire_device(device_id, performed_by='system', reason=''):
     """Soft-delete a device by setting its status to 'retired'."""
     with db_transaction() as conn:
         conn.execute(
             "UPDATE devices SET status='retired', updated_at=CURRENT_TIMESTAMP WHERE device_id=?",
             (device_id,)
         )
-        log_action(conn, device_id, 'retired', performed_by, 'Device retired')
+        detail = f'Device retired — {reason}' if reason else 'Device retired'
+        log_action(conn, device_id, 'retired', performed_by, detail)
 
 
 def checkout_device(device_id, assigned_to, performed_by='system'):

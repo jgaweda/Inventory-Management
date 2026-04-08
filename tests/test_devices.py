@@ -88,6 +88,7 @@ class TestDeviceEditRoute(BaseTestCase):
         did = db.add_device({'name': 'HP OldRouter', 'category': 'Router/AP', 'manufacturer': 'HP'})
         resp = self.client.post(f'/devices/{did}/edit', data={
             'manufacturer': 'Cisco', 'model_number': 'AX9000',
+            'serial_number': 'SN-EDIT-001',
             'category': 'Router/AP', 'location': 'Lab B',
         }, follow_redirects=True)
         self.assertIn(b'updated successfully', resp.data)
@@ -190,6 +191,7 @@ class TestDeviceLifecycleFull(BaseTestCase):
         # 1. Add
         resp = self.client.post('/devices/add', data={
             'manufacturer': 'HP', 'model_number': 'LaserJet 600',
+            'serial_number': 'SN-LC-001',
             'category': 'Router/AP', 'location': 'Lab A',
         }, follow_redirects=True)
         self.assertIn(b'added successfully', resp.data)
@@ -200,6 +202,7 @@ class TestDeviceLifecycleFull(BaseTestCase):
         # 2. Edit
         resp = self.client.post(f'/devices/{did}/edit', data={
             'manufacturer': 'HP', 'model_number': 'LaserJet 601',
+            'serial_number': 'SN-LC-001',
             'category': 'Router/AP', 'location': 'Lab B',
         }, follow_redirects=True)
         self.assertIn(b'updated successfully', resp.data)
@@ -227,7 +230,9 @@ class TestDeviceLifecycleFull(BaseTestCase):
         self.assertIn(b'Note added', resp.data)
 
         # 6. Retire
-        resp = self.client.post(f'/devices/{did}/retire', follow_redirects=True)
+        resp = self.client.post(f'/devices/{did}/retire', data={
+            'retire_reason': 'End of life cycle',
+        }, follow_redirects=True)
         device = db.get_device(did)
         self.assertEqual(device['status'], 'retired')
 
