@@ -43,6 +43,10 @@ class BaseTestCase(unittest.TestCase):
         self._bundle_patcher.start()
         db.init_db()
         self._bundle_patcher.stop()
+        # Disable upload bundling in backups — avoids zipping real upload dirs
+        config = db._get_backup_config()
+        config['include_uploads'] = False
+        db.save_backup_config(config)
 
     def tearDown(self):
         if os.path.exists(db.DB_PATH):

@@ -179,6 +179,7 @@ class TestBackupImprovements(BaseTestCase):
         super().setUp()
         # Reset backup config to defaults for each test
         defaults = db.get_default_backup_config()
+        defaults['include_uploads'] = False  # avoid bundling real uploads in tests
         db.save_backup_config(defaults)
 
     def test_atomic_config_write(self):
@@ -991,6 +992,10 @@ class TestBackupRobustness(BaseTestCase):
 
     def test_smart_prune_handles_new_filename_format(self):
         """Smart prune correctly parses filenames with microseconds."""
+        # Ensure max_backups is 10 for this test
+        config = db._get_backup_config()
+        config['max_backups'] = 10
+        db.save_backup_config(config)
         backup_dir = db._get_backup_dir()
         # Clean existing
         for f in os.listdir(backup_dir):
@@ -1002,7 +1007,7 @@ class TestBackupRobustness(BaseTestCase):
             r = db.backup_database(performed_by='test', manual=False)
             # Force the hash to change so backups aren't skipped
             db.add_device({'name': f'Prune Device {i}'})
-        remaining = [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_')]
+        remaining = [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and db._is_backup_file(f)]
         self.assertLessEqual(len(remaining), 10)
 
     def test_scheduler_thread_safety(self):

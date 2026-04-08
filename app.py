@@ -2708,6 +2708,25 @@ ALLOWED_EXTENSIONS = {
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
+def _convert_png_data_to_jpg(data):
+    """Convert PNG image bytes to JPG. Returns (jpg_bytes, True) on success,
+    or (original_data, False) if conversion fails or is not applicable."""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(data))
+        if img.mode in ('RGBA', 'LA', 'PA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG', quality=85, optimize=True)
+        return buf.getvalue(), True
+    except Exception:
+        return data, False
+
+
 @app.route('/wiki/<int:ref_id>')
 def product_wiki(ref_id):
     """View/edit the wiki page for a product."""
@@ -2771,6 +2790,14 @@ def wiki_upload(ref_id):
         flash('File exceeds 25 MB limit.', 'error')
         return redirect(url_for('product_wiki', ref_id=ref_id))
 
+    # Auto-convert PNG images to JPG to save space
+    if ext == 'png':
+        jpg_data, converted = _convert_png_data_to_jpg(data)
+        if converted:
+            data = jpg_data
+            ext = 'jpg'
+            original_name = original_name.rsplit('.', 1)[0] + '.jpg'
+
     # Save to disk with unique filename
     upload_dir = os.path.join(WIKI_UPLOADS_DIR, str(ref_id))
     os.makedirs(upload_dir, exist_ok=True)
@@ -2779,11 +2806,12 @@ def wiki_upload(ref_id):
     with open(filepath, 'wb') as f:
         f.write(data)
 
+    content_type = 'image/jpeg' if ext in ('jpg', 'jpeg') else (file.content_type or '')
     db.add_wiki_attachment(
         ref_id=ref_id,
         filename=safe_name,
         original_name=original_name,
-        content_type=file.content_type or '',
+        content_type=content_type,
         size_bytes=len(data),
         uploaded_by=g.user['username'] if g.user else 'guest',
     )
@@ -2879,6 +2907,14 @@ def device_upload(device_id):
         flash('File exceeds 25 MB limit.', 'error')
         return redirect(url_for('device_detail', device_id=device_id))
 
+    # Auto-convert PNG images to JPG to save space
+    if ext == 'png':
+        jpg_data, converted = _convert_png_data_to_jpg(data)
+        if converted:
+            data = jpg_data
+            ext = 'jpg'
+            original_name = original_name.rsplit('.', 1)[0] + '.jpg'
+
     upload_dir = os.path.join(DEVICE_UPLOADS_DIR, str(device_id))
     os.makedirs(upload_dir, exist_ok=True)
     safe_name = f'{uuid.uuid4().hex}.{ext}'
@@ -2886,11 +2922,12 @@ def device_upload(device_id):
     with open(filepath, 'wb') as f:
         f.write(data)
 
+    content_type = 'image/jpeg' if ext in ('jpg', 'jpeg') else (file.content_type or '')
     db.add_device_attachment(
         device_id=device_id,
         filename=safe_name,
         original_name=original_name,
-        content_type=file.content_type or '',
+        content_type=content_type,
         size_bytes=len(data),
         uploaded_by=current_username(),
     )
@@ -3070,6 +3107,8 @@ if __name__ == '__main__':
     parser.add_argument('--export-sql', metavar='FILE', help='Export database to SQL dump file and exit')
     parser.add_argument('--emergency-backup', nargs='?', const=True, metavar='PATH',
                         help='Create an emergency database backup and exit')
+    parser.add_argument('--convert-png-to-jpg', action='store_true',
+                        help='Convert all PNG upload images to JPG to save disk space and exit')
     args = parser.parse_args()
 
     # --- Recovery CLI commands (run and exit) ---
@@ -3102,6 +3141,16 @@ if __name__ == '__main__':
         dest = args.emergency_backup if args.emergency_backup is not True else None
         path = db.emergency_backup(dest)
         print(f'  Emergency backup created: {path}')
+        exit(0)
+
+    if args.convert_png_to_jpg:
+        db.init_db()
+        print('  Converting PNG uploads to JPG...')
+        stats = db.convert_png_uploads_to_jpg()
+        print(f'  Converted: {stats["converted"]}')
+        print(f'  Skipped:   {stats["skipped"]}')
+        print(f'  Errors:    {stats["errors"]}')
+        print(f'  Saved:     {stats["bytes_saved"] // 1024} KB')
         exit(0)
 
     url = f'http://{args.host}:{args.port}'

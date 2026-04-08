@@ -1815,7 +1815,7 @@ def _smart_prune_unlocked(max_backups):
     """Inner prune logic — caller must hold _backup_file_lock."""
     backup_dir = _get_backup_dir()
     auto_backups = sorted(
-        [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and f.endswith('.db')],
+        [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and _is_backup_file(f)],
         reverse=True,  # newest first
     )
     if len(auto_backups) <= max_backups:
@@ -1827,7 +1827,7 @@ def _smart_prune_unlocked(max_backups):
     days_seen = set()
 
     for f in auto_backups:
-        ts_part = f.replace('auto_backup_', '').replace('.db', '').split('_uploaded')[0]
+        ts_part = f.replace('auto_backup_', '').replace('.db', '').replace('.zip', '').split('_uploaded')[0]
         dt = None
         for fmt in ('%Y%m%d_%H%M%S_%f', '%Y%m%d_%H%M%S'):
             try:
@@ -2200,7 +2200,7 @@ def get_schema_version(db_path=None):
 
 def validate_backup_compatibility(backup_path):
     """
-    Validate that a backup file is compatible with the current application.
+    Validate that a backup file (.db or .zip) is compatible with the current application.
     Returns dict with 'compatible' (bool), 'warnings' (list), 'errors' (list),
     and metadata about the backup ('tables', 'schema_version', 'app_version',
     'device_count', 'user_count').
@@ -2216,11 +2216,36 @@ def validate_backup_compatibility(backup_path):
         'user_count': 0,
     }
 
+    # For .zip backups, extract the .db to a temp file for validation
+    _tmp_file = None
+    if backup_path.endswith('.zip'):
+        import zipfile
+        import tempfile as _tmpmod
+        try:
+            with zipfile.ZipFile(backup_path, 'r') as zf:
+                db_members = [m for m in zf.namelist() if m.endswith('.db')]
+                if not db_members:
+                    result['compatible'] = False
+                    result['errors'].append('No .db file found inside backup zip')
+                    return result
+                _tmp_file = _tmpmod.NamedTemporaryFile(suffix='.db', delete=False)
+                _tmp_file.write(zf.read(db_members[0]))
+                _tmp_file.close()
+                backup_path = _tmp_file.name
+        except Exception as e:
+            result['compatible'] = False
+            result['errors'].append(f'Cannot read backup zip: {e}')
+            if _tmp_file:
+                os.unlink(_tmp_file.name)
+            return result
+
     try:
         conn = sqlite3.connect(backup_path)
     except Exception as e:
         result['compatible'] = False
         result['errors'].append(f'Cannot open database file: {e}')
+        if _tmp_file:
+            os.unlink(_tmp_file.name)
         return result
 
     try:
@@ -2324,6 +2349,11 @@ def validate_backup_compatibility(backup_path):
         result['errors'].append(f'Database error during validation: {e}')
     finally:
         conn.close()
+        if _tmp_file:
+            try:
+                os.unlink(_tmp_file.name)
+            except OSError:
+                pass
 
     return result
 
@@ -3189,6 +3219,100 @@ def delete_wiki_attachment(attachment_id):
     """Delete an attachment record."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))
+
+
+def convert_png_uploads_to_jpg(uploads_base_dir=None):
+    """Convert all PNG wiki/device upload images to JPG to save disk space.
+
+    Walks the uploads directories, converts each .png file to .jpg using
+    Pillow (flattening RGBA transparency to white background), updates
+    the corresponding database record (filename, content_type, size_bytes),
+    and removes the original .png file.
+
+    Returns dict with conversion stats.
+    """
+    from PIL import Image
+
+    if uploads_base_dir is None:
+        uploads_base_dir = DATA_DIR
+
+    stats = {'converted': 0, 'skipped': 0, 'errors': 0, 'bytes_saved': 0}
+
+    # Process both wiki and device upload tables
+    tables = [
+        ('wiki_attachments', 'attachment_id', os.path.join(uploads_base_dir, 'wiki_uploads')),
+        ('device_attachments', 'attachment_id', os.path.join(uploads_base_dir, 'device_uploads')),
+    ]
+
+    for table_name, pk_col, uploads_dir in tables:
+        if not os.path.isdir(uploads_dir):
+            continue
+
+        with db_transaction() as conn:
+            rows = conn.execute(
+                f"SELECT {pk_col}, filename, original_name, size_bytes FROM {table_name} "
+                f"WHERE filename LIKE '%.png'"
+            ).fetchall()
+
+        for row in rows:
+            row = dict(row)
+            att_id = row[pk_col]
+            old_filename = row['filename']
+            original_name = row['original_name']
+            old_size = row['size_bytes']
+
+            # Find the file on disk (walk subdirectories)
+            old_path = None
+            for dirpath, _dirs, files in os.walk(uploads_dir):
+                if old_filename in files:
+                    old_path = os.path.join(dirpath, old_filename)
+                    break
+
+            if not old_path or not os.path.isfile(old_path):
+                stats['skipped'] += 1
+                continue
+
+            try:
+                img = Image.open(old_path)
+                # Flatten RGBA transparency to white background
+                if img.mode in ('RGBA', 'LA', 'PA'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[-1])
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                new_filename = old_filename.rsplit('.', 1)[0] + '.jpg'
+                new_path = os.path.join(os.path.dirname(old_path), new_filename)
+                img.save(new_path, 'JPEG', quality=85, optimize=True)
+                new_size = os.path.getsize(new_path)
+
+                # Update DB record
+                new_original = original_name
+                if new_original.lower().endswith('.png'):
+                    new_original = new_original[:-4] + '.jpg'
+
+                with db_transaction() as conn:
+                    conn.execute(
+                        f"UPDATE {table_name} SET filename = ?, original_name = ?, "
+                        f"content_type = 'image/jpeg', size_bytes = ? WHERE {pk_col} = ?",
+                        (new_filename, new_original, new_size, att_id)
+                    )
+
+                # Remove old PNG
+                os.remove(old_path)
+                stats['converted'] += 1
+                stats['bytes_saved'] += old_size - new_size
+            except Exception as e:
+                _audit_logger.warning('PNG conversion failed for %s: %s', old_filename, e)
+                stats['errors'] += 1
+
+    _audit_logger.info(
+        'PNG→JPG migration: converted=%d skipped=%d errors=%d saved=%dKB',
+        stats['converted'], stats['skipped'], stats['errors'],
+        stats['bytes_saved'] // 1024
+    )
+    return stats
 
 
 # ---------------------------------------------------------------------------
