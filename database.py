@@ -241,6 +241,14 @@ def init_db():
             )
         ''')
 
+        # Seed default guest permissions (references + wiki) on fresh installs
+        row = conn.execute("SELECT 1 FROM schema_info WHERE key = 'guest_permissions'").fetchone()
+        if not row:
+            conn.execute(
+                "INSERT INTO schema_info (key, value, updated_at) VALUES ('guest_permissions', ?, CURRENT_TIMESTAMP)",
+                (json.dumps(['references', 'wiki']),)
+            )
+
         # Migrate: add new columns if upgrading from old schema
         pr_cols = [row[1] for row in conn.execute('PRAGMA table_info(product_reference)').fetchall()]
         for col, default in [('model_name', ''), ('wifi_gen', ''), ('chip_manufacturer', ''),
@@ -1091,7 +1099,8 @@ def get_user_by_username(username):
 
 def get_guest_permissions():
     """Return the set of permissions granted to non-logged-in (guest) users.
-    Stored in the schema_info table as JSON."""
+    Stored in the schema_info table as JSON.  Defaults to references + wiki."""
+    _default = {'references', 'wiki'}
     with db_transaction() as conn:
         row = conn.execute(
             "SELECT value FROM schema_info WHERE key = 'guest_permissions'"
@@ -1100,8 +1109,8 @@ def get_guest_permissions():
             try:
                 return set(json.loads(row['value']))
             except (json.JSONDecodeError, TypeError):
-                return set()
-        return set()
+                return _default
+        return _default
 
 
 def save_guest_permissions(permissions):
@@ -1312,6 +1321,8 @@ def _get_backup_config():
         'filepath_push_interval_hours': saved.get('filepath_push_interval_hours', 24),
         'last_filepath_push': saved.get('last_filepath_push', ''),
         'last_filepath_backup_files': saved.get('last_filepath_backup_files', []),
+        # Upload inclusion
+        'include_uploads': bool(saved.get('include_uploads', True)),
     }
 
 
@@ -1346,6 +1357,7 @@ def get_default_backup_config():
         'filepath_push_interval_hours': 24,
         'last_filepath_push': '',
         'last_filepath_backup_files': [],
+        'include_uploads': True,
     }
 
 
@@ -1486,6 +1498,39 @@ def backup_database(performed_by='system', manual=False):
         except OSError:
             pass
         raise RuntimeError(f'Backup verification failed for {backup_filename}')
+
+    # Bundle the .db + upload directories into a .zip archive
+    import zipfile
+    zip_filename = backup_filename.replace('.db', '.zip')
+    zip_path = os.path.join(backup_dir, zip_filename)
+    include_uploads = config.get('include_uploads', True)
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.write(backup_path, backup_filename)
+            if include_uploads:
+                for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                    upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                    if os.path.isdir(upl_dir):
+                        for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                            for fname in filenames:
+                                full_path = os.path.join(dirpath, fname)
+                                arcname = os.path.relpath(full_path, DATA_DIR)
+                                zf.write(full_path, arcname)
+    except Exception:
+        # Clean up partial zip on failure
+        try:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        except OSError:
+            pass
+        raise
+    # Remove standalone .db now that it's in the zip
+    try:
+        os.remove(backup_path)
+    except OSError:
+        pass
+    backup_filename = zip_filename
+    backup_path = zip_path
 
     file_size = os.path.getsize(backup_path)
 
@@ -1633,11 +1678,32 @@ def _verify_backup_unlocked(rotate=False):
 
     target_path = os.path.join(backup_dir, target)
     try:
-        conn = sqlite3.connect(target_path)
-        integrity = conn.execute('PRAGMA integrity_check').fetchone()[0]
-        device_count = conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
-        user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
-        conn.close()
+        # For .zip backups, extract the .db to a temp file for verification
+        if target.endswith('.zip'):
+            import zipfile
+            import tempfile as _tmpmod
+            with zipfile.ZipFile(target_path, 'r') as zf:
+                db_members = [m for m in zf.namelist() if m.endswith('.db')]
+                if not db_members:
+                    raise ValueError('No .db file found inside backup zip')
+                tmp = _tmpmod.NamedTemporaryFile(suffix='.db', delete=False)
+                tmp.write(zf.read(db_members[0]))
+                tmp.close()
+                verify_path = tmp.name
+        else:
+            verify_path = target_path
+            tmp = None
+
+        try:
+            conn = sqlite3.connect(verify_path)
+            integrity = conn.execute('PRAGMA integrity_check').fetchone()[0]
+            device_count = conn.execute('SELECT COUNT(*) FROM devices').fetchone()[0]
+            user_count = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+            conn.close()
+        finally:
+            if tmp:
+                os.unlink(tmp.name)
+
         ok = integrity == 'ok'
         if not ok:
             _audit_logger.warning('Backup verification failed: %s — %s', target, integrity)
@@ -1851,6 +1917,30 @@ def push_backups_to_git():
             zip_name = 'hp_connectivity_inventory_backup.zip'
             zip_path = os.path.join(tmpdir, zip_name)
 
+            def _add_backup_files_to_zip(zf):
+                """Add local backup .db files to the cloud zip.
+                For .zip backups, extract the .db first."""
+                import zipfile as _zf_mod
+                for bf in backup_files:
+                    bf_path = os.path.join(backup_dir, bf)
+                    if bf.endswith('.zip'):
+                        # Extract .db from the local backup zip and add it
+                        with _zf_mod.ZipFile(bf_path, 'r') as local_zf:
+                            db_members = [m for m in local_zf.namelist() if m.endswith('.db')]
+                            for db_name in db_members:
+                                zf.writestr(db_name, local_zf.read(db_name))
+                    else:
+                        zf.write(bf_path, bf)
+                if config.get('include_uploads', True):
+                    for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                        upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                        if os.path.isdir(upl_dir):
+                            for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                                for fname in filenames:
+                                    full_path = os.path.join(dirpath, fname)
+                                    arcname = os.path.relpath(full_path, DATA_DIR)
+                                    zf.write(full_path, arcname)
+
             if encryption_password:
                 # AES-256 encrypted zip — contents unreadable without the password
                 import pyzipper
@@ -1858,30 +1948,12 @@ def push_backups_to_git():
                                          compression=pyzipper.ZIP_DEFLATED,
                                          encryption=pyzipper.WZ_AES) as zf:
                     zf.setpassword(encryption_password.encode('utf-8'))
-                    for bf in backup_files:
-                        zf.write(os.path.join(backup_dir, bf), bf)
-                    for uploads_subdir in ('wiki_uploads', 'device_uploads'):
-                        upl_dir = os.path.join(DATA_DIR, uploads_subdir)
-                        if os.path.isdir(upl_dir):
-                            for dirpath, _dirnames, filenames in os.walk(upl_dir):
-                                for fname in filenames:
-                                    full_path = os.path.join(dirpath, fname)
-                                    arcname = os.path.relpath(full_path, DATA_DIR)
-                                    zf.write(full_path, arcname)
+                    _add_backup_files_to_zip(zf)
             else:
                 # Unencrypted zip (legacy / no password configured)
                 import zipfile
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for bf in backup_files:
-                        zf.write(os.path.join(backup_dir, bf), bf)
-                    for uploads_subdir in ('wiki_uploads', 'device_uploads'):
-                        upl_dir = os.path.join(DATA_DIR, uploads_subdir)
-                        if os.path.isdir(upl_dir):
-                            for dirpath, _dirnames, filenames in os.walk(upl_dir):
-                                for fname in filenames:
-                                    full_path = os.path.join(dirpath, fname)
-                                    arcname = os.path.relpath(full_path, DATA_DIR)
-                                    zf.write(full_path, arcname)
+                    _add_backup_files_to_zip(zf)
             zip_size = os.path.getsize(zip_path)
 
             subprocess.run(['git', 'add', zip_name],
@@ -1987,35 +2059,39 @@ def push_backups_to_filepath():
     tmp_path = zip_path + '.tmp'
 
     try:
+        def _add_backup_files_to_zip(zf):
+            """Add local backup .db files to the cloud zip.
+            For .zip backups, extract the .db first."""
+            import zipfile as _zf_mod
+            for bf in backup_files:
+                bf_path = os.path.join(backup_dir, bf)
+                if bf.endswith('.zip'):
+                    with _zf_mod.ZipFile(bf_path, 'r') as local_zf:
+                        db_members = [m for m in local_zf.namelist() if m.endswith('.db')]
+                        for db_name in db_members:
+                            zf.writestr(db_name, local_zf.read(db_name))
+                else:
+                    zf.write(bf_path, bf)
+            for uploads_subdir in ('wiki_uploads', 'device_uploads'):
+                upl_dir = os.path.join(DATA_DIR, uploads_subdir)
+                if os.path.isdir(upl_dir):
+                    for dirpath, _dirnames, filenames in os.walk(upl_dir):
+                        for fname in filenames:
+                            full_path = os.path.join(dirpath, fname)
+                            arcname = os.path.relpath(full_path, DATA_DIR)
+                            zf.write(full_path, arcname)
+
         if encryption_password:
             import pyzipper
             with pyzipper.AESZipFile(tmp_path, 'w',
                                      compression=pyzipper.ZIP_DEFLATED,
                                      encryption=pyzipper.WZ_AES) as zf:
                 zf.setpassword(encryption_password.encode('utf-8'))
-                for bf in backup_files:
-                    zf.write(os.path.join(backup_dir, bf), bf)
-                for uploads_subdir in ('wiki_uploads', 'device_uploads'):
-                    upl_dir = os.path.join(DATA_DIR, uploads_subdir)
-                    if os.path.isdir(upl_dir):
-                        for dirpath, _dirnames, filenames in os.walk(upl_dir):
-                            for fname in filenames:
-                                full_path = os.path.join(dirpath, fname)
-                                arcname = os.path.relpath(full_path, DATA_DIR)
-                                zf.write(full_path, arcname)
+                _add_backup_files_to_zip(zf)
         else:
             import zipfile
             with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for bf in backup_files:
-                    zf.write(os.path.join(backup_dir, bf), bf)
-                for uploads_subdir in ('wiki_uploads', 'device_uploads'):
-                    upl_dir = os.path.join(DATA_DIR, uploads_subdir)
-                    if os.path.isdir(upl_dir):
-                        for dirpath, _dirnames, filenames in os.walk(upl_dir):
-                            for fname in filenames:
-                                full_path = os.path.join(dirpath, fname)
-                                arcname = os.path.relpath(full_path, DATA_DIR)
-                                zf.write(full_path, arcname)
+                _add_backup_files_to_zip(zf)
 
         zip_size = os.path.getsize(tmp_path)
 
@@ -2050,8 +2126,8 @@ def push_backups_to_filepath():
 
 
 def _is_backup_file(filename):
-    """Check if a filename is a recognized backup file."""
-    return (filename.endswith('.db') and
+    """Check if a filename is a recognized backup file (.db or .zip)."""
+    return ((filename.endswith('.db') or filename.endswith('.zip')) and
             (filename.startswith('auto_backup_') or
              filename.startswith('manual_backup_') or
              filename.startswith('inventory_backup_')))  # legacy support
@@ -2059,7 +2135,7 @@ def _is_backup_file(filename):
 
 def _parse_backup_timestamp(filename):
     """Extract display timestamp from a backup filename."""
-    ts_part = filename.replace('.db', '')
+    ts_part = filename.replace('.db', '').replace('.zip', '')
     for prefix in ('auto_backup_', 'manual_backup_', 'inventory_backup_'):
         ts_part = ts_part.replace(prefix, '')
     # Strip _uploaded suffix from uploaded files
@@ -2252,15 +2328,42 @@ def validate_backup_compatibility(backup_path):
     return result
 
 
+def _restore_uploads_from_zip(zip_obj):
+    """Extract wiki_uploads/ and device_uploads/ from a zip into DATA_DIR.
+    Validates paths to prevent directory traversal attacks."""
+    restored = 0
+    for member in zip_obj.namelist():
+        if not (member.startswith('wiki_uploads/') or member.startswith('device_uploads/')):
+            continue
+        # Skip directory entries
+        if member.endswith('/'):
+            continue
+        # Path traversal protection
+        dest = os.path.normpath(os.path.join(DATA_DIR, member))
+        if not dest.startswith(os.path.normpath(DATA_DIR) + os.sep):
+            _audit_logger.warning('Skipping suspicious archive member: %s', member)
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with zip_obj.open(member) as src, open(dest, 'wb') as dst:
+            dst.write(src.read())
+        restored += 1
+    if restored:
+        _audit_logger.info('Restored %d upload files from backup', restored)
+    return restored
+
+
 def restore_database(filename):
     """
-    Restore the database from a backup file using SQLite online backup API.
+    Restore the database from a backup file (.db or .zip) using SQLite online backup API.
     Checkpoints WAL first, creates a safety backup, validates, then restores.
+    For .zip backups, also restores wiki_uploads and device_uploads.
     Rolls back to safety backup if restore fails.
     Returns dict with restore metadata including compatibility warnings.
     """
     import time as _time
     start_time = _time.monotonic()
+
+    import tempfile as _tempfile
 
     backup_dir = _get_backup_dir()
     if not _is_backup_file(filename) or '..' in filename:
@@ -2269,110 +2372,142 @@ def restore_database(filename):
     if not os.path.isfile(backup_path):
         raise FileNotFoundError(f'Backup file not found: {filename}')
 
-    # Run backwards-compatibility validation on the backup file
-    compat = validate_backup_compatibility(backup_path)
-    if not compat['compatible']:
-        error_detail = '; '.join(compat['errors'])
-        raise ValueError(f'Backup is not compatible: {error_detail}')
+    # For .zip backups, extract the .db to a temp dir for validation/restore
+    zip_path_for_uploads = None
+    if filename.endswith('.zip'):
+        import zipfile
+        _tmpdir = _tempfile.mkdtemp(prefix='inv_restore_')
+        try:
+            with zipfile.ZipFile(backup_path, 'r') as zf:
+                db_members = [m for m in zf.namelist() if m.endswith('.db')]
+                if not db_members:
+                    raise ValueError('No .db file found inside backup zip.')
+                zf.extract(db_members[0], _tmpdir)
+                db_restore_path = os.path.join(_tmpdir, db_members[0])
+        except Exception:
+            import shutil
+            shutil.rmtree(_tmpdir, ignore_errors=True)
+            raise
+        zip_path_for_uploads = backup_path
+    else:
+        _tmpdir = None
+        db_restore_path = backup_path
 
-    if compat['warnings']:
-        for w in compat['warnings']:
-            _audit_logger.warning('Restore compatibility warning for %s: %s', filename, w)
-
-    _audit_logger.info(
-        'Restore source validated: %s (integrity=ok, schema_v%d, app=%s, %d devices, %d users%s)',
-        filename, compat['schema_version'], compat['app_version'],
-        compat['device_count'], compat['user_count'],
-        f', {len(compat["warnings"])} warnings' if compat['warnings'] else ''
-    )
-
-    # Checkpoint WAL before restore to flush any pending writes
-    checkpoint_wal()
-
-    # Create a safety backup of the current DB before overwriting
-    safety_backup = backup_database(performed_by='pre-restore-safety', manual=True)
-
-    # Restore: copy backup over the live database using the backup API
     try:
-        src = sqlite3.connect(backup_path)
-        dst = sqlite3.connect(DB_PATH)
+        # Run backwards-compatibility validation on the backup file
+        compat = validate_backup_compatibility(db_restore_path)
+        if not compat['compatible']:
+            error_detail = '; '.join(compat['errors'])
+            raise ValueError(f'Backup is not compatible: {error_detail}')
+
+        if compat['warnings']:
+            for w in compat['warnings']:
+                _audit_logger.warning('Restore compatibility warning for %s: %s', filename, w)
+
+        _audit_logger.info(
+            'Restore source validated: %s (integrity=ok, schema_v%d, app=%s, %d devices, %d users%s)',
+            filename, compat['schema_version'], compat['app_version'],
+            compat['device_count'], compat['user_count'],
+            f', {len(compat["warnings"])} warnings' if compat['warnings'] else ''
+        )
+
+        # Checkpoint WAL before restore to flush any pending writes
+        checkpoint_wal()
+
+        # Create a safety backup of the current DB before overwriting
+        safety_backup = backup_database(performed_by='pre-restore-safety', manual=True)
+
+        # Restore: copy backup over the live database using the backup API
         try:
-            src.backup(dst)
-        finally:
-            dst.close()
-            src.close()
-
-        # Verify restored database with full compatibility validation
-        post_compat = validate_backup_compatibility(DB_PATH)
-        if not post_compat['compatible']:
-            error_detail = '; '.join(post_compat['errors'])
-            raise RuntimeError(f'Post-restore validation failed: {error_detail}')
-        if post_compat.get('warnings'):
-            for w in post_compat['warnings']:
-                _audit_logger.warning('Post-restore validation warning: %s', w)
-
-    except Exception as e:
-        # Rollback: restore from safety backup
-        _audit_logger.error('Restore from %s failed, rolling back to safety backup %s: %s\n%s',
-                            filename, safety_backup['filename'], e, traceback.format_exc())
-        try:
-            safety_path = os.path.join(backup_dir, safety_backup['filename'])
-            rollback_src = sqlite3.connect(safety_path)
-            rollback_dst = sqlite3.connect(DB_PATH)
+            src = sqlite3.connect(db_restore_path)
+            dst = sqlite3.connect(DB_PATH)
             try:
-                rollback_src.backup(rollback_dst)
+                src.backup(dst)
             finally:
-                rollback_dst.close()
-                rollback_src.close()
-            # Verify the rollback succeeded
-            rollback_check = sqlite3.connect(DB_PATH)
+                dst.close()
+                src.close()
+
+            # Verify restored database with full compatibility validation
+            post_compat = validate_backup_compatibility(DB_PATH)
+            if not post_compat['compatible']:
+                error_detail = '; '.join(post_compat['errors'])
+                raise RuntimeError(f'Post-restore validation failed: {error_detail}')
+            if post_compat.get('warnings'):
+                for w in post_compat['warnings']:
+                    _audit_logger.warning('Post-restore validation warning: %s', w)
+
+        except Exception as e:
+            # Rollback: restore from safety backup
+            _audit_logger.error('Restore from %s failed, rolling back to safety backup %s: %s\n%s',
+                                filename, safety_backup['filename'], e, traceback.format_exc())
             try:
-                rb_integrity = rollback_check.execute('PRAGMA integrity_check').fetchone()[0]
-                if rb_integrity != 'ok':
-                    raise RuntimeError(f'Rollback integrity check failed: {rb_integrity}')
-            finally:
-                rollback_check.close()
-            _audit_logger.info('Rollback to safety backup %s succeeded', safety_backup['filename'])
-        except Exception as rollback_err:
-            _audit_logger.critical(
-                'ROLLBACK FAILED after restore failure: %s — '
-                'DATABASE MAY BE CORRUPT. Safety backup at: %s',
-                rollback_err, os.path.join(backup_dir, safety_backup['filename']))
-            raise RuntimeError(
-                f'CRITICAL: Database restore failed and rollback also failed. '
-                f'Database may be corrupt. Safety backup saved at: '
-                f'{os.path.join(backup_dir, safety_backup["filename"])}'
-            ) from rollback_err
-        raise
+                safety_path = os.path.join(backup_dir, safety_backup['filename'])
+                rollback_src = sqlite3.connect(safety_path)
+                rollback_dst = sqlite3.connect(DB_PATH)
+                try:
+                    rollback_src.backup(rollback_dst)
+                finally:
+                    rollback_dst.close()
+                    rollback_src.close()
+                # Verify the rollback succeeded
+                rollback_check = sqlite3.connect(DB_PATH)
+                try:
+                    rb_integrity = rollback_check.execute('PRAGMA integrity_check').fetchone()[0]
+                    if rb_integrity != 'ok':
+                        raise RuntimeError(f'Rollback integrity check failed: {rb_integrity}')
+                finally:
+                    rollback_check.close()
+                _audit_logger.info('Rollback to safety backup %s succeeded', safety_backup['filename'])
+            except Exception as rollback_err:
+                _audit_logger.critical(
+                    'ROLLBACK FAILED after restore failure: %s — '
+                    'DATABASE MAY BE CORRUPT. Safety backup at: %s',
+                    rollback_err, os.path.join(backup_dir, safety_backup['filename']))
+                raise RuntimeError(
+                    f'CRITICAL: Database restore failed and rollback also failed. '
+                    f'Database may be corrupt. Safety backup saved at: '
+                    f'{os.path.join(backup_dir, safety_backup["filename"])}'
+                ) from rollback_err
+            raise
 
-    # Re-run init_db to apply any migrations the restored DB may be missing
-    init_db()
+        # Restore upload files from the zip if present
+        if zip_path_for_uploads:
+            import zipfile
+            with zipfile.ZipFile(zip_path_for_uploads, 'r') as zf:
+                _restore_uploads_from_zip(zf)
 
-    # Update hash so next scheduled backup detects the restored content
-    config = _get_backup_config()
-    config['last_backup_hash'] = _compute_db_hash()
-    save_backup_config(config)
+        # Re-run init_db to apply any migrations the restored DB may be missing
+        init_db()
 
-    # Record successful verification after restore
-    _save_verify_result({
-        'ok': True,
-        'result': 'ok',
-        'filename': filename,
-        'device_count': compat.get('device_count', 0),
-        'user_count': compat.get('user_count', 0),
-    })
+        # Update hash so next scheduled backup detects the restored content
+        config = _get_backup_config()
+        config['last_backup_hash'] = _compute_db_hash()
+        save_backup_config(config)
 
-    elapsed_ms = round((_time.monotonic() - start_time) * 1000)
-    _audit_logger.info('Database restored from %s (safety=%s, %dms)',
-                       filename, safety_backup['filename'], elapsed_ms)
+        # Record successful verification after restore
+        _save_verify_result({
+            'ok': True,
+            'result': 'ok',
+            'filename': filename,
+            'device_count': compat.get('device_count', 0),
+            'user_count': compat.get('user_count', 0),
+        })
 
-    return {
-        'restored_from': filename,
-        'safety_backup': safety_backup['filename'],
-        'warnings': compat.get('warnings', []),
-        'schema_version': compat.get('schema_version', 0),
-        'app_version': compat.get('app_version', 'unknown'),
-    }
+        elapsed_ms = round((_time.monotonic() - start_time) * 1000)
+        _audit_logger.info('Database restored from %s (safety=%s, %dms)',
+                           filename, safety_backup['filename'], elapsed_ms)
+
+        return {
+            'restored_from': filename,
+            'safety_backup': safety_backup['filename'],
+            'warnings': compat.get('warnings', []),
+            'schema_version': compat.get('schema_version', 0),
+            'app_version': compat.get('app_version', 'unknown'),
+        }
+    finally:
+        if _tmpdir:
+            import shutil
+            shutil.rmtree(_tmpdir, ignore_errors=True)
 
 
 def delete_backup(filename):
@@ -2608,6 +2743,20 @@ def restore_from_git(filename):
                 _audit_logger.critical('ROLLBACK FAILED after git restore failure: %s', rb_err)
             raise
 
+        # Restore upload files from the backup zip
+        try:
+            if encryption_password:
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    _restore_uploads_from_zip(zf)
+            else:
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    _restore_uploads_from_zip(zf)
+        except Exception as e:
+            _audit_logger.warning('Upload restore from git backup failed (DB restore OK): %s', e)
+
         init_db()
 
         # Update hash so next scheduled backup detects the restored content
@@ -2767,6 +2916,20 @@ def restore_from_filepath(filename):
             except Exception as rb_err:
                 _audit_logger.critical('ROLLBACK FAILED after filepath restore failure: %s', rb_err)
             raise
+
+        # Restore upload files from the backup zip
+        try:
+            if encryption_password:
+                import pyzipper
+                with pyzipper.AESZipFile(zip_path, 'r') as zf:
+                    zf.setpassword(encryption_password.encode('utf-8'))
+                    _restore_uploads_from_zip(zf)
+            else:
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    _restore_uploads_from_zip(zf)
+        except Exception as e:
+            _audit_logger.warning('Upload restore from filepath backup failed (DB restore OK): %s', e)
 
         init_db()
         cfg = _get_backup_config()

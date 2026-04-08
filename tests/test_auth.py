@@ -164,7 +164,7 @@ class TestAdminPasswordRecovery(BaseTestCase):
         resp = self.client.post('/login', data={
             'username': 'admin', 'password': 'weblogin',
         }, follow_redirects=True)
-        self.assertIn(b'Dashboard', resp.data)
+        self.assertIn(b'Barcode Scanner', resp.data)
 
 
 class TestUserManagementEdgeCases(BaseTestCase):
@@ -566,10 +566,10 @@ class TestPermissionModel(BaseTestCase):
 class TestGuestPermissions(BaseTestCase):
     """Test guest/public user permissions system."""
 
-    def test_guest_permissions_default_empty(self):
-        """Guest permissions should be empty by default."""
+    def test_guest_permissions_default_references_wiki(self):
+        """Guest permissions should default to references and wiki."""
         perms = db.get_guest_permissions()
-        self.assertEqual(perms, set())
+        self.assertEqual(perms, {'references', 'wiki'})
 
     def test_save_and_load_guest_permissions(self):
         """Guest permissions round-trip through database."""

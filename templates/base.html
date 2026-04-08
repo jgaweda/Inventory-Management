@@ -300,10 +300,6 @@
             </div>
         </div>
 
-        <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Dashboard
-        </a>
         <a href="{{ url_for('device_list') }}" class="nav-link {% if request.endpoint in ['device_list','device_detail','device_edit','device_add'] %}active{% endif %}">
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
             Inventory
@@ -334,6 +330,17 @@
 
         <!-- Version + user info at bottom of sidebar -->
         <div style="margin-top: auto;">
+        {% if backup_health and not backup_health.healthy %}
+        <div style="margin: 0 12px 4px; padding: 8px 12px; border-radius: 8px; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); cursor: pointer; text-align: center; transition: opacity 0.2s;"
+             onclick="window.location.href='{{ url_for('backup_list') }}'" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+            {% for issue in backup_health.issues %}
+            <div style="font-size: 11px; font-weight: 600; color: #f59e0b; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px;{% if not loop.first %} margin-top: 4px;{% endif %}">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                {{ issue }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if current_user and has_permission('settings') %}
         <div id="updateBanner" style="display: none; margin: 0 12px 4px; padding: 8px 12px; border-radius: 8px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25); cursor: pointer; text-align: center; transition: opacity 0.2s;"
              onclick="window.location.href='{{ url_for('account') }}?check_updates=1'" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">

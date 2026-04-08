@@ -243,19 +243,18 @@ class TestLabelRoutes(BaseTestCase):
         self.assertIn('image/png', resp.content_type)
 
 class TestHealthAndDashboard(BaseTestCase):
-    """Functional tests for dashboard and health."""
+    """Functional tests for scan page (formerly dashboard) and health."""
 
-    def test_dashboard_shows_categories(self):
-        """Dashboard should show category breakdown."""
-        db.add_device({'name': 'Cat Test', 'category': 'Router'})
+    def test_root_redirects_to_scan(self):
+        """Root URL should redirect to scan page."""
         resp = self.client.get('/')
-        self.assertIn(b'Router', resp.data)
-        self.assertIn(b'By Category', resp.data)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/scan', resp.headers['Location'])
 
-    def test_dashboard_shows_recent_activity(self):
-        """Dashboard should show recent activity."""
+    def test_scan_shows_recent_activity(self):
+        """Scan page should show recent activity."""
         db.add_device({'name': 'Activity Test'})
-        resp = self.client.get('/')
+        resp = self.client.get('/scan')
         self.assertIn(b'Recent Activity', resp.data)
         self.assertIn(b'Activity Test', resp.data)
 
@@ -295,11 +294,11 @@ class TestDashboardStats(BaseTestCase):
         self.assertIn('Printer', cat_names)
         self.assertIn('Router/AP', cat_names)
 
-    def test_dashboard_page_loads_with_data(self):
+    def test_scan_page_loads_with_data(self):
         db.add_device({'name': 'Dashboard Device'})
-        resp = self.client.get('/')
+        resp = self.client.get('/scan')
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(b'Dashboard', resp.data)
+        self.assertIn(b'Barcode Scanner', resp.data)
 
 class TestCSVImport(BaseTestCase):
     """Test CSV import for product references."""
@@ -635,9 +634,9 @@ class TestLaserBarcode(BaseTestCase):
 class TestPublicRoutes(BaseTestCase):
     """Test that public routes work without auth."""
 
-    def test_dashboard(self):
+    def test_dashboard_redirects_to_scan(self):
         resp = self.client.get('/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 302)
 
     def test_device_list(self):
         resp = self.client.get('/devices')

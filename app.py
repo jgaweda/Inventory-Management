@@ -265,6 +265,7 @@ def inject_globals():
         'current_user': g.user,
         'has_permission': has_permission,
         'app_version': _app_version,
+        'backup_health': db.get_backup_health(),
     }
 
 # ---------------------------------------------------------------------------
@@ -342,9 +343,7 @@ def health():
 
 @app.route('/')
 def dashboard():
-    stats = db.get_stats()
-    health = db.get_backup_health()
-    return render_template('dashboard.html', stats=stats, health=health)
+    return redirect(url_for('scan_page'))
 
 # ---------------------------------------------------------------------------
 # Device list (public)
@@ -772,7 +771,8 @@ def label_sheet():
 @app.route('/scan')
 def scan_page():
     app_logger.debug('Scan page accessed: ip=%s', request.remote_addr)
-    return render_template('scan.html')
+    activity = db.get_audit_log(limit=15)
+    return render_template('scan.html', recent_activity=activity)
 
 
 @app.route('/api/lookup')
@@ -1722,20 +1722,25 @@ def backup_create():
 @app.route('/backups/upload', methods=['POST'])
 @permission_required('backups')
 def backup_upload():
-    """Restore database from an uploaded .db file."""
+    """Restore database from an uploaded .db or .zip backup file."""
     MAX_UPLOAD_MB = 500
     file = request.files.get('backup_file')
     if not file or not file.filename:
         flash('No file selected.', 'error')
         return redirect(url_for('backup_list'))
-    if not file.filename.endswith('.db'):
-        flash('Invalid file type. Please upload a .db file.', 'error')
+    is_zip = file.filename.endswith('.zip')
+    is_db = file.filename.endswith('.db')
+    if not is_zip and not is_db:
+        flash('Invalid file type. Please upload a .db or .zip backup file.', 'error')
         return redirect(url_for('backup_list'))
-    # Validate SQLite magic bytes before saving to disk
+    # Validate magic bytes before saving to disk
     header = file.read(16)
     file.seek(0)
-    if header[:16] != b'SQLite format 3\x00':
+    if is_db and header[:16] != b'SQLite format 3\x00':
         flash('Invalid file: not a valid SQLite database.', 'error')
+        return redirect(url_for('backup_list'))
+    if is_zip and header[:4] != b'PK\x03\x04':
+        flash('Invalid file: not a valid ZIP archive.', 'error')
         return redirect(url_for('backup_list'))
     # Check file size (read content length or measure stream)
     file.seek(0, 2)  # seek to end
@@ -1748,20 +1753,22 @@ def backup_upload():
         # Save uploaded file to backup dir
         backup_dir = db._get_backup_dir()
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        dest_filename = f'manual_backup_{timestamp}_uploaded.db'
+        ext = '.zip' if is_zip else '.db'
+        dest_filename = f'manual_backup_{timestamp}_uploaded{ext}'
         dest_path = os.path.join(backup_dir, dest_filename)
         file.save(dest_path)
 
-        # Run compatibility check before restore
-        compat = db.validate_backup_compatibility(dest_path)
-        if not compat['compatible']:
-            error_detail = '; '.join(compat['errors'])
-            flash(f'Backup is not compatible: {error_detail}', 'error')
-            try:
-                os.remove(dest_path)
-            except OSError:
-                pass
-            return redirect(url_for('backup_list'))
+        # For .db files, run compatibility check before restore
+        if is_db:
+            compat = db.validate_backup_compatibility(dest_path)
+            if not compat['compatible']:
+                error_detail = '; '.join(compat['errors'])
+                flash(f'Backup is not compatible: {error_detail}', 'error')
+                try:
+                    os.remove(dest_path)
+                except OSError:
+                    pass
+                return redirect(url_for('backup_list'))
 
         # Restore from the uploaded file
         result = db.restore_database(dest_filename)
@@ -1807,6 +1814,7 @@ def backup_config():
         config['max_backups'] = 5
 
     config['backup_enabled'] = '1' in request.form.getlist('backup_enabled')
+    config['include_uploads'] = '1' in request.form.getlist('include_uploads')
     try:
         config['backup_interval_hours'] = max(0.1, float(request.form.get('backup_interval_hours', 24)))
     except (ValueError, TypeError):

@@ -5,6 +5,7 @@ class TestProductReferenceAPI(BaseTestCase):
     """Test inline edit API for product references."""
 
     def test_inline_edit_requires_permission(self):
+        db.save_guest_permissions(set())  # clear guest defaults for this test
         resp = self.client.patch('/api/reference/1',
                                  data=json.dumps({'codename': 'Test'}),
                                  content_type='application/json')
@@ -420,7 +421,8 @@ class TestSeedImportMode(BaseTestCase):
         self.assertEqual(len(attachments), 1)  # still just the original
 
     def test_seed_mode_requires_login(self):
-        """Seed mode requires authentication."""
+        """Seed mode requires authentication when guest has no permissions."""
+        db.save_guest_permissions(set())  # clear guest defaults for this test
         resp = self.client.post('/reference/seed')
         self.assertEqual(resp.status_code, 302)
         self.assertIn('/login', resp.headers['Location'])

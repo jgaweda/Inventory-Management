@@ -128,15 +128,42 @@
     </div>
 </div>
 
-<!-- Scan History -->
+<!-- Recent Activity -->
 <div class="card" style="cursor: default;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div class="section-label" style="margin-bottom:0;">Scan History (This Session)</div>
-        <button class="btn btn-secondary btn-sm" style="font-size:11px; padding:4px 10px;" id="clearHistory" onclick="clearScanHistory()" >Clear</button>
+    <div style="margin-bottom: 16px;">
+        <div class="section-label" style="margin-bottom: 0;">Recent Activity</div>
     </div>
-    <div id="scanHistory">
-        <p style="color: var(--text-muted); font-size: 13px;" id="noScans">No scans yet this session.</p>
+    <div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Device</th>
+                <th>Action</th>
+                <th>By</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in recent_activity %}
+            <tr>
+                <td class="font-mono" style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">{{ entry.timestamp }}</td>
+                <td>
+                    <a href="{{ url_for('device_detail', device_id=entry.device_id) }}" style="color: var(--accent-blue); text-decoration: none;">
+                        {{ entry.device_name or entry.device_id }}
+                    </a>
+                </td>
+                <td><span class="action-badge action-{{ entry.action }}">{{ entry.action|replace('_', ' ')|title }}</span></td>
+                <td style="color: var(--text-secondary); font-size: 13px;">{{ entry.performed_by }}</td>
+                <td style="color: var(--text-muted); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ entry.details }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
     </div>
+    {% if not recent_activity %}
+    <p style="color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px;">No activity yet.</p>
+    {% endif %}
 </div>
 
 <script>
@@ -190,12 +217,10 @@
                     window.location.href = '/devices/' + data.device_id;
                 } else {
                     showUsbResult(barcode, data);
-                    addToHistory(barcode, data);
                 }
             })
             .catch(() => {
                 showUsbResult(barcode, { found: false });
-                addToHistory(barcode, { found: false });
             });
     }
 
@@ -319,13 +344,11 @@
                 } else {
                     document.getElementById('scanAnother').style.display = 'flex';
                     showCameraResult(decodedText, data);
-                    addToHistory(decodedText, data);
                 }
             })
             .catch(function() {
                 document.getElementById('scanAnother').style.display = 'flex';
                 showCameraResult(decodedText, { found: false });
-                addToHistory(decodedText, { found: false });
             });
     }
 
@@ -353,40 +376,5 @@
         html5QrCode.resume();
     }
 
-    // --- Scan History ---
-    const scanHistory = [];
-
-    function addToHistory(barcode, data) {
-        document.getElementById('noScans').style.display = 'none';
-        const historyDiv = document.getElementById('scanHistory');
-        const time = new Date().toLocaleTimeString();
-        const entry = document.createElement('div');
-        entry.style.cssText = 'display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-color);';
-
-        if (data.found) {
-            entry.innerHTML = `
-                <span style="color: var(--accent-green); font-weight: 600;">✓</span>
-                <span class="font-mono" style="font-size: 12px; color: var(--text-muted); width: 70px;">${time}</span>
-                <a href="/devices/${data.device_id}" style="color: var(--accent-blue); text-decoration: none; font-size: 14px;">${data.name}</a>
-                <span class="font-mono" style="font-size: 12px; color: var(--text-muted);">${barcode}</span>`;
-        } else {
-            entry.innerHTML = `
-                <span style="color: var(--accent-red); font-weight: 600;">✗</span>
-                <span class="font-mono" style="font-size: 12px; color: var(--text-muted); width: 70px;">${time}</span>
-                <span style="color: var(--text-secondary); font-size: 14px;">Not found</span>
-                <span class="font-mono" style="font-size: 12px; color: var(--text-muted);">${barcode}</span>`;
-        }
-
-        historyDiv.insertBefore(entry, historyDiv.firstChild.nextSibling || null);
-    }
-
-    function clearScanHistory() {
-        const historyDiv = document.getElementById('scanHistory');
-        // Remove all entries but keep the "no scans" message
-        while (historyDiv.children.length > 1) {
-            historyDiv.removeChild(historyDiv.lastChild);
-        }
-        document.getElementById('noScans').style.display = 'block';
-    }
 </script>
 {% endblock %}

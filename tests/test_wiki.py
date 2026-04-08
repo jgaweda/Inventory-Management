@@ -21,6 +21,7 @@ class TestWikiAttachments(BaseTestCase):
         self.assertIn(b'Product not found', resp.data)
 
     def test_wiki_save_requires_login(self):
+        db.save_guest_permissions(set())  # clear guest defaults for this test
         ref_id = self._create_product()
         resp = self.client.post(f'/wiki/{ref_id}/save', data={'content': 'notes'})
         self.assertEqual(resp.status_code, 302)
@@ -37,9 +38,10 @@ class TestWikiAttachments(BaseTestCase):
         self.assertEqual(wiki['content'], 'Test notes here')
         self.assertEqual(wiki['updated_by'], 'admin')
 
-    def test_upload_requires_admin(self):
+    def test_upload_requires_permission(self):
+        db.save_guest_permissions(set())  # clear guest defaults for this test
         ref_id = self._create_product()
-        # Not logged in
+        # Not logged in and no guest permissions
         resp = self.client.post(f'/wiki/{ref_id}/upload',
                                 data={}, content_type='multipart/form-data')
         self.assertEqual(resp.status_code, 302)
@@ -137,11 +139,23 @@ class TestWikiAttachments(BaseTestCase):
                          data=data, content_type='multipart/form-data')
         # Log out
         self.client.get('/logout')
-        # View wiki page
+        # View wiki page (guests have wiki permission by default, so upload area is visible)
         resp = self.client.get(f'/wiki/{ref_id}')
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b'readme.txt', resp.data)
-        # Should NOT see upload area
+
+    def test_attachments_no_upload_without_permission(self):
+        """Non-logged-in users without wiki permission should not see upload area."""
+        db.save_guest_permissions(set())  # clear guest defaults
+        ref_id = self._create_product()
+        self.login_admin()
+        import io
+        data = {'attachment': (io.BytesIO(b'public file'), 'readme.txt')}
+        self.client.post(f'/wiki/{ref_id}/upload',
+                         data=data, content_type='multipart/form-data')
+        self.client.get('/logout')
+        resp = self.client.get(f'/wiki/{ref_id}')
+        self.assertEqual(resp.status_code, 200)
         self.assertNotIn(b'Click to upload', resp.data)
 
 

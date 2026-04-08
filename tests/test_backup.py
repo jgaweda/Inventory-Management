@@ -161,14 +161,14 @@ class TestBackupConfigRoutes(BaseTestCase):
     def test_upload_backup(self):
         """Upload a backup file and restore."""
         self.login_admin()
-        # Create a valid backup to upload
+        # Create a valid backup to upload (now produces .zip)
         result = db.backup_database(performed_by='test', manual=True)
         backup_path = os.path.join(db._get_backup_dir(), result['filename'])
         with open(backup_path, 'rb') as f:
             backup_data = f.read()
         from io import BytesIO
         resp = self.client.post('/backups/upload', data={
-            'backup_file': (BytesIO(backup_data), 'uploaded_backup.db'),
+            'backup_file': (BytesIO(backup_data), 'uploaded_backup.zip'),
         }, content_type='multipart/form-data', follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
 
@@ -242,7 +242,7 @@ class TestBackupImprovements(BaseTestCase):
         # Create two backups with different filenames
         r1 = db.backup_database(performed_by='test', manual=True)
         src = os.path.join(backup_dir, r1['filename'])
-        second_name = 'manual_backup_20250101_000000.db'
+        second_name = 'manual_backup_20250101_000000.zip'
         shutil.copy2(src, os.path.join(backup_dir, second_name))
         # Verify we have exactly 2 backup files
         backups = [f for f in os.listdir(backup_dir) if db._is_backup_file(f)]
@@ -292,7 +292,7 @@ class TestBackupImprovements(BaseTestCase):
         with open(backup_path, 'rb') as f:
             backup_data = f.read()
         resp = self.client.post('/backups/upload', data={
-            'backup_file': (BytesIO(backup_data), 'valid.db'),
+            'backup_file': (BytesIO(backup_data), 'valid.zip'),
         }, content_type='multipart/form-data', follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         # Should succeed since it's small and valid
@@ -973,8 +973,8 @@ class TestBackupRobustness(BaseTestCase):
         """Backup filenames include microseconds for uniqueness."""
         db.add_device({'name': 'Micro Test'})
         result = db.backup_database(performed_by='test', manual=True)
-        # Filename format: manual_backup_YYYYMMDD_HHMMSS_FFFFFF.db
-        parts = result['filename'].replace('.db', '').split('_')
+        # Filename format: manual_backup_YYYYMMDD_HHMMSS_FFFFFF.zip
+        parts = result['filename'].replace('.zip', '').replace('.db', '').split('_')
         # Should have: manual, backup, date, time, microseconds
         self.assertGreaterEqual(len(parts), 5,
                                 f'Expected microseconds in filename: {result["filename"]}')

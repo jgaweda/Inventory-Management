@@ -55,6 +55,14 @@
                            style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                        <input type="hidden" name="include_uploads" value="0">
+                        <input type="checkbox" name="include_uploads" value="1" {{ 'checked' if config.include_uploads }}
+                               style="width: 16px; height: 16px;">
+                        Include wiki &amp; device uploads in backups
+                    </label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; min-width: 120px;">
                         <input type="hidden" name="backup_enabled" value="0">
                         <input type="checkbox" name="backup_enabled" value="1" {{ 'checked' if config.backup_enabled }}
