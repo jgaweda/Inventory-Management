@@ -170,7 +170,13 @@
             {% if value %}
             <div>
                 <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 3px;">{{ label }}</div>
-                <div style="font-size: 14px; color: var(--text-primary);">{{ value }}</div>
+                <div style="font-size: 14px; color: var(--text-primary);">
+                    {% if label == 'Predecessor' and predecessor_ref_id %}
+                    <a href="{{ url_for('product_wiki', ref_id=predecessor_ref_id) }}" style="color: var(--accent-color); text-decoration: none;">{{ value }}</a>
+                    {% else %}
+                    {{ value }}
+                    {% endif %}
+                </div>
             </div>
             {% endif %}
             {% endfor %}
