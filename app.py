@@ -1787,7 +1787,16 @@ def backup_config():
 
     # Git push settings
     config['git_enabled'] = '1' in request.form.getlist('git_enabled')
-    config['git_repo'] = request.form.get('git_repo', '').strip()
+    git_repo = request.form.get('git_repo', '').strip()
+    if git_repo:
+        # Basic sanity check: must look like a git URL or path
+        valid_repo = (git_repo.startswith(('https://', 'http://', 'git@', 'ssh://'))
+                      or git_repo.endswith('.git')
+                      or '/' in git_repo)
+        if not valid_repo:
+            flash('Git repository must be a valid URL (https://...) or SSH path (git@...).', 'error')
+            return redirect(url_for('backup_list'))
+    config['git_repo'] = git_repo
     config['git_branch'] = request.form.get('git_branch', 'backups').strip() or 'backups'
     config['git_token'] = request.form.get('git_token', '').strip()
     config['git_encryption_password'] = request.form.get('git_encryption_password', '').strip()
@@ -1796,11 +1805,26 @@ def backup_config():
     except (ValueError, TypeError):
         config['git_push_interval_hours'] = 24
 
-    # File path / SharePoint backup settings
+    # File path backup settings
     config['filepath_enabled'] = '1' in request.form.getlist('filepath_enabled')
     filepath_path = request.form.get('filepath_path', '').strip()
     if filepath_path:
+        if not os.path.isabs(filepath_path) and not filepath_path.startswith('\\\\'):
+            flash('File path must be an absolute path (e.g. /mnt/backup or \\\\server\\share).', 'error')
+            return redirect(url_for('backup_list'))
+        # Try to create and validate writability
+        try:
+            os.makedirs(filepath_path, exist_ok=True)
+        except OSError as e:
+            flash(f'Cannot access file path: {e}', 'error')
+            return redirect(url_for('backup_list'))
+        if not os.access(filepath_path, os.W_OK):
+            flash(f'File path is not writable: {filepath_path}', 'error')
+            return redirect(url_for('backup_list'))
         config['filepath_path'] = filepath_path
+    elif not filepath_path and config.get('filepath_path'):
+        # Cleared the path — disable if it was set
+        config['filepath_path'] = ''
     config['filepath_encryption_password'] = request.form.get('filepath_encryption_password', '').strip()
     try:
         config['filepath_push_interval_hours'] = max(0.1, float(request.form.get('filepath_push_interval_hours', 24)))
@@ -1900,6 +1924,47 @@ def backup_config_reset():
     app_logger.info('Backup config reset to defaults by=%s', current_username())
     flash('Backup configuration reset to defaults.', 'success')
     return redirect(url_for('backup_list'))
+
+
+@app.route('/backups/browse-directory')
+@permission_required('backups')
+def backup_browse_directory():
+    """API: list sub-directories at a given path for the folder picker."""
+    path = request.args.get('path', '').strip()
+
+    # Default starting points by platform
+    if not path:
+        if sys.platform == 'win32':
+            # List drive letters on Windows
+            import string
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f'{letter}:\\'
+                if os.path.isdir(drive):
+                    drives.append({'name': drive, 'path': drive})
+            return jsonify({'ok': True, 'path': '', 'parent': '', 'entries': drives})
+        else:
+            path = '/'
+
+    # Normalize and resolve
+    path = os.path.normpath(path)
+    if not os.path.isabs(path):
+        return jsonify({'ok': False, 'error': 'Path must be absolute.'})
+    if not os.path.isdir(path):
+        return jsonify({'ok': False, 'error': f'Directory not found: {path}'})
+
+    try:
+        entries = []
+        for name in sorted(os.listdir(path)):
+            full = os.path.join(path, name)
+            if os.path.isdir(full) and not name.startswith('.'):
+                entries.append({'name': name, 'path': full})
+        parent = os.path.dirname(path) if path != os.path.dirname(path) else ''
+        return jsonify({'ok': True, 'path': path, 'parent': parent, 'entries': entries})
+    except PermissionError:
+        return jsonify({'ok': False, 'error': f'Permission denied: {path}'})
+    except OSError as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 
 @app.route('/backups/push', methods=['POST'])
