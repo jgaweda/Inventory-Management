@@ -217,6 +217,19 @@ def init_db():
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_device_notes_device ON device_notes(device_id)')
 
+        # Wiki notes table — anyone with wiki permission can add notes
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS wiki_notes (
+                note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ref_id INTEGER NOT NULL,
+                author TEXT NOT NULL DEFAULT 'Anonymous',
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ref_id) REFERENCES product_reference(ref_id)
+            )
+        ''')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_wiki_notes_ref ON wiki_notes(ref_id)')
+
         # Device attachments table — anyone can upload, admin can delete
         conn.execute('''
             CREATE TABLE IF NOT EXISTS device_attachments (
@@ -3235,6 +3248,35 @@ def delete_wiki_attachment(attachment_id):
     """Delete an attachment record."""
     with db_transaction() as conn:
         conn.execute('DELETE FROM wiki_attachments WHERE attachment_id = ?', (attachment_id,))
+
+
+def get_wiki_notes(ref_id):
+    """Return all notes for a product wiki, newest first."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            'SELECT * FROM wiki_notes WHERE ref_id = ? ORDER BY created_at DESC',
+            (ref_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_wiki_note(ref_id, author, content):
+    """Add a note to a product wiki. Returns the note_id."""
+    with db_transaction() as conn:
+        cursor = conn.execute(
+            'INSERT INTO wiki_notes (ref_id, author, content) VALUES (?, ?, ?)',
+            (ref_id, author, content)
+        )
+        return cursor.lastrowid
+
+
+def delete_wiki_note(note_id):
+    """Delete a wiki note by ID."""
+    with db_transaction() as conn:
+        conn.execute('DELETE FROM wiki_notes WHERE note_id = ?', (note_id,))
 
 
 def convert_png_uploads_to_jpg(uploads_base_dir=None):

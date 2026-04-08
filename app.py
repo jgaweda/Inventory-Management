@@ -2777,10 +2777,12 @@ def product_wiki(ref_id):
             if r['codename'] == ref['predecessor']:
                 predecessor_ref_id = r['ref_id']
                 break
+    wiki_notes = db.get_wiki_notes(ref_id)
     return render_template('product_wiki.html', ref=ref, content=content,
                            updated_by=updated_by, updated_at=updated_at,
                            attachments=attachments,
-                           predecessor_ref_id=predecessor_ref_id)
+                           predecessor_ref_id=predecessor_ref_id,
+                           wiki_notes=wiki_notes)
 
 
 @app.route('/wiki/<int:ref_id>/save', methods=['POST'])
@@ -2889,6 +2891,35 @@ def wiki_delete_attachment(attachment_id):
                     attachment_id, att['original_name'], att['ref_id'], current_username())
     flash(f'Deleted {att["original_name"]}.', 'success')
     return redirect(url_for('product_wiki', ref_id=att['ref_id']))
+
+
+@app.route('/wiki/<int:ref_id>/notes', methods=['POST'])
+@permission_required('wiki')
+def add_wiki_note(ref_id):
+    """Add a note to a product wiki."""
+    content = request.form.get('note_content', '').strip()
+    if not content:
+        flash('Note cannot be empty.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+    if len(content) > 2000:
+        flash('Note is too long (max 2000 characters).', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
+    author = current_username() if g.user else request.form.get('author_name', '').strip() or 'Anonymous'
+    db.add_wiki_note(ref_id, author, content)
+    app_logger.info('Wiki note added: ref_id=%d by=%s', ref_id, author)
+    flash('Note added.', 'success')
+    return redirect(url_for('product_wiki', ref_id=ref_id))
+
+
+@app.route('/wiki/notes/<int:note_id>/delete', methods=['POST'])
+@permission_required('wiki')
+def delete_wiki_note_route(note_id):
+    """Delete a wiki note."""
+    ref_id = request.form.get('ref_id', type=int)
+    db.delete_wiki_note(note_id)
+    app_logger.info('Wiki note deleted: note_id=%d by=%s', note_id, current_username())
+    flash('Note deleted.', 'success')
+    return redirect(url_for('product_wiki', ref_id=ref_id))
 
 
 @app.route('/wiki/repair', methods=['POST'])

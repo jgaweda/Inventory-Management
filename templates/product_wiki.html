@@ -367,6 +367,52 @@
     {% endif %}
 </div>
 
+<!-- Notes Section -->
+<div class="card" style="margin-top: 16px; cursor: default;">
+    <div class="section-label">Notes</div>
+
+    {% if wiki_notes %}
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+        {% for note in wiki_notes %}
+        <div style="padding: 12px; background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">{{ note.author }}</span>
+                <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">{{ note.created_at }}</span>
+            </div>
+            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; word-wrap: break-word;">{{ note.content }}</div>
+            {% if has_permission('wiki') %}
+            <form method="POST" action="{{ url_for('delete_wiki_note_route', note_id=note.note_id) }}"
+                  onsubmit="return confirm('Delete this note?')" style="margin-top: 6px; text-align: right;">
+                <input type="hidden" name="ref_id" value="{{ ref.ref_id }}">
+                <button type="submit" style="background: none; border: none; color: var(--text-muted); font-size: 11px; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.15s;"
+                        onmouseover="this.style.color='var(--accent-red)'" onmouseout="this.style.color='var(--text-muted)'">&times; Delete</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if has_permission('wiki') %}
+    <form method="POST" action="{{ url_for('add_wiki_note', ref_id=ref.ref_id) }}">
+        {% if not current_user %}
+        <div style="margin-bottom: 8px;">
+            <input type="text" name="author_name" placeholder="Your name (optional)" maxlength="100"
+                   style="width: 100%; max-width: 250px; font-size: 13px;">
+        </div>
+        {% endif %}
+        <div style="display: flex; gap: 8px; align-items: flex-end;">
+            <textarea name="note_content" required placeholder="Add a note..." maxlength="2000"
+                      style="flex: 1; min-height: 60px; max-height: 200px; font-size: 13px; font-family: 'DM Sans', sans-serif; resize: vertical; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);"></textarea>
+            <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom: 2px;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Add
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+
 {% if current_user %}
 <p class="format-hint" id="wikiFormatHint" style="display: none;">
     Supports Markdown: **bold**, *italic*, # Heading, - lists, `code`, [links](url), > quotes.
