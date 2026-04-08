@@ -94,19 +94,19 @@
         <div id="usbResult" style="margin-top: 16px; display: none;"></div>
     </div>
 
-    <!-- Camera Scanner -->
+    <!-- QR Scanner -->
     <div class="card" style="cursor: default;">
-        <div class="section-label">Camera Scanner</div>
+        <div class="section-label">QR Scanner</div>
         <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
-            Use your device camera to scan QR codes or barcodes.
+            Use your device camera to scan QR codes on device labels.
         </p>
         <div id="cameraUnsupported" style="display: none; padding: 16px; border-radius: 8px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2); color: #f59e0b; font-size: 13px;">
-            Camera scanning is not available. Your browser requires a secure (HTTPS) connection to access the camera. Please access this page via <strong>https://</strong>.
+            QR scanning is not available. Your browser requires a secure (HTTPS) connection to access the camera. Please access this page via <strong>https://</strong>.
         </div>
         <div id="cameraContainer">
             <button id="startCamera" class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="startCameraScanner()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                Enable Camera
+                Scan QR Code
             </button>
             <div id="cameraError" style="margin-top: 12px; display: none; padding: 12px; border-radius: 8px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: var(--accent-red); font-size: 13px;"></div>
         </div>
@@ -116,7 +116,7 @@
 <!-- Fullscreen camera overlay -->
 <div id="cameraOverlay">
     <div class="camera-top-bar">
-        <span>Scanning...</span>
+        <span>Scanning QR...</span>
         <button class="camera-close-btn" onclick="stopCameraScanner()" title="Close">&times;</button>
     </div>
     <div id="qr-reader"></div>
@@ -268,13 +268,9 @@
         overlay.classList.add('active');
         document.body.style.overflow = 'hidden';
 
-        // Specify supported formats: QR codes and common barcodes
+        // QR codes only — barcode scanning via camera is unreliable
         var formatsToSupport = [
             Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
         ];
         html5QrCode = new Html5Qrcode("qr-reader", { formatsToSupport: formatsToSupport, verbose: false });
 
