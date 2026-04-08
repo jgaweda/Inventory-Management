@@ -78,18 +78,18 @@ class TestDeviceEditRoute(BaseTestCase):
 
     def test_edit_form_loads(self):
         self.login_admin()
-        did = db.add_device({'name': 'HP TestRouter', 'category': 'Router/AP', 'manufacturer': 'HP', 'model_number': 'TestRouter'})
+        did = db.add_device({'name': 'HP TestRouter', 'category': 'Connectivity Device', 'manufacturer': 'HP', 'model_number': 'TestRouter'})
         resp = self.client.get(f'/devices/{did}/edit')
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b'Edit Device', resp.data)
 
     def test_edit_updates_device(self):
         self.login_admin()
-        did = db.add_device({'name': 'HP OldRouter', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        did = db.add_device({'name': 'HP OldRouter', 'category': 'Connectivity Device', 'manufacturer': 'HP'})
         resp = self.client.post(f'/devices/{did}/edit', data={
             'manufacturer': 'Cisco', 'model_number': 'AX9000',
             'serial_number': 'SN-EDIT-001',
-            'category': 'Router/AP', 'location': 'Lab B',
+            'category': 'Connectivity Device', 'location': 'Lab B',
         }, follow_redirects=True)
         self.assertIn(b'updated successfully', resp.data)
         device = db.get_device(did)
@@ -103,9 +103,9 @@ class TestDeviceEditRoute(BaseTestCase):
 
     def test_edit_requires_manufacturer_for_non_printer(self):
         self.login_admin()
-        did = db.add_device({'name': 'HP Router', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        did = db.add_device({'name': 'HP Router', 'category': 'Connectivity Device', 'manufacturer': 'HP'})
         resp = self.client.post(f'/devices/{did}/edit', data={
-            'manufacturer': '', 'category': 'Router/AP',
+            'manufacturer': '', 'category': 'Connectivity Device',
         }, follow_redirects=True)
         self.assertIn(b'Manufacturer is required', resp.data)
 
@@ -124,7 +124,7 @@ class TestDeviceEditRoute(BaseTestCase):
         did = db.add_device({'name': 'Locked Device'})
         self.client.post('/login', data={'username': 'viewer1', 'password': 'pass1234'})
         resp = self.client.post(f'/devices/{did}/edit', data={
-            'manufacturer': 'HP', 'category': 'Router/AP',
+            'manufacturer': 'HP', 'category': 'Connectivity Device',
         }, follow_redirects=True)
         self.assertIn(b'do not have permission', resp.data)
 
@@ -192,7 +192,7 @@ class TestDeviceLifecycleFull(BaseTestCase):
         resp = self.client.post('/devices/add', data={
             'manufacturer': 'HP', 'model_number': 'LaserJet 600',
             'serial_number': 'SN-LC-001',
-            'category': 'Router/AP', 'location': 'Lab A',
+            'category': 'Connectivity Device', 'location': 'Lab A',
         }, follow_redirects=True)
         self.assertIn(b'added successfully', resp.data)
         devices = db.get_all_devices()
@@ -203,7 +203,7 @@ class TestDeviceLifecycleFull(BaseTestCase):
         resp = self.client.post(f'/devices/{did}/edit', data={
             'manufacturer': 'HP', 'model_number': 'LaserJet 601',
             'serial_number': 'SN-LC-001',
-            'category': 'Router/AP', 'location': 'Lab B',
+            'category': 'Connectivity Device', 'location': 'Lab B',
         }, follow_redirects=True)
         self.assertIn(b'updated successfully', resp.data)
         device = db.get_device(did)

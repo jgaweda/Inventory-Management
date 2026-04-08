@@ -288,11 +288,11 @@ class TestDashboardStats(BaseTestCase):
 
     def test_stats_by_category(self):
         db.add_device({'name': 'P1 (HP LJ)', 'category': 'Printer', 'codename': 'P1'})
-        db.add_device({'name': 'HP Router', 'category': 'Router/AP', 'manufacturer': 'HP'})
+        db.add_device({'name': 'HP Router', 'category': 'Connectivity Device', 'manufacturer': 'HP'})
         stats = db.get_stats()
         cat_names = [c['category'] for c in stats['by_category']]
         self.assertIn('Printer', cat_names)
-        self.assertIn('Router/AP', cat_names)
+        self.assertIn('Connectivity Device', cat_names)
 
     def test_scan_page_loads_with_data(self):
         db.add_device({'name': 'Dashboard Device'})
@@ -354,7 +354,7 @@ class TestDeviceExport(BaseTestCase):
 
     def test_export_csv(self):
         db.add_device({'name': 'Export Test 1', 'manufacturer': 'HP', 'category': 'Printer', 'codename': 'EP1'})
-        db.add_device({'name': 'Export Test 2', 'manufacturer': 'Cisco', 'category': 'Router/AP'})
+        db.add_device({'name': 'Export Test 2', 'manufacturer': 'Cisco', 'category': 'Connectivity Device'})
         resp = self.client.get('/export')
         self.assertEqual(resp.status_code, 200)
         self.assertIn('text/csv', resp.content_type)
@@ -483,17 +483,17 @@ class TestSearchAndFilters(BaseTestCase):
 
     def test_search_by_name(self):
         db.add_device({'name': 'HP LaserJet 200', 'category': 'Printer', 'codename': 'LJ200'})
-        db.add_device({'name': 'Cisco Router X', 'category': 'Router/AP', 'manufacturer': 'Cisco'})
+        db.add_device({'name': 'Cisco Router X', 'category': 'Connectivity Device', 'manufacturer': 'Cisco'})
         results = db.search_devices(query='LaserJet')
         self.assertEqual(len(results), 1)
         self.assertIn('LaserJet', results[0]['name'])
 
     def test_search_by_category_filter(self):
         db.add_device({'name': 'Printer A', 'category': 'Printer', 'codename': 'PA'})
-        db.add_device({'name': 'Cisco Router', 'category': 'Router/AP', 'manufacturer': 'Cisco'})
-        results = db.search_devices(category='Router/AP')
+        db.add_device({'name': 'Cisco Router', 'category': 'Connectivity Device', 'manufacturer': 'Cisco'})
+        results = db.search_devices(category='Connectivity Device')
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]['category'], 'Router/AP')
+        self.assertEqual(results[0]['category'], 'Connectivity Device')
 
     def test_search_by_status_filter(self):
         did = db.add_device({'name': 'Lost Device'})
@@ -542,7 +542,7 @@ class TestSearchAndFilters(BaseTestCase):
         cats = db.get_categories()
         names = [c['name'] for c in cats]
         self.assertIn('Printer', names)
-        self.assertIn('Router/AP', names)
+        self.assertIn('Connectivity Device', names)
 
 class TestAuditLog(BaseTestCase):
     """Test audit logging functions."""
@@ -749,7 +749,7 @@ class TestSQLInjectionPrevention(BaseTestCase):
         self.client.post('/devices/add', data={
             'manufacturer': malicious, 'model_number': 'Test',
             'serial_number': 'SN-INJECT-001',
-            'category': 'Router/AP',
+            'category': 'Connectivity Device',
         }, follow_redirects=True)
         devices = db.get_all_devices()
         self.assertGreater(len(devices), 0)
@@ -781,7 +781,7 @@ class TestUnicodeHandling(BaseTestCase):
         resp = self.client.post('/devices/add', data={
             'manufacturer': 'HP \u00ae', 'model_number': 'M\u00f6del',
             'serial_number': 'SN-UNI-001',
-            'category': 'Router/AP', 'notes': 'C\u00e9sar\u2019s printer',
+            'category': 'Connectivity Device', 'notes': 'C\u00e9sar\u2019s printer',
         }, follow_redirects=True)
         self.assertIn(b'added successfully', resp.data)
 

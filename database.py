@@ -31,8 +31,8 @@ _audit_logger = logging.getLogger('inventory')
 # Default categories seeded on first run (sort_order determines dropdown order)
 DEFAULT_CATEGORIES = [
     ('Printer', 'Printers and multifunction devices', 1),
-    ('Router/AP', 'Routers and wireless access points', 2),
-    ('Laptop/Phone/Tablet', 'Laptops, phones, and tablets', 3),
+    ('Connectivity Device', 'Routers, access points, and gateways', 2),
+    ('Endpoint Device', 'Laptops, phones, and tablets', 3),
     ('Other', 'Uncategorized items', 4),
 ]
 
@@ -49,6 +49,7 @@ UPDATABLE_FIELDS = [
     'name', 'category', 'manufacturer', 'model_number', 'serial_number',
     'connectivity', 'vendor_supplied', 'status', 'location',
     'assigned_to', 'notes', 'codename', 'variant',
+    'device_type', 'is_mesh',
 ]
 
 
@@ -278,6 +279,19 @@ def init_db():
             conn.execute("ALTER TABLE devices ADD COLUMN codename TEXT DEFAULT ''")
         if 'variant' not in device_cols:
             conn.execute("ALTER TABLE devices ADD COLUMN variant TEXT DEFAULT ''")
+        if 'device_type' not in device_cols:
+            conn.execute("ALTER TABLE devices ADD COLUMN device_type TEXT DEFAULT ''")
+        if 'is_mesh' not in device_cols:
+            conn.execute("ALTER TABLE devices ADD COLUMN is_mesh INTEGER DEFAULT 0")
+
+        # Migrate: rename old categories to new names
+        conn.execute("UPDATE categories SET name = 'Connectivity Device', description = 'Routers, access points, and gateways' WHERE name = 'Router/AP'")
+        conn.execute("UPDATE categories SET name = 'Endpoint Device', description = 'Laptops, phones, and tablets' WHERE name = 'Laptop/Phone/Tablet'")
+        conn.execute("UPDATE devices SET category = 'Connectivity Device' WHERE category = 'Router/AP'")
+        conn.execute("UPDATE devices SET category = 'Endpoint Device' WHERE category = 'Laptop/Phone/Tablet'")
+
+        # Migrate: clear incorrect predecessor values (Cherry and Lotus are siblings, not predecessor/successor)
+        conn.execute("UPDATE product_reference SET predecessor = '' WHERE predecessor IN ('Cherry', 'Lotus')")
 
         # Migrate: expand user role CHECK constraint to include 'editor'
         # SQLite can't ALTER CHECK constraints, so rebuild the table

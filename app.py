@@ -395,7 +395,7 @@ def device_add():
                 errors.append('Codename is required for printers.')
             if not serial_number:
                 errors.append('Serial number is required for printers.')
-        elif category in ('Laptop/Phone/Tablet', 'Router/AP'):
+        elif category in ('Connectivity Device', 'Endpoint Device'):
             if not manufacturer:
                 errors.append('Manufacturer is required.')
             if not model_number:
@@ -431,8 +431,10 @@ def device_add():
             'vendor_supplied': 1 if request.form.get('vendor_supplied') == '1' else 0,
             'location': request.form.get('location', ''),
             'notes': request.form.get('notes', ''),
-            'codename': codename,
-            'variant': request.form.get('variant', '').strip(),
+            'codename': codename or ('N/A' if category != 'Printer' else ''),
+            'variant': request.form.get('variant', '').strip() or ('N/A' if category != 'Printer' else ''),
+            'device_type': request.form.get('device_type', '').strip() or ('N/A' if category not in ('Connectivity Device', 'Endpoint Device') else ''),
+            'is_mesh': 1 if request.form.get('is_mesh') == '1' else 0,
         }
         device_id = db.add_device(data, performed_by=current_username())
 
@@ -553,7 +555,7 @@ def device_edit(device_id):
                 errors.append('Codename is required for printers.')
             if not serial_number:
                 errors.append('Serial number is required for printers.')
-        elif category in ('Laptop/Phone/Tablet', 'Router/AP'):
+        elif category in ('Connectivity Device', 'Endpoint Device'):
             if not manufacturer:
                 errors.append('Manufacturer is required.')
             if not model_number:
@@ -586,8 +588,10 @@ def device_edit(device_id):
             'location': request.form.get('location', ''),
             'assigned_to': request.form.get('assigned_to', ''),
             'notes': request.form.get('notes', ''),
-            'codename': codename,
-            'variant': request.form.get('variant', '').strip(),
+            'codename': codename or ('N/A' if category != 'Printer' else ''),
+            'variant': request.form.get('variant', '').strip() or ('N/A' if category != 'Printer' else ''),
+            'device_type': request.form.get('device_type', '').strip() or ('N/A' if category not in ('Connectivity Device', 'Endpoint Device') else ''),
+            'is_mesh': 1 if request.form.get('is_mesh') == '1' else 0,
         }
         db.update_device(device_id, data, performed_by=current_username())
 
@@ -831,7 +835,8 @@ def _get_export_devices():
         devices = db.get_all_devices(include_retired=include_retired)
     return devices
 
-EXPORT_FIELDS = ['device_id', 'barcode_value', 'name', 'category', 'manufacturer',
+EXPORT_FIELDS = ['device_id', 'barcode_value', 'name', 'category', 'device_type',
+                 'is_mesh', 'manufacturer',
                  'model_number', 'serial_number', 'connectivity', 'vendor_supplied',
                  'status', 'location', 'assigned_to', 'notes', 'codename', 'variant',
                  'created_at', 'updated_at']
@@ -841,6 +846,8 @@ EXPORT_HEADERS = {
     'barcode_value': 'Barcode',
     'name': 'Name',
     'category': 'Category',
+    'device_type': 'Device Type',
+    'is_mesh': 'Mesh',
     'manufacturer': 'Manufacturer',
     'model_number': 'Model Number',
     'serial_number': 'Serial Number',
@@ -872,6 +879,8 @@ def export_csv():
             val = d.get(f, '')
             if f == 'vendor_supplied':
                 val = 'Vendor Supplied' if val else 'HP Owned'
+            elif f == 'is_mesh':
+                val = 'Yes' if val else 'No'
             row.append(val if val is not None else '')
         writer.writerow(row)
 
@@ -917,6 +926,8 @@ def export_xlsx():
             val = d.get(f, '')
             if f == 'vendor_supplied':
                 val = 'Vendor Supplied' if val else 'HP Owned'
+            elif f == 'is_mesh':
+                val = 'Yes' if val else 'No'
             row.append(val if val is not None else '')
         ws.append(row)
 

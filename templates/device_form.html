@@ -13,7 +13,7 @@
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Category</label>
-                <select name="category" id="categorySelect" onchange="toggleCodename(); toggleOtherCategory(); updateRequiredFields()">
+                <select name="category" id="categorySelect" onchange="toggleCodename(); toggleOtherCategory(); toggleDeviceType(); updateRequiredFields()">
                     <option value="">Select category...</option>
                     {% set current_cat = device.get('category', '') if device is mapping else device.category if device else '' %}
                     {% set is_other_custom = current_cat.startswith('Other - ') %}
@@ -31,6 +31,26 @@
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Connectivity Type/Version</label>
                 <input type="text" name="connectivity" id="connectivityInput" autocomplete="off" data-ac-field="connectivity"
                        value="{{ device.get('connectivity', '') if device is mapping else device.connectivity if device else '' }}" placeholder="e.g. Wi-Fi 6E, BT 5.3">
+            </div>
+        </div>
+        <!-- Device Type dropdown (Connectivity Device / Endpoint Device) -->
+        <div id="deviceTypeRow" style="display: none; margin-top: 16px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: end;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Device Type</label>
+                    <select name="device_type" id="deviceTypeSelect">
+                        <option value="">Select type...</option>
+                    </select>
+                </div>
+                <div id="meshRow" style="display: none;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; padding: 10px 0;">
+                        <input type="hidden" name="is_mesh" value="0">
+                        <input type="checkbox" name="is_mesh" value="1" id="meshCheckbox"
+                               style="width: 16px; height: 16px;"
+                               {{ 'checked' if (device.get('is_mesh', 0) if device is mapping else (device.is_mesh if device and device.is_mesh is defined else 0))|int }}>
+                        Mesh Device
+                    </label>
+                </div>
             </div>
         </div>
         <div id="codenameRow" style="margin-top: 16px; display: none;">
@@ -83,6 +103,11 @@
         </div>
     </div>
     <script>
+    var DEVICE_TYPE_OPTIONS = {
+        'Connectivity Device': ['Router', 'AP', 'Gateway'],
+        'Endpoint Device': ['Laptop', 'Phone', 'Tablet'],
+    };
+
     function toggleCodename() {
         var cat = document.getElementById('categorySelect').value;
         var row = document.getElementById('codenameRow');
@@ -93,9 +118,47 @@
         var row = document.getElementById('otherCategoryRow');
         row.style.display = (cat === 'Other') ? 'block' : 'none';
     }
+    function toggleDeviceType() {
+        var cat = document.getElementById('categorySelect').value;
+        var row = document.getElementById('deviceTypeRow');
+        var meshRow = document.getElementById('meshRow');
+        var select = document.getElementById('deviceTypeSelect');
+        var options = DEVICE_TYPE_OPTIONS[cat];
+        if (options) {
+            row.style.display = 'block';
+            var currentVal = select.value;
+            select.innerHTML = '<option value="">Select type...</option>';
+            options.forEach(function(opt) {
+                var el = document.createElement('option');
+                el.value = opt;
+                el.textContent = opt;
+                if (opt === currentVal) el.selected = true;
+                select.appendChild(el);
+            });
+            meshRow.style.display = (cat === 'Connectivity Device') ? 'block' : 'none';
+        } else {
+            row.style.display = 'none';
+            meshRow.style.display = 'none';
+            select.value = '';
+            document.getElementById('meshCheckbox').checked = false;
+        }
+    }
     toggleCodename();
     toggleOtherCategory();
     updateRequiredFields();
+
+    // Set initial device type value from server data
+    (function() {
+        var savedType = '{{ device.get("device_type", "") if device is mapping else (device.device_type if device and device.device_type is defined else "") }}';
+        if (savedType) {
+            document.getElementById('deviceTypeSelect').value = savedType;
+        }
+        toggleDeviceType();
+        // Re-set after options are populated
+        if (savedType) {
+            document.getElementById('deviceTypeSelect').value = savedType;
+        }
+    })();
 
     function updateRequiredFields() {
         var cat = document.getElementById('categorySelect').value;
@@ -121,15 +184,8 @@
             // Codename is already required via its own asterisk; serial is required
             serialInput.setAttribute('required', 'required');
             serialReq.style.display = 'inline';
-        } else if (cat === 'Laptop/Phone/Tablet' || cat === 'Router/AP') {
-            mfgInput.setAttribute('required', 'required');
-            modelInput.setAttribute('required', 'required');
-            serialInput.setAttribute('required', 'required');
-            mfgReq.style.display = 'inline';
-            modelReq.style.display = 'inline';
-            serialReq.style.display = 'inline';
         }
-        // Other: no requirements — all hidden/removed
+        // Connectivity Device, Endpoint Device, Other: no required fields — all empty by default
     }
 
     var _searchTimeout = null;
