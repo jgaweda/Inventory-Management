@@ -40,9 +40,13 @@
             <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Backup directory</label>
-                    <input type="text" name="backup_dir" value="{{ config.backup_dir }}"
+                    <input type="text" id="backupDirInput" name="backup_dir" value="{{ config.backup_dir }}"
                            placeholder="/path/to/backups"
                            style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('backupDirInput')" style="white-space: nowrap;">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                        Browse
+                    </button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Max backups to keep</label>
@@ -199,21 +203,25 @@
                 {% endif %}
             </div>
 
-            <!-- File Path / SharePoint -->
+            <!-- File Path -->
             <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 12px;">
                 <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
                     <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                    File Path / SharePoint
+                    File Path
                 </div>
                 <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
-                    Copy the backup bundle to a network share, USB drive, or SharePoint folder synced via OneDrive.
+                    Copy the backup bundle to a network share, USB drive, or synced cloud folder.
                 </p>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Destination path</label>
-                        <input type="text" name="filepath_path" value="{{ config.filepath_path }}"
+                        <input type="text" id="filepathPathInput" name="filepath_path" value="{{ config.filepath_path }}"
                                placeholder="\\server\share\backups or /mnt/nas/backups"
                                style="flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px; font-family: var(--font-mono, monospace);">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openFolderPicker('filepathPathInput')" style="white-space: nowrap;">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                            Browse
+                        </button>
                     </div>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="font-size: 13px; color: var(--text-secondary); min-width: 120px;">Encryption password</label>
@@ -478,6 +486,31 @@
     </div>
 </div>
 
+<!-- Folder Picker Modal -->
+<div id="folderPickerModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; max-width: 520px; width: 90%; max-height: 70vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="font-size: 18px; font-weight: 700;">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align: -3px; margin-right: 6px;"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                Select Folder
+            </h3>
+            <button onclick="closeFolderPicker()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:20px; padding:4px;">&times;</button>
+        </div>
+        <div id="folderPickerPath" class="font-mono" style="font-size: 12px; color: var(--text-muted); padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 8px; word-break: break-all;"></div>
+        <div id="folderPickerLoading" style="text-align: center; padding: 24px; color: var(--text-muted); display: none;">Loading...</div>
+        <div id="folderPickerError" style="display:none; padding: 12px; text-align: center; color: var(--accent-red); font-size: 13px;"></div>
+        <div id="folderPickerList" style="overflow-y: auto; flex: 1; min-height: 120px; max-height: 40vh; margin-bottom: 12px;">
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="closeFolderPicker()">Cancel</button>
+            <button type="button" class="btn btn-primary" id="folderPickerSelect" onclick="selectFolder()">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Select This Folder
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 function openLocalRestoreDialog() {
     var modal = document.getElementById('localRestoreModal');
@@ -637,6 +670,85 @@ function closeFilepathRestoreDialog() {
 document.getElementById('filepathRestoreModal').addEventListener('click', function(e) {
     if (e.target === this) closeFilepathRestoreDialog();
 });
+
+// --- Folder Picker ---
+var _folderPickerTarget = null;
+var _folderPickerCurrentPath = '';
+
+function openFolderPicker(inputId) {
+    _folderPickerTarget = document.getElementById(inputId);
+    var startPath = _folderPickerTarget.value.trim() || '';
+    document.getElementById('folderPickerModal').style.display = 'flex';
+    _browseTo(startPath);
+}
+
+function closeFolderPicker() {
+    document.getElementById('folderPickerModal').style.display = 'none';
+    _folderPickerTarget = null;
+}
+
+document.getElementById('folderPickerModal').addEventListener('click', function(e) {
+    if (e.target === this) closeFolderPicker();
+});
+
+function _browseTo(path) {
+    var loading = document.getElementById('folderPickerLoading');
+    var errDiv = document.getElementById('folderPickerError');
+    var listDiv = document.getElementById('folderPickerList');
+    var pathDiv = document.getElementById('folderPickerPath');
+
+    loading.style.display = 'block';
+    errDiv.style.display = 'none';
+    listDiv.innerHTML = '';
+    pathDiv.textContent = path || '(root)';
+
+    var url = '{{ url_for("backup_browse_directory") }}' + (path ? '?path=' + encodeURIComponent(path) : '');
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            loading.style.display = 'none';
+            if (!data.ok) {
+                errDiv.style.display = 'block';
+                errDiv.textContent = data.error;
+                return;
+            }
+            _folderPickerCurrentPath = data.path;
+            pathDiv.textContent = data.path || '(select a drive)';
+
+            var html = '';
+            // Up/parent button
+            if (data.parent !== undefined && data.parent !== '' && data.path) {
+                html += '<div onclick="_browseTo(\'' + data.parent.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')" ' +
+                    'style="display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; border-radius:6px; font-size:13px; color:var(--text-secondary); transition:background 0.1s;" ' +
+                    'onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'transparent\'">' +
+                    '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>' +
+                    '<span>..</span></div>';
+            }
+            data.entries.forEach(function(e) {
+                html += '<div onclick="_browseTo(\'' + e.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')" ' +
+                    'style="display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; border-radius:6px; font-size:13px; transition:background 0.1s;" ' +
+                    'onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'transparent\'">' +
+                    '<svg width="14" height="14" fill="none" stroke="var(--accent-amber)" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
+                    '<span>' + e.name + '</span></div>';
+            });
+            if (!data.entries.length && data.path) {
+                html += '<div style="padding:12px; text-align:center; color:var(--text-muted); font-size:12px;">No sub-folders</div>';
+            }
+            listDiv.innerHTML = html;
+        })
+        .catch(function(err) {
+            loading.style.display = 'none';
+            errDiv.style.display = 'block';
+            errDiv.textContent = 'Failed to browse: ' + err.message;
+        });
+}
+
+function selectFolder() {
+    if (_folderPickerTarget && _folderPickerCurrentPath) {
+        _folderPickerTarget.value = _folderPickerCurrentPath;
+    }
+    closeFolderPicker();
+}
 
 // --- Loading overlay for long operations ---
 (function() {
