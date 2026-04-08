@@ -2914,8 +2914,11 @@ def add_wiki_note(ref_id):
 @app.route('/wiki/notes/<int:note_id>/delete', methods=['POST'])
 @permission_required('wiki')
 def delete_wiki_note_route(note_id):
-    """Delete a wiki note."""
+    """Delete a wiki note. Requires a logged-in user."""
     ref_id = request.form.get('ref_id', type=int)
+    if not g.user:
+        flash('You must be logged in to delete notes.', 'error')
+        return redirect(url_for('product_wiki', ref_id=ref_id))
     db.delete_wiki_note(note_id)
     app_logger.info('Wiki note deleted: note_id=%d by=%s', note_id, current_username())
     flash('Note deleted.', 'success')

@@ -380,7 +380,7 @@
                 <span class="font-mono" style="font-size: 11px; color: var(--text-muted);">{{ note.created_at }}</span>
             </div>
             <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; word-wrap: break-word;">{{ note.content }}</div>
-            {% if has_permission('wiki') %}
+            {% if current_user and has_permission('wiki') %}
             <form method="POST" action="{{ url_for('delete_wiki_note_route', note_id=note.note_id) }}"
                   onsubmit="return confirm('Delete this note?')" style="margin-top: 6px; text-align: right;">
                 <input type="hidden" name="ref_id" value="{{ ref.ref_id }}">
