@@ -60,6 +60,11 @@
                 <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Cartridge/Toner</label>
                 <input type="text" name="cartridge_toner" value="{{ ref.cartridge_toner if ref else '' }}" placeholder="e.g. HP 936/937/938, HP 230A/230X">
             </div>
+            <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Predecessor</label>
+                <input type="text" name="predecessor" id="predecessorInput" value="{{ ref.predecessor if ref else '' }}" placeholder="Codename of predecessor product" autocomplete="off">
+                <div id="predecessorSuggestions" style="display:none; position:absolute; z-index:10; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; max-height:180px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.3); margin-top:2px;"></div>
+            </div>
         </div>
     </div>
 
@@ -68,4 +73,57 @@
         <a href="{{ url_for('product_reference_list') }}" class="btn btn-secondary">Cancel</a>
     </div>
 </form>
+
+<style>
+    .pred-suggestion {
+        padding: 8px 12px; cursor: pointer; font-size: 13px;
+        color: var(--text-primary); transition: background 0.1s;
+    }
+    .pred-suggestion:hover, .pred-suggestion.active {
+        background: var(--bg-card-hover);
+    }
+</style>
+<script>
+(function() {
+    var input = document.getElementById('predecessorInput');
+    var box = document.getElementById('predecessorSuggestions');
+    if (!input || !box) return;
+    var debounce = null;
+
+    input.parentElement.style.position = 'relative';
+
+    input.addEventListener('input', function() {
+        clearTimeout(debounce);
+        var q = input.value.trim();
+        if (q.length < 1) { box.style.display = 'none'; return; }
+        debounce = setTimeout(function() {
+            fetch('/api/reference/search?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(refs) {
+                box.innerHTML = '';
+                {% if ref %}
+                refs = refs.filter(function(r) { return r.codename !== '{{ ref.codename }}'; });
+                {% endif %}
+                if (!refs.length) { box.style.display = 'none'; return; }
+                refs.slice(0, 10).forEach(function(r) {
+                    var div = document.createElement('div');
+                    div.className = 'pred-suggestion';
+                    div.textContent = r.codename + (r.model_name ? ' — ' + r.model_name : '');
+                    div.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        input.value = r.codename;
+                        box.style.display = 'none';
+                    });
+                    box.appendChild(div);
+                });
+                box.style.display = 'block';
+            });
+        }, 200);
+    });
+
+    input.addEventListener('blur', function() {
+        setTimeout(function() { box.style.display = 'none'; }, 150);
+    });
+})();
+</script>
 {% endblock %}

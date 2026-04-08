@@ -19,33 +19,6 @@
     .ref-table tr:hover td { background: var(--bg-card-hover); }
     .ref-table tr.hidden-row { display: none; }
 
-    /* Editable cells */
-    .ref-table .cell-edit {
-        width: 100%; background: transparent; color: var(--text-primary);
-        border: 1px solid transparent; border-radius: 4px;
-        padding: 6px 8px; font-size: 13px; font-family: 'DM Sans', sans-serif;
-        transition: border-color 0.15s, background 0.15s;
-    }
-    .ref-table .cell-edit:hover { border-color: var(--border-color); }
-    .ref-table .cell-edit:focus {
-        outline: none; border-color: var(--accent-blue);
-        background: var(--bg-primary);
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
-    }
-    .ref-table select.cell-edit {
-        cursor: pointer; appearance: auto;
-    }
-    .ref-table .cell-edit.saving { opacity: 0.5; }
-    .ref-table .cell-edit.saved {
-        border-color: var(--accent-green);
-        animation: flash-save 1s ease;
-    }
-    .ref-table .cell-edit.error { border-color: var(--accent-red); }
-    @keyframes flash-save {
-        0% { background: rgba(16,185,129,0.15); }
-        100% { background: transparent; }
-    }
-
     /* Codename cell */
     .codename-cell {
         display: flex; align-items: center; gap: 4px; padding: 4px 4px;
@@ -54,10 +27,6 @@
         font-weight: 600; color: var(--text-primary); font-size: 13px;
         padding: 2px 4px; border-radius: 4px;
     }
-    .codename-text.editable {
-        cursor: text; border: 1px solid transparent; transition: border-color 0.15s;
-    }
-    .codename-text.editable:hover { border-color: var(--border-color); }
     .wiki-btn {
         display: inline-flex; align-items: center; justify-content: center;
         width: 24px; height: 24px; border-radius: 4px;
@@ -77,11 +46,6 @@
     }
     .del-btn:hover { opacity: 1; color: var(--accent-red); }
 
-    /* New row */
-    .ref-table .new-row td { border-bottom: none; }
-    .ref-table .new-row .cell-edit {
-        border-color: var(--border-color); border-style: dashed;
-    }
     .table-scroll { overflow-x: auto; max-height: calc(100vh - 240px); overflow-y: auto; }
 
     /* Resize handles */
@@ -149,10 +113,10 @@
             </div>
         </div>
         {% endif %}
-        <button onclick="addNewRow()" class="btn btn-primary btn-sm">
+        <a href="{{ url_for('product_reference_add') }}" class="btn btn-primary btn-sm">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
             Add Product
-        </button>
+        </a>
     </div>
     {% endif %}
 </div>
@@ -184,7 +148,7 @@
                     <th data-sort="fw_codebase"><div class="th-sort">FW Codebase<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     <th data-sort="inv" style="text-align: center;"><div class="th-sort">Inv<span class="sort-arrow">&#9650;</span></div><div class="resize-handle"></div></th>
                     {% if has_permission('references') %}
-                    <th style="width: 40px; cursor: default;"></th>
+                    <th style="width: 64px; cursor: default;"></th>
                     {% endif %}
                 </tr>
             </thead>
@@ -193,7 +157,7 @@
                 <tr data-id="{{ ref.ref_id }}" data-codename="{{ ref.codename }}" data-model="{{ ref.model_name or '' }}" data-type="{{ ref.print_technology or '' }}" data-cartridge="{{ ref.cartridge_toner or '' }}" data-wifi="{{ ref.wifi_gen or '' }}" data-year="{{ ref.year or '' }}" data-chipmfr="{{ ref.chip_manufacturer or '' }}" data-chipcode="{{ ref.chip_codename or '' }}" data-fw="{{ ref.fw_codebase or '' }}" data-predecessor="{{ ref.predecessor or '' }}" data-inv="{{ inv_counts.get(ref.codename, {}).get('total', 0) }}">
                     <td>
                         <div class="codename-cell">
-                            <span class="codename-text{% if has_permission('references') %} editable{% endif %}" data-field="codename">{{ ref.codename }}</span>
+                            <span class="codename-text">{{ ref.codename }}</span>
                         </div>
                     </td>
                     <td style="padding: 0; text-align: center;">
@@ -201,23 +165,6 @@
                             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
                         </a>
                     </td>
-                    {% if has_permission('references') %}
-                    <td><input class="cell-edit" data-field="model_name" value="{{ ref.model_name or '' }}"></td>
-                    <td>
-                        <select class="cell-edit" data-field="print_technology">
-                            <option value="">--</option>
-                            <option value="Ink" {{ 'selected' if ref.print_technology == 'Ink' }}>Ink</option>
-                            <option value="Laser" {{ 'selected' if ref.print_technology == 'Laser' }}>Laser</option>
-                            <option value="Large Format" {{ 'selected' if ref.print_technology == 'Large Format' }}>Large Format</option>
-                        </select>
-                    </td>
-                    <td><input class="cell-edit" data-field="cartridge_toner" value="{{ ref.cartridge_toner or '' }}"></td>
-                    <td><input class="cell-edit" data-field="wifi_gen" value="{{ ref.wifi_gen or '' }}" style="width:60px;"></td>
-                    <td><input class="cell-edit" data-field="year" value="{{ ref.year or '' }}" style="width:60px;"></td>
-                    <td><input class="cell-edit" data-field="chip_manufacturer" value="{{ ref.chip_manufacturer or '' }}"></td>
-                    <td><input class="cell-edit" data-field="chip_codename" value="{{ ref.chip_codename or '' }}"></td>
-                    <td><input class="cell-edit" data-field="fw_codebase" value="{{ ref.fw_codebase or '' }}"></td>
-                    {% else %}
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.model_name or '—' }}</td>
                     <td style="font-size:13px; text-align:center;">
                         {% if ref.print_technology %}
@@ -230,7 +177,6 @@
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.chip_manufacturer or '—' }}</td>
                     <td class="font-mono" style="font-size:13px;">{{ ref.chip_codename or '—' }}</td>
                     <td style="font-size:13px; color:var(--text-secondary);">{{ ref.fw_codebase or '—' }}</td>
-                    {% endif %}
                     <td class="inv-count">
                         {% set counts = inv_counts.get(ref.codename, {}) %}
                         {% set total = counts.get('total', 0) %}
@@ -244,9 +190,12 @@
                         {% endif %}
                     </td>
                     {% if has_permission('references') %}
-                    <td style="text-align:center;">
+                    <td style="text-align:center; white-space:nowrap;">
+                        <a href="{{ url_for('product_reference_edit', ref_id=ref.ref_id) }}" class="del-btn" title="Edit" style="opacity:0.5;">
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </a>
                         <form method="POST" action="{{ url_for('product_reference_delete', ref_id=ref.ref_id) }}"
-                              onsubmit="return confirm('Delete {{ ref.codename }}?')" style="margin:0;">
+                              onsubmit="return confirm('Delete {{ ref.codename }}?')" style="margin:0; display:inline;">
                             <button type="submit" class="del-btn" title="Delete">&times;</button>
                         </form>
                     </td>
@@ -335,177 +284,6 @@
 })();
 </script>
 
-<script>
-// --- Inline Edit (auto-save on blur/change) ---
-document.getElementById('refTable').addEventListener('focusout', function(e) {
-    var el = e.target;
-    if (!el.classList.contains('cell-edit')) return;
-    saveCell(el);
-});
-document.getElementById('refTable').addEventListener('change', function(e) {
-    var el = e.target;
-    if (el.tagName === 'SELECT' && el.classList.contains('cell-edit')) {
-        saveCell(el);
-    }
-});
-document.getElementById('refTable').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && e.target.classList.contains('cell-edit')) {
-        e.preventDefault();
-        e.target.blur();
-    }
-    if (e.key === 'Escape' && e.target.classList.contains('cell-edit') && e.target.dataset.field === 'codename') {
-        e.target.value = e.target.dataset.original || '';
-        e.target.blur();
-    }
-});
-
-// --- Double-click to edit codename ---
-document.getElementById('refTable').addEventListener('dblclick', function(e) {
-    var span = e.target.closest('.codename-text.editable');
-    if (!span) return;
-    var row = span.closest('tr');
-    if (!row || row.dataset.id === 'new') return;
-    var current = span.textContent.trim();
-    var input = document.createElement('input');
-    input.className = 'cell-edit';
-    input.dataset.field = 'codename';
-    input.dataset.original = current;
-    input.value = current;
-    input.style.fontWeight = '600';
-    input.style.width = Math.max(current.length * 8.5, 80) + 'px';
-    span.replaceWith(input);
-    input.focus();
-    input.select();
-});
-
-function saveCell(el) {
-    var row = el.closest('tr');
-    var refId = row.dataset.id;
-    var field = el.dataset.field;
-    var value = el.value;
-
-    if (refId === 'new') {
-        var codename = row.querySelector('[data-field="codename"]').value.trim();
-        if (!codename) return;
-        submitNewRow(row);
-        return;
-    }
-
-    el.classList.add('saving');
-    el.classList.remove('saved', 'error');
-
-    var isCodename = (field === 'codename');
-
-    // For codename edits, if unchanged just revert to span
-    if (isCodename && value === (el.dataset.original || '')) {
-        revertCodenameInput(el, value);
-        return;
-    }
-
-    var body = {};
-    body[field] = value;
-
-    // Update data attributes for sorting/filtering
-    if (field === 'codename') row.dataset.codename = value;
-    if (field === 'print_technology') row.dataset.type = value;
-    if (field === 'cartridge_toner') row.dataset.cartridge = value;
-    if (field === 'model_name') row.dataset.model = value;
-    if (field === 'wifi_gen') row.dataset.wifi = value;
-    if (field === 'year') row.dataset.year = value;
-    if (field === 'chip_manufacturer') row.dataset.chipmfr = value;
-    if (field === 'chip_codename') row.dataset.chipcode = value;
-    if (field === 'fw_codebase') row.dataset.fw = value;
-
-    fetch('/api/reference/' + refId, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    })
-    .then(function(r) {
-        el.classList.remove('saving');
-        if (r.ok) {
-            if (isCodename) {
-                revertCodenameInput(el, value);
-            } else {
-                el.classList.add('saved');
-                setTimeout(function() { el.classList.remove('saved'); }, 1500);
-            }
-        } else {
-            r.json().then(function(d) {
-                if (isCodename) {
-                    revertCodenameInput(el, el.dataset.original || value);
-                }
-                if (d.error) alert(d.error);
-            });
-        }
-    })
-    .catch(function() {
-        el.classList.remove('saving');
-        if (isCodename) {
-            revertCodenameInput(el, el.dataset.original || value);
-        } else {
-            el.classList.add('error');
-        }
-    });
-}
-
-function revertCodenameInput(input, text) {
-    var span = document.createElement('span');
-    span.className = 'codename-text editable';
-    span.dataset.field = 'codename';
-    span.textContent = text;
-    input.replaceWith(span);
-}
-
-// --- Add New Row (at top) ---
-function addNewRow() {
-    var tbody = document.getElementById('refBody');
-    var tr = document.createElement('tr');
-    tr.dataset.id = 'new';
-    tr.className = 'new-row';
-    tr.innerHTML =
-        '<td><input class="cell-edit" data-field="codename" placeholder="Codename..." value="" style="font-weight:600;"></td>' +
-        '<td></td>' +
-        '<td><input class="cell-edit" data-field="model_name" placeholder="Model name..." value=""></td>' +
-        '<td><select class="cell-edit" data-field="print_technology"><option value="">--</option><option value="Ink">Ink</option><option value="Laser">Laser</option><option value="Large Format">Large Format</option></select></td>' +
-        '<td><input class="cell-edit" data-field="cartridge_toner" value="" placeholder="Cartridge..."></td>' +
-        '<td><input class="cell-edit" data-field="wifi_gen" value="" style="width:60px;" placeholder="6E"></td>' +
-        '<td><input class="cell-edit" data-field="year" value="" style="width:60px;" placeholder="2025"></td>' +
-        '<td><input class="cell-edit" data-field="chip_manufacturer" value="" placeholder="Manufacturer..."></td>' +
-        '<td><input class="cell-edit" data-field="chip_codename" value="" placeholder="Chipset..."></td>' +
-        '<td><input class="cell-edit" data-field="fw_codebase" value="" placeholder="FW..."></td>' +
-        '<td class="inv-count"><span style="color:var(--text-muted);">0</span></td>' +
-        '<td style="text-align:center;"><button class="del-btn" title="Remove" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
-    tbody.insertBefore(tr, tbody.firstChild);
-    tr.querySelector('[data-field="codename"]').focus();
-    // Scroll to top of table
-    var scroll = document.querySelector('.table-scroll');
-    if (scroll) scroll.scrollTop = 0;
-}
-
-function submitNewRow(row) {
-    var data = {};
-    row.querySelectorAll('.cell-edit').forEach(function(el) {
-        data[el.dataset.field] = el.value.trim();
-    });
-    if (!data.codename) return;
-
-    var inputs = row.querySelectorAll('.cell-edit');
-    inputs.forEach(function(el) { el.classList.add('saving'); });
-
-    fetch('{{ url_for("product_reference_add") }}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(data).toString(),
-        redirect: 'manual',
-    })
-    .then(function() { window.location.reload(); })
-    .catch(function() {
-        inputs.forEach(function(el) { el.classList.remove('saving'); el.classList.add('error'); });
-    });
-}
-
-</script>
 {% endif %}
 
 <!-- Client-side Search, Sort, and Resize -->
