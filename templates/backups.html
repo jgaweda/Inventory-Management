@@ -8,12 +8,6 @@
         <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ backups|length }} backup{{ 's' if backups|length != 1 else '' }} on file</p>
     </div>
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-        <form method="POST" action="{{ url_for('backup_create') }}">
-            <button type="submit" class="btn btn-primary">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                Backup Now
-            </button>
-        </form>
         <button type="button" class="btn btn-secondary" onclick="openLocalRestoreDialog()">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
             Restore from Local
@@ -89,6 +83,15 @@
                     <span style="font-size: 13px; color: var(--text-muted);">hours</span>
                 </div>
             </div>
+
+                <div style="margin-top: 4px;">
+                    <form method="POST" action="{{ url_for('backup_create') }}" style="margin: 0;">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Backup Now
+                        </button>
+                    </form>
+                </div>
 
             <!-- Auto-backup / scheduler status -->
             {% if not scheduler_alive and (config.backup_enabled or config.prune_enabled) %}
@@ -393,8 +396,8 @@
             <form method="POST" action="{{ url_for('backup_upload') }}" enctype="multipart/form-data">
                 <label class="btn btn-secondary btn-sm" style="cursor: pointer; margin: 0;">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-                    Upload a .db file instead
-                    <input type="file" name="backup_file" accept=".db" style="display: none;"
+                    Upload a backup file (.zip or .db)
+                    <input type="file" name="backup_file" accept=".zip,.db" style="display: none;"
                            onchange="if(confirm('Restore database from this file?\\n\\nThis will overwrite the current database. A safety backup will be created first.')) this.form.submit();">
                 </label>
             </form>
@@ -418,11 +421,8 @@
         <div id="cloudRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
         </div>
         <div id="cloudRestoreReady" style="display:none;">
-            <div style="padding: 16px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); margin-bottom: 16px;">
-                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Latest cloud backup</div>
-                <div id="cloudRestoreFilename" class="font-mono" style="font-size: 14px; font-weight: 600;"></div>
-                <div id="cloudRestoreMeta" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
-            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Select a backup to restore (.zip bundles include uploads, .db is database only):</p>
+            <div id="cloudRestoreList" style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;"></div>
             <div style="padding: 12px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); margin-bottom: 16px;">
                 <p style="font-size: 12px; color: var(--accent-amber); margin: 0;">
                     <strong>Warning:</strong> This will replace your current database with the cloud backup. A safety backup of your current data will be created first.
@@ -438,7 +438,7 @@
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
                     <button type="button" class="btn btn-secondary" onclick="closeCloudRestoreDialog()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="cloudRestoreSubmit" disabled>
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 18v-6M9 15l3 3 3-3"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
                         Restore Cloud Backup
                     </button>
@@ -464,11 +464,8 @@
         <div id="filepathRestoreError" style="display:none; padding: 16px; text-align: center; color: var(--accent-red);">
         </div>
         <div id="filepathRestoreReady" style="display:none;">
-            <div style="padding: 16px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); margin-bottom: 16px;">
-                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Latest file path backup</div>
-                <div id="filepathRestoreFilename" class="font-mono" style="font-size: 14px; font-weight: 600;"></div>
-                <div id="filepathRestoreMeta" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"></div>
-            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Select a backup to restore (.zip bundles include uploads, .db is database only):</p>
+            <div id="filepathRestoreList" style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px;"></div>
             <div style="padding: 12px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); margin-bottom: 16px;">
                 <p style="font-size: 12px; color: var(--accent-amber); margin: 0;">
                     <strong>Warning:</strong> This will replace your current database with the file path backup. A safety backup of your current data will be created first.
@@ -484,7 +481,7 @@
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: flex-end;">
                     <button type="button" class="btn btn-secondary" onclick="closeFilepathRestoreDialog()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="filepathRestoreSubmit" disabled>
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
                         Restore File Path Backup
                     </button>
@@ -608,14 +605,30 @@ function openCloudRestoreDialog() {
                 document.getElementById('cloudRestoreError').textContent = 'No cloud backups found. Push a backup to the cloud first.';
                 return;
             }
-            // Use the latest (first) backup
-            var latest = data.backups[0];
-            var sizeStr = latest.size >= 1048576
-                ? (latest.size / 1048576).toFixed(1) + ' MB'
-                : (latest.size / 1024).toFixed(1) + ' KB';
-            document.getElementById('cloudRestoreFilename').textContent = latest.filename;
-            document.getElementById('cloudRestoreMeta').textContent = latest.timestamp + ' \u00b7 ' + sizeStr;
-            document.getElementById('cloudRestoreFilenameInput').value = latest.filename;
+            var list = document.getElementById('cloudRestoreList');
+            list.innerHTML = '';
+            data.backups.forEach(function(b) {
+                var sizeStr = b.size >= 1048576 ? (b.size / 1048576).toFixed(1) + ' MB' : (b.size / 1024).toFixed(1) + ' KB';
+                var isZip = b.filename.endsWith('.zip');
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.15s;';
+                row.onmouseover = function() { this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)'; };
+                row.onmouseout = function() { if (!this.classList.contains('selected')) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; } };
+                row.onclick = function() {
+                    list.querySelectorAll('.selected').forEach(function(el) { el.classList.remove('selected'); el.style.borderColor = 'var(--border-color)'; el.style.background = 'transparent'; });
+                    this.classList.add('selected'); this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)';
+                    document.getElementById('cloudRestoreFilenameInput').value = b.filename;
+                    document.getElementById('cloudRestoreSubmit').disabled = false;
+                };
+                row.innerHTML =
+                    '<div style="flex:1; min-width:0;">' +
+                        '<div class="font-mono" style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + b.filename + '</div>' +
+                        '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + (b.timestamp || '') + ' &middot; ' + sizeStr +
+                        (isZip ? ' &middot; <span style="color:var(--accent-green);">bundle</span>' : ' &middot; <span style="color:var(--text-muted);">db only</span>') +
+                        '</div>' +
+                    '</div>';
+                list.appendChild(row);
+            });
             document.getElementById('cloudRestoreReady').style.display = 'block';
         })
         .catch(function(err) {
@@ -655,13 +668,30 @@ function openFilepathRestoreDialog() {
                 document.getElementById('filepathRestoreError').textContent = 'No backups found at the configured file path.';
                 return;
             }
-            var latest = data.backups[0];
-            var sizeStr = latest.size >= 1048576
-                ? (latest.size / 1048576).toFixed(1) + ' MB'
-                : (latest.size / 1024).toFixed(1) + ' KB';
-            document.getElementById('filepathRestoreFilename').textContent = latest.filename;
-            document.getElementById('filepathRestoreMeta').textContent = latest.timestamp + ' \u00b7 ' + sizeStr;
-            document.getElementById('filepathRestoreFilenameInput').value = latest.filename;
+            var list = document.getElementById('filepathRestoreList');
+            list.innerHTML = '';
+            data.backups.forEach(function(b) {
+                var sizeStr = b.size >= 1048576 ? (b.size / 1048576).toFixed(1) + ' MB' : (b.size / 1024).toFixed(1) + ' KB';
+                var isZip = b.filename.endsWith('.zip');
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; border:1px solid var(--border-color); cursor:pointer; transition:all 0.15s;';
+                row.onmouseover = function() { this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)'; };
+                row.onmouseout = function() { if (!this.classList.contains('selected')) { this.style.borderColor = 'var(--border-color)'; this.style.background = 'transparent'; } };
+                row.onclick = function() {
+                    list.querySelectorAll('.selected').forEach(function(el) { el.classList.remove('selected'); el.style.borderColor = 'var(--border-color)'; el.style.background = 'transparent'; });
+                    this.classList.add('selected'); this.style.borderColor = 'var(--accent-blue)'; this.style.background = 'var(--bg-card-hover)';
+                    document.getElementById('filepathRestoreFilenameInput').value = b.filename;
+                    document.getElementById('filepathRestoreSubmit').disabled = false;
+                };
+                row.innerHTML =
+                    '<div style="flex:1; min-width:0;">' +
+                        '<div class="font-mono" style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + b.filename + '</div>' +
+                        '<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">' + (b.timestamp || '') + ' &middot; ' + sizeStr +
+                        (isZip ? ' &middot; <span style="color:var(--accent-green);">bundle</span>' : ' &middot; <span style="color:var(--text-muted);">db only</span>') +
+                        '</div>' +
+                    '</div>';
+                list.appendChild(row);
+            });
             document.getElementById('filepathRestoreReady').style.display = 'block';
         })
         .catch(function(err) {
