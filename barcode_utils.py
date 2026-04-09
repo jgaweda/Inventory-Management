@@ -13,10 +13,14 @@ import qrcode
 from barcode import Code128
 from barcode.writer import ImageWriter
 from PIL import Image, ImageDraw, ImageFont
-from runtime_dirs import DATA_DIR
+from runtime_dirs import BUNDLE_DIR, DATA_DIR
 
 # Directory where label PNGs are saved (writable, outside bundled static)
 LABELS_DIR = os.path.join(DATA_DIR, 'static', 'labels')
+
+# Bundled fonts directory — ships with the app so labels render consistently
+# on all platforms regardless of system-installed fonts
+BUNDLED_FONTS_DIR = os.path.join(BUNDLE_DIR, 'fonts')
 
 
 def _ensure_labels_dir():
@@ -38,7 +42,8 @@ def _load_default_font(size):
 
 
 def _find_font(names, size):
-    """Try multiple font paths and return the first that works (path cached)."""
+    """Try multiple font paths and return the first that works (path cached).
+    Checks bundled fonts/ directory first, then system font locations."""
     cache_key = tuple(names)
     if cache_key in _font_path_cache:
         path = _font_path_cache[cache_key]
@@ -48,11 +53,17 @@ def _find_font(names, size):
 
     for name in names:
         for path in [
+            # Bundled fonts (ships with the app, guaranteed present)
+            os.path.join(BUNDLED_FONTS_DIR, name),
+            # Linux
             f"/usr/share/fonts/truetype/dejavu/{name}",
             f"/usr/share/fonts/truetype/liberation/{name}",
+            # macOS
             f"/System/Library/Fonts/{name}",
             f"/Library/Fonts/{name}",
             f"/System/Library/Fonts/Supplemental/{name}",
+            # Windows
+            os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts', name),
         ]:
             try:
                 font = ImageFont.truetype(path, size)
