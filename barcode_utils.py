@@ -27,13 +27,23 @@ def _ensure_labels_dir():
 _font_path_cache = {}  # font name list key -> resolved path
 
 
+def _load_default_font(size):
+    """Pillow 10.1+ supports ImageFont.load_default(size=...), but earlier
+    versions (including the Pillow 9.x pinned for Python 3.8 / Windows 7)
+    raise TypeError on the size kwarg. Fall back gracefully in that case."""
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
 def _find_font(names, size):
     """Try multiple font paths and return the first that works (path cached)."""
     cache_key = tuple(names)
     if cache_key in _font_path_cache:
         path = _font_path_cache[cache_key]
         if path is None:
-            return ImageFont.load_default(size=size)
+            return _load_default_font(size)
         return ImageFont.truetype(path, size)
 
     for name in names:
@@ -59,7 +69,7 @@ def _find_font(names, size):
         except (OSError, IOError):
             continue
     _font_path_cache[cache_key] = None
-    return ImageFont.load_default(size=size)
+    return _load_default_font(size)
 
 
 BOLD_FONTS = ["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
