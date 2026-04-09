@@ -63,7 +63,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,      # console app — shows the startup banner / URL
+    console=False,     # windowed mode — no console window on launch
     icon=None,          # add icon=os.path.join(ROOT, 'static', 'icon.ico') if you have one
 )
 

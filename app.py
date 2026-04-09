@@ -130,8 +130,13 @@ def _set_autostart(enabled):
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_REGISTRY_KEY,
                             0, winreg.KEY_SET_VALUE) as key:
             if enabled:
-                # Use cmd /c start /min to launch minimized in the background
-                command = f'cmd /c start "" /min "{exe_path}"' if getattr(sys, 'frozen', False) else exe_path
+                # Frozen exe is windowed (no console) and runs silently.
+                # For source runs, wrap in cmd /c start /min so there's no
+                # lingering terminal window.
+                if getattr(sys, 'frozen', False):
+                    command = f'"{exe_path}"'
+                else:
+                    command = f'cmd /c start "" /min {exe_path}'
                 winreg.SetValueEx(key, _AUTOSTART_VALUE_NAME, 0, winreg.REG_SZ, command)
                 return True, 'Autostart enabled — the application will launch on user login.'
             else:
@@ -3234,7 +3239,24 @@ def unhandled_exception(e):
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
+def _safe_print(*args, **kwargs):
+    """print() wrapper that won't crash when stdout is None (windowed PyInstaller)."""
+    try:
+        if sys.stdout is not None:
+            print(*args, **kwargs)
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
+    # In windowed PyInstaller builds, sys.stdout/stderr are None; redirect to
+    # devnull so any incidental print/traceback doesn't crash the process.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, 'w')
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, 'w')
+
     server_cfg = _load_server_config()
     default_port = server_cfg.get('port', 8080)
     default_host = server_cfg.get('host', '0.0.0.0')
@@ -3256,24 +3278,24 @@ if __name__ == '__main__':
     if args.reset_admin:
         new_pw = args.reset_admin
         if len(new_pw) < 4:
-            print('  ERROR: Password must be at least 4 characters.')
+            _safe_print('  ERROR: Password must be at least 4 characters.')
             exit(1)
         db.init_db()
         username, created = db.reset_admin_password(new_pw)
         if created:
-            print(f'  Admin user created: {username}')
+            _safe_print(f'  Admin user created: {username}')
         else:
-            print(f'  Password reset for admin user: {username}')
-        print('  You can now log in with the new credentials.')
+            _safe_print(f'  Password reset for admin user: {username}')
+        _safe_print('  You can now log in with the new credentials.')
         exit(0)
 
     if args.export_sql:
         db.init_db()
         success = db.export_database_to_sql(args.export_sql)
         if success:
-            print(f'  Database exported to: {args.export_sql}')
+            _safe_print(f'  Database exported to: {args.export_sql}')
         else:
-            print('  Export failed. Check logs for details.')
+            _safe_print('  Export failed. Check logs for details.')
             exit(1)
         exit(0)
 
@@ -3281,34 +3303,36 @@ if __name__ == '__main__':
         db.init_db()
         dest = args.emergency_backup if args.emergency_backup is not True else None
         path = db.emergency_backup(dest)
-        print(f'  Emergency backup created: {path}')
+        _safe_print(f'  Emergency backup created: {path}')
         exit(0)
 
     if args.convert_png_to_jpg:
         db.init_db()
-        print('  Converting PNG uploads to JPG...')
+        _safe_print('  Converting PNG uploads to JPG...')
         stats = db.convert_png_uploads_to_jpg()
-        print(f'  Converted: {stats["converted"]}')
-        print(f'  Skipped:   {stats["skipped"]}')
-        print(f'  Errors:    {stats["errors"]}')
-        print(f'  Saved:     {stats["bytes_saved"] // 1024} KB')
+        _safe_print(f'  Converted: {stats["converted"]}')
+        _safe_print(f'  Skipped:   {stats["skipped"]}')
+        _safe_print(f'  Errors:    {stats["errors"]}')
+        _safe_print(f'  Saved:     {stats["bytes_saved"] // 1024} KB')
         exit(0)
 
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
     _version = _app_version
     w = 49  # inner width between | chars
-    print()
-    print(f'  +{"-" * w}+')
-    print(f'  |{"HP Connectivity Team Inventory System":^{w}}|')
-    print(f'  |{("v" + _version):^{w}}|')
-    print(f'  |{"":^{w}}|')
-    print(f'  |{"  Running at: " + url:<{w}}|')
-    print(f'  |{"  Mode: " + mode:<{w}}|')
-    print(f'  |{"":^{w}}|')
-    print(f'  |{"  Press Ctrl+C to stop":<{w}}|')
-    print(f'  +{"-" * w}+')
-    print()
+    _safe_print()
+    _safe_print(f'  +{"-" * w}+')
+    _safe_print(f'  |{"HP Connectivity Team Inventory System":^{w}}|')
+    _safe_print(f'  |{("v" + _version):^{w}}|')
+    _safe_print(f'  |{"":^{w}}|')
+    _safe_print(f'  |{"  Running at: " + url:<{w}}|')
+    _safe_print(f'  |{"  Mode: " + mode:<{w}}|')
+    _safe_print(f'  |{"":^{w}}|')
+    _safe_print(f'  |{"  Press Ctrl+C to stop":<{w}}|')
+    _safe_print(f'  +{"-" * w}+')
+    _safe_print()
+    # Also log startup to the app log (visible in the /logs viewer)
+    app_logger.info('Application v%s starting on %s (%s mode)', _version, url, mode)
 
     if args.dev:
         app.run(host=args.host, port=args.port, debug=True)
@@ -3316,9 +3340,9 @@ if __name__ == '__main__':
         try:
             from waitress import serve
         except ImportError as _imp_err:
-            print(f"  ERROR: waitress could not be imported ({_imp_err}).")
-            print("  The application requires waitress for multithreaded serving.")
-            print("  Install it with: pip install waitress")
+            app_logger.critical('waitress could not be imported: %s', _imp_err)
+            _safe_print(f"  ERROR: waitress could not be imported ({_imp_err}).")
+            _safe_print("  The application requires waitress for multithreaded serving.")
             exit(1)
         app_logger.info('Starting production server (waitress, 16 threads) on %s:%s',
                         args.host, args.port)
