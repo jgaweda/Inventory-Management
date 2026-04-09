@@ -88,15 +88,15 @@ jobs:
         with:
           ref: ims-app
 
-      - name: Set up Python 3.12
+      - name: Set up Python 3.8 (Windows 7 compatible)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.8'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements_win7.txt
           pip install pyinstaller
 
       - name: Build executable
@@ -186,6 +186,6 @@ jobs:
 
           ### Downloads
           - **InventorySystem-macOS.zip** — macOS 12+ (Apple Silicon)
-          - **InventorySystem-Windows.zip** — Windows 10/11
+          - **InventorySystem-Windows.zip** — Windows 7+
 
           Unzip and run. See [README](../../blob/ims-app/README.md) for setup instructions."
