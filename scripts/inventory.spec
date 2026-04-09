@@ -17,6 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(SPEC)))
 # Ensure static/ exists (may be empty in CI)
 os.makedirs(os.path.join(ROOT, 'static'), exist_ok=True)
 
+from PyInstaller.utils.hooks import collect_submodules
+
 a = Analysis(
     [os.path.join(ROOT, 'app.py')],
     pathex=[ROOT],
@@ -25,12 +27,12 @@ a = Analysis(
         (os.path.join(ROOT, 'templates'), 'templates'),
         (os.path.join(ROOT, 'static'), 'static'),
         (os.path.join(ROOT, 'seed_data'), 'seed_data'),
+        (os.path.join(ROOT, 'VERSION'), '.'),
     ],
     hiddenimports=[
         'flask',
         'jinja2',
         'werkzeug',
-        'waitress',
         'PIL',
         'qrcode',
         'barcode',
@@ -38,7 +40,7 @@ a = Analysis(
         'openpyxl',
         'sqlite3',
         'pyzipper',
-    ],
+    ] + collect_submodules('waitress'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

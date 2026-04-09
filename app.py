@@ -38,12 +38,21 @@ app.secret_key = os.environ.get('SECRET_KEY', 'hp-connectivity-inventory-system-
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600  # cache static files for 1 hour
 
 # Application version (read from VERSION file)
-_version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')
-try:
-    with open(_version_path) as _vf:
-        _app_version = _vf.read().strip()
-except FileNotFoundError:
-    _app_version = 'dev'
+# In PyInstaller bundles, look in BUNDLE_DIR (sys._MEIPASS); otherwise look
+# next to app.py. Also check DATA_DIR as a fallback for dev-mode runs.
+_version_candidates = [
+    os.path.join(BUNDLE_DIR, 'VERSION'),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION'),
+    os.path.join(DATA_DIR, 'VERSION'),
+]
+_app_version = 'dev'
+for _vp in _version_candidates:
+    try:
+        with open(_vp) as _vf:
+            _app_version = _vf.read().strip()
+            break
+    except (FileNotFoundError, OSError):
+        continue
 
 # ---------------------------------------------------------------------------
 # Application logging (rotating file, single file that overwrites at limit)
@@ -82,6 +91,57 @@ def _load_server_config():
 def _save_server_config(config):
     with open(SERVER_CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=2)
+
+
+_AUTOSTART_REGISTRY_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
+_AUTOSTART_VALUE_NAME = 'HPConnectivityInventory'
+
+
+def _get_autostart_enabled():
+    """Return True if the Windows autostart registry entry is set."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_REGISTRY_KEY) as key:
+            winreg.QueryValueEx(key, _AUTOSTART_VALUE_NAME)
+            return True
+    except (ImportError, FileNotFoundError, OSError):
+        return False
+
+
+def _set_autostart(enabled):
+    """Enable or disable running on startup via Windows registry (HKCU\\...\\Run).
+    Returns (ok, message)."""
+    if sys.platform != 'win32':
+        return False, 'Autostart is only supported on Windows.'
+    try:
+        import winreg
+    except ImportError:
+        return False, 'winreg module is not available on this platform.'
+
+    # Determine the executable path: frozen exe or python interpreter + script
+    if getattr(sys, 'frozen', False):
+        exe_path = sys.executable
+    else:
+        exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_REGISTRY_KEY,
+                            0, winreg.KEY_SET_VALUE) as key:
+            if enabled:
+                # Use cmd /c start /min to launch minimized in the background
+                command = f'cmd /c start "" /min "{exe_path}"' if getattr(sys, 'frozen', False) else exe_path
+                winreg.SetValueEx(key, _AUTOSTART_VALUE_NAME, 0, winreg.REG_SZ, command)
+                return True, 'Autostart enabled — the application will launch on user login.'
+            else:
+                try:
+                    winreg.DeleteValue(key, _AUTOSTART_VALUE_NAME)
+                except FileNotFoundError:
+                    pass
+                return True, 'Autostart disabled.'
+    except OSError as e:
+        return False, f'Failed to update registry: {e}'
 
 
 _log_config = _load_log_config()
@@ -1188,7 +1248,12 @@ def account():
     def _render(**extra):
         users = db.get_all_users() if has_permission('users') else []
         server_config = _load_server_config()
-        return render_template('account.html', users=users, server_config=server_config, **extra)
+        autostart = {
+            'supported': sys.platform == 'win32',
+            'enabled': _get_autostart_enabled(),
+        }
+        return render_template('account.html', users=users, server_config=server_config,
+                               autostart=autostart, **extra)
 
     if request.method == 'POST':
         # Password change + hint form
@@ -1248,7 +1313,22 @@ def save_server_config():
     config['port'] = port
     _save_server_config(config)
     app_logger.info('Server config updated: port=%d by user=%s', port, g.user['username'])
-    flash('Server settings saved. Restart the application for changes to take effect.', 'success')
+
+    # Handle Windows autostart toggle
+    autostart_enabled = '1' in request.form.getlist('autostart_enabled')
+    if sys.platform == 'win32':
+        current = _get_autostart_enabled()
+        if current != autostart_enabled:
+            ok, msg = _set_autostart(autostart_enabled)
+            app_logger.info('Autostart %s by user=%s (%s)',
+                            'enabled' if autostart_enabled else 'disabled',
+                            g.user['username'], msg)
+            if ok:
+                flash(msg, 'success')
+            else:
+                flash(msg, 'error')
+
+    flash('Server settings saved. Restart the application for port changes to take effect.', 'success')
     return redirect(url_for('account'))
 
 
@@ -3216,11 +3296,7 @@ if __name__ == '__main__':
 
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
-    try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION')) as _vf:
-            _version = _vf.read().strip()
-    except Exception:
-        _version = 'unknown'
+    _version = _app_version
     w = 49  # inner width between | chars
     print()
     print(f'  +{"-" * w}+')
@@ -3239,10 +3315,12 @@ if __name__ == '__main__':
     else:
         try:
             from waitress import serve
-            app_logger.info('Starting production server (waitress) on %s:%s', args.host, args.port)
-            serve(app, host=args.host, port=args.port, threads=8)
-        except ImportError:
-            print("  WARNING: waitress not installed. Install it for production:")
-            print("    pip install waitress")
-            print("  Falling back to Flask development server.\n")
-            app.run(host=args.host, port=args.port, debug=False)
+        except ImportError as _imp_err:
+            print(f"  ERROR: waitress could not be imported ({_imp_err}).")
+            print("  The application requires waitress for multithreaded serving.")
+            print("  Install it with: pip install waitress")
+            exit(1)
+        app_logger.info('Starting production server (waitress, 16 threads) on %s:%s',
+                        args.host, args.port)
+        serve(app, host=args.host, port=args.port, threads=16,
+              ident='HP Connectivity Inventory')

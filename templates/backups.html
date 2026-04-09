@@ -85,12 +85,10 @@
             </div>
 
                 <div style="margin-top: 4px;">
-                    <form method="POST" action="{{ url_for('backup_create') }}" style="margin: 0;">
-                        <button type="submit" class="btn btn-primary btn-sm">
-                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                            Backup Now
-                        </button>
-                    </form>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('backupNowForm').submit()">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        Backup Now
+                    </button>
                 </div>
 
             <!-- Auto-backup / scheduler status -->
@@ -282,6 +280,7 @@
             <button type="submit" class="btn btn-primary btn-sm">Save Configuration</button>
         </div>
     </form>
+    <form id="backupNowForm" method="POST" action="{{ url_for('backup_create') }}" style="display: none;"></form>
     <form id="gitPushForm" method="POST" action="{{ url_for('backup_push_git') }}" style="display: none;"></form>
     <form id="filepathPushForm" method="POST" action="{{ url_for('backup_push_filepath') }}" style="display: none;"></form>
     <div style="margin-top: 8px;">

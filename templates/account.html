@@ -158,8 +158,23 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
             </div>
             <button type="submit" class="btn btn-primary">Save</button>
         </div>
+        {% if autostart and autostart.supported %}
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px;">
+                <input type="hidden" name="autostart_enabled" value="0">
+                <input type="checkbox" name="autostart_enabled" value="1" {{ 'checked' if autostart.enabled }}
+                       style="width: 16px; height: 16px;">
+                <span>
+                    <strong>Run on startup</strong>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        Launch the application minimized in the background when you log into Windows.
+                    </div>
+                </span>
+            </label>
+        </div>
+        {% endif %}
         <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; margin-bottom: 0;">
-            Changes take effect after restarting the application. Current default: port {{ server_config.port or 8080 }}.
+            Port changes take effect after restarting the application. Current default: port {{ server_config.port or 8080 }}.
         </p>
     </form>
 </div>
