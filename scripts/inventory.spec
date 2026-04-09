@@ -27,6 +27,7 @@ a = Analysis(
         (os.path.join(ROOT, 'templates'), 'templates'),
         (os.path.join(ROOT, 'static'), 'static'),
         (os.path.join(ROOT, 'seed_data'), 'seed_data'),
+        (os.path.join(ROOT, 'fonts'), 'fonts'),
         (os.path.join(ROOT, 'VERSION'), '.'),
     ],
     hiddenimports=[
