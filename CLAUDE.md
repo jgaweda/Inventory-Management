@@ -411,7 +411,7 @@ These are created in the app directory at runtime, not checked into git.
 
 1. **check-changes** — Skip if only VERSION changed
 2. **bump-version** — Increment patch version, commit with `[skip ci]`
-3. **build-windows** — Python 3.8 on windows-latest (Win7 compatible), PyInstaller
+3. **build-windows** — Python 3.12 on windows-latest, PyInstaller
 4. **build-macos** — Python 3.12 on macos-14, PyInstaller + ad-hoc code signing
 5. **release** — Create GitHub release with zipped executables
 

@@ -27,6 +27,9 @@ a = Analysis(
         (os.path.join(ROOT, 'seed_data'), 'seed_data'),
     ],
     hiddenimports=[
+        'flask',
+        'jinja2',
+        'werkzeug',
         'waitress',
         'PIL',
         'qrcode',
