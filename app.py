@@ -26,7 +26,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, send_file, jsonify, Response, session, g,
 )
-from runtime_dirs import BUNDLE_DIR, DATA_DIR
+from runtime_dirs import BUNDLE_DIR, DATA_DIR, GIT_EXECUTABLE
 
 import database as db
 import barcode_utils
@@ -1293,11 +1293,22 @@ def account():
 @login_required
 def docs():
     """Render the README as in-app documentation."""
-    readme_path = os.path.join(BUNDLE_DIR, 'README.md')
-    try:
-        with open(readme_path, 'r') as f:
-            content = f.read()
-    except FileNotFoundError:
+    # Check multiple locations — PyInstaller _MEIPASS root, next to app.py,
+    # and DATA_DIR (for dev). Does NOT depend on git or internet access.
+    candidates = [
+        os.path.join(BUNDLE_DIR, 'README.md'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'README.md'),
+        os.path.join(DATA_DIR, 'README.md'),
+    ]
+    content = None
+    for readme_path in candidates:
+        try:
+            with open(readme_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                break
+        except (FileNotFoundError, OSError):
+            continue
+    if content is None:
         content = '*Documentation file not found.*'
     return render_template('docs.html', readme_content=content)
 
@@ -1366,7 +1377,7 @@ def app_update_check():
     try:
         # Fetch tags from remote
         fetch_result = subprocess.run(
-            ['git', 'fetch', '--tags', '--force'],
+            [GIT_EXECUTABLE, 'fetch', '--tags', '--force'],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
         )
         if fetch_result.returncode != 0:
@@ -1374,7 +1385,7 @@ def app_update_check():
 
         # Get all v* tags sorted by version (newest last)
         tag_result = subprocess.run(
-            ['git', 'tag', '-l', 'v*', '--sort=version:refname'],
+            [GIT_EXECUTABLE, 'tag', '-l', 'v*', '--sort=version:refname'],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
         )
         tags = [t.strip() for t in tag_result.stdout.strip().splitlines() if t.strip()]
@@ -1397,7 +1408,7 @@ def app_update_check():
         if _parse_ver(latest_version) > _parse_ver(_app_version):
             # Get commit messages between current and latest tag
             log_result = subprocess.run(
-                ['git', 'log', f'v{_app_version}..{latest_tag}',
+                [GIT_EXECUTABLE, 'log', f'v{_app_version}..{latest_tag}',
                  '--oneline', '--no-decorate', '--first-parent'],
                 cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
             )
@@ -1440,7 +1451,7 @@ def app_update_apply():
 
         # Checkout the tagged release
         checkout_result = subprocess.run(
-            ['git', 'checkout', tag],
+            [GIT_EXECUTABLE, 'checkout', tag],
             cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
         )
         if checkout_result.returncode != 0:
@@ -3319,6 +3330,35 @@ if __name__ == '__main__':
     url = f'http://{args.host}:{args.port}'
     mode = 'DEVELOPMENT' if args.dev else 'PRODUCTION'
     _version = _app_version
+
+    # --- Single-instance check -------------------------------------------
+    # If another copy of the app is already serving on this port, open the
+    # browser to the running instance and exit immediately so we don't end
+    # up with a confusing "address already in use" crash.
+    def _probe_existing_instance(host, port):
+        import socket as _sock
+        probe_host = '127.0.0.1' if host in ('0.0.0.0', '::') else host
+        try:
+            s = _sock.create_connection((probe_host, port), timeout=0.5)
+            s.close()
+            return True
+        except (OSError, _sock.timeout):
+            return False
+
+    if not args.dev and _probe_existing_instance(args.host, args.port):
+        app_logger.info('Another instance is already running on %s:%s — opening browser and exiting',
+                        args.host, args.port)
+        _safe_print(f'  Another instance is already running at {url}')
+        _safe_print('  Opening browser to the existing instance...')
+        try:
+            import webbrowser
+            browser_host = '127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host
+            webbrowser.open(f'http://{browser_host}:{args.port}')
+        except Exception:
+            pass
+        exit(0)
+    # ---------------------------------------------------------------------
+
     w = 49  # inner width between | chars
     _safe_print()
     _safe_print(f'  +{"-" * w}+')

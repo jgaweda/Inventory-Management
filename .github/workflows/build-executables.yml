@@ -102,6 +102,21 @@ jobs:
       - name: Build executable
         run: pyinstaller --clean scripts/inventory.spec
 
+      - name: Download and bundle MinGit (portable git for Windows)
+        shell: pwsh
+        run: |
+          $MinGitVersion = "2.47.0"
+          $MinGitUrl = "https://github.com/git-for-windows/git/releases/download/v${MinGitVersion}.windows.1/MinGit-${MinGitVersion}-64-bit.zip"
+          $ZipPath = "$env:TEMP\MinGit.zip"
+          $ExtractPath = "dist\InventorySystem\git"
+          Write-Host "Downloading MinGit $MinGitVersion..."
+          Invoke-WebRequest -Uri $MinGitUrl -OutFile $ZipPath -UseBasicParsing
+          Write-Host "Extracting MinGit to $ExtractPath..."
+          Expand-Archive -Path $ZipPath -DestinationPath $ExtractPath -Force
+          Remove-Item $ZipPath
+          Write-Host "Bundled git.exe at:"
+          Get-ChildItem "$ExtractPath\cmd\git.exe"
+
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:

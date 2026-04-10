@@ -20,7 +20,7 @@ import threading
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from runtime_dirs import BUNDLE_DIR, DATA_DIR
+from runtime_dirs import BUNDLE_DIR, DATA_DIR, GIT_EXECUTABLE
 
 # Path to the SQLite database file (writable data directory)
 DB_PATH = os.path.join(DATA_DIR, 'inventory.db')
@@ -1924,22 +1924,22 @@ def push_backups_to_git():
         try:
             # Try to clone existing branch to preserve history
             clone_result = subprocess.run(
-                ['git', 'clone', '--depth', '10', '--branch', git_branch,
+                [GIT_EXECUTABLE, 'clone', '--depth', '10', '--branch', git_branch,
                  '--single-branch', remote_url, tmpdir],
                 capture_output=True, timeout=60, env=git_env,
             )
             if clone_result.returncode != 0:
                 # Branch doesn't exist yet — init fresh
-                subprocess.run(['git', 'init'], cwd=tmpdir, capture_output=True,
+                subprocess.run([GIT_EXECUTABLE, 'init'], cwd=tmpdir, capture_output=True,
                                check=True, timeout=15, env=git_env)
-                subprocess.run(['git', 'checkout', '--orphan', git_branch],
+                subprocess.run([GIT_EXECUTABLE, 'checkout', '--orphan', git_branch],
                                cwd=tmpdir, capture_output=True, check=True,
                                timeout=15, env=git_env)
 
             # Set commit identity
-            subprocess.run(['git', 'config', 'user.email', 'inventory@local'],
+            subprocess.run([GIT_EXECUTABLE, 'config', 'user.email', 'inventory@local'],
                            cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
-            subprocess.run(['git', 'config', 'user.name', 'Inventory System'],
+            subprocess.run([GIT_EXECUTABLE, 'config', 'user.name', 'Inventory System'],
                            cwd=tmpdir, capture_output=True, check=True, timeout=5, env=git_env)
 
             # Create/update zip archive — stable name so git tracks diffs
@@ -1985,12 +1985,12 @@ def push_backups_to_git():
                     _add_backup_files_to_zip(zf)
             zip_size = os.path.getsize(zip_path)
 
-            subprocess.run(['git', 'add', zip_name],
+            subprocess.run([GIT_EXECUTABLE, 'add', zip_name],
                            cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env)
 
             # Check if there are actual changes to commit
             diff_result = subprocess.run(
-                ['git', 'diff', '--cached', '--quiet'],
+                [GIT_EXECUTABLE, 'diff', '--cached', '--quiet'],
                 cwd=tmpdir, capture_output=True, timeout=15, env=git_env,
             )
             if diff_result.returncode == 0:
@@ -2009,13 +2009,13 @@ def push_backups_to_git():
             commit_msg = (f'Backup {datetime.now().strftime("%Y-%m-%d %H:%M")} '
                           f'({len(backup_files)} files, {zip_size // 1024}KB)')
             subprocess.run(
-                ['git', 'commit', '-m', commit_msg],
+                [GIT_EXECUTABLE, 'commit', '-m', commit_msg],
                 cwd=tmpdir, capture_output=True, check=True, timeout=30, env=git_env,
             )
 
             # Regular push (not --force) to preserve commit history
             subprocess.run(
-                ['git', 'push', remote_url, f'{git_branch}:{git_branch}'],
+                [GIT_EXECUTABLE, 'push', remote_url, f'{git_branch}:{git_branch}'],
                 cwd=tmpdir, capture_output=True, check=True, timeout=120, env=git_env,
             )
 
@@ -2600,7 +2600,7 @@ def _get_git_push_url():
         remote_url = git_repo
     else:
         result = subprocess.run(
-            ['git', 'remote', 'get-url', 'origin'],
+            [GIT_EXECUTABLE, 'remote', 'get-url', 'origin'],
             cwd=REPO_DIR, capture_output=True, check=True, timeout=15, env=git_env,
         )
         remote_url = result.stdout.decode().strip()
@@ -2632,7 +2632,7 @@ def list_git_backups():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Shallow clone just the backup branch
         result = subprocess.run(
-            ['git', 'clone', '--depth', '1', '--branch', git_branch,
+            [GIT_EXECUTABLE, 'clone', '--depth', '1', '--branch', git_branch,
              '--single-branch', remote_url, tmpdir],
             capture_output=True, timeout=60, env=git_env,
         )
@@ -2707,7 +2707,7 @@ def restore_from_git(filename):
     with tempfile.TemporaryDirectory() as tmpdir:
         # Clone the backup branch
         result = subprocess.run(
-            ['git', 'clone', '--depth', '1', '--branch', git_branch,
+            [GIT_EXECUTABLE, 'clone', '--depth', '1', '--branch', git_branch,
              '--single-branch', remote_url, tmpdir],
             capture_output=True, timeout=60, env=git_env,
         )

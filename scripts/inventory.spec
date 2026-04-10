@@ -29,6 +29,7 @@ a = Analysis(
         (os.path.join(ROOT, 'seed_data'), 'seed_data'),
         (os.path.join(ROOT, 'fonts'), 'fonts'),
         (os.path.join(ROOT, 'VERSION'), '.'),
+        (os.path.join(ROOT, 'README.md'), '.'),
     ],
     hiddenimports=[
         'flask',
