@@ -1431,11 +1431,13 @@ def _compute_db_hash(skip_checkpoint=False):
         return ''
 
 
-def backup_database(performed_by='system', manual=False):
+def backup_database(performed_by='system', manual=False, prune=True):
     """
     Create a safe backup of the database using SQLite's online backup API.
-    Automated backups are prefixed 'auto_backup_' and pruned to max_backups.
-    Manual backups are prefixed 'manual_backup_' and never auto-pruned.
+    Automated backups are prefixed 'auto_backup_', manual backups are prefixed
+    'manual_backup_'. Pruning to max_backups runs after a successful backup
+    unless prune=False (e.g. for pre-restore safety backups that must not
+    touch other files in the backup directory).
     Skips automated backups if the database hasn't changed since the last one.
     Returns dict with backup metadata (includes 'skipped' key).
     """
@@ -1570,7 +1572,7 @@ def backup_database(performed_by='system', manual=False):
     file_size = os.path.getsize(backup_path)
 
     # Smart prune: keep at least 1 backup per day for 7 days, then apply max_backups
-    pruned = _smart_prune_backups(config['max_backups'])
+    pruned = _smart_prune_backups(config['max_backups']) if prune else 0
 
     # Record last successful backup time and hash for skip-if-unchanged
     # skip_checkpoint=True since we already checkpointed above
@@ -1847,29 +1849,43 @@ def _smart_prune_backups(max_backups):
 
 
 def _smart_prune_unlocked(max_backups):
-    """Inner prune logic — caller must hold _backup_file_lock."""
+    """Inner prune logic — caller must hold _backup_file_lock.
+
+    Treats max_backups as a hard cap on the TOTAL number of backup files
+    (both auto and manual). Manual backups are still preferred over auto
+    when deciding what to keep — manual backups are only pruned once all
+    auto backups have been removed and we're still above the cap.
+
+    Also protects at least one backup per day for the last 7 days so
+    daily recovery history is preserved even with a low max_backups.
+    """
     backup_dir = _get_backup_dir()
-    auto_backups = sorted(
-        [f for f in os.listdir(backup_dir) if f.startswith('auto_backup_') and _is_backup_file(f)],
-        reverse=True,  # newest first
+    all_backups = sorted(
+        [f for f in os.listdir(backup_dir)
+         if _is_backup_file(f) and (f.startswith('auto_backup_') or f.startswith('manual_backup_'))],
+        reverse=True,  # newest first (lexicographic works because timestamps are zero-padded)
     )
-    if len(auto_backups) <= max_backups:
+    if len(all_backups) <= max_backups:
         return 0
+
+    def _parse_ts(filename):
+        ts_part = filename.replace('auto_backup_', '').replace('manual_backup_', '')
+        ts_part = ts_part.replace('.db', '').replace('.zip', '').split('_uploaded')[0]
+        for fmt in ('%Y%m%d_%H%M%S_%f', '%Y%m%d_%H%M%S'):
+            try:
+                return datetime.strptime(ts_part, fmt)
+            except ValueError:
+                continue
+        return None
 
     now = datetime.now()
     cutoff = now - timedelta(days=7)
-    protected = set()  # filenames to keep (one per day for 7 days)
+    protected = set()
     days_seen = set()
 
-    for f in auto_backups:
-        ts_part = f.replace('auto_backup_', '').replace('.db', '').replace('.zip', '').split('_uploaded')[0]
-        dt = None
-        for fmt in ('%Y%m%d_%H%M%S_%f', '%Y%m%d_%H%M%S'):
-            try:
-                dt = datetime.strptime(ts_part, fmt)
-                break
-            except ValueError:
-                continue
+    # Protect one backup per day for the last 7 days (prefer manual, then newest)
+    for f in all_backups:
+        dt = _parse_ts(f)
         if dt is None:
             continue
         if dt >= cutoff:
@@ -1878,22 +1894,28 @@ def _smart_prune_unlocked(max_backups):
                 days_seen.add(day_key)
                 protected.add(f)
 
-    # Always protect the newest max_backups as well
-    for f in auto_backups[:max_backups]:
+    # Protect the newest max_backups files overall (manual and auto mixed)
+    for f in all_backups[:max_backups]:
         protected.add(f)
 
-    # Prune anything not protected
+    # Prune anything not protected — prefer removing auto backups first
+    # so manual backups are only removed as a last resort.
+    candidates = [f for f in all_backups if f not in protected]
+    candidates.sort(key=lambda f: (not f.startswith('auto_backup_'),  # auto first
+                                    _parse_ts(f) or datetime.min))    # then oldest first
     pruned = 0
-    for f in auto_backups:
-        if f not in protected:
-            try:
-                os.remove(os.path.join(backup_dir, f))
-                pruned += 1
-            except OSError as e:
-                _audit_logger.warning('Failed to prune backup %s: %s', f, e)
+    for f in candidates:
+        try:
+            os.remove(os.path.join(backup_dir, f))
+            pruned += 1
+        except OSError as e:
+            _audit_logger.warning('Failed to prune backup %s: %s', f, e)
     if pruned:
-        _audit_logger.info('Smart prune: removed %d auto-backups, kept %d (protected %d daily + %d newest)',
-                           pruned, len(auto_backups) - pruned, len(days_seen), min(max_backups, len(auto_backups)))
+        _audit_logger.info(
+            'Smart prune: removed %d backups, kept %d (protected %d daily + %d newest, cap=%d)',
+            pruned, len(all_backups) - pruned, len(days_seen),
+            min(max_backups, len(all_backups)), max_backups
+        )
     return pruned
 
 
@@ -2480,7 +2502,7 @@ def restore_database(filename):
         checkpoint_wal()
 
         # Create a safety backup of the current DB before overwriting
-        safety_backup = backup_database(performed_by='pre-restore-safety', manual=True)
+        safety_backup = backup_database(performed_by='pre-restore-safety', manual=True, prune=False)
 
         # Restore: copy backup over the live database using the backup API
         try:
@@ -2769,7 +2791,7 @@ def restore_from_git(filename):
         checkpoint_wal()
 
         # Safety backup before restore
-        safety = backup_database(performed_by='pre-git-restore-safety', manual=True)
+        safety = backup_database(performed_by='pre-git-restore-safety', manual=True, prune=False)
 
         # Restore using backup API with rollback on failure
         try:
@@ -2946,7 +2968,7 @@ def restore_from_filepath(filename):
             test_conn.close()
 
         checkpoint_wal()
-        safety = backup_database(performed_by='pre-filepath-restore-safety', manual=True)
+        safety = backup_database(performed_by='pre-filepath-restore-safety', manual=True, prune=False)
 
         try:
             src = sqlite3.connect(extracted_path)
