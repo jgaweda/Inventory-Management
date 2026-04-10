@@ -80,12 +80,23 @@ def _save_log_config(config):
         _j.dump(config, f)
 
 
+_DEFAULT_UPDATE_REPO_URL = 'https://github.com/jgaweda/Inventory-Management'
+
+
 def _load_server_config():
+    defaults = {
+        'port': 8080,
+        'host': '0.0.0.0',
+        'update_repo_url': _DEFAULT_UPDATE_REPO_URL,
+        'update_branch': '',  # empty = use releases instead of a branch
+    }
     try:
         with open(SERVER_CONFIG_FILE, 'r') as f:
-            return json.load(f)
+            saved = json.load(f)
     except (FileNotFoundError, ValueError):
-        return {'port': 8080, 'host': '0.0.0.0'}
+        saved = {}
+    defaults.update(saved)
+    return defaults
 
 
 def _save_server_config(config):
@@ -1327,8 +1338,19 @@ def save_server_config():
 
     config = _load_server_config()
     config['port'] = port
+
+    # Update repo URL & branch (for the self-update feature)
+    repo_url = request.form.get('update_repo_url', '').strip()
+    if repo_url:
+        config['update_repo_url'] = repo_url
+    else:
+        config['update_repo_url'] = _DEFAULT_UPDATE_REPO_URL
+    config['update_branch'] = request.form.get('update_branch', '').strip()
+
     _save_server_config(config)
-    app_logger.info('Server config updated: port=%d by user=%s', port, g.user['username'])
+    app_logger.info('Server config updated: port=%d repo=%s branch=%s by user=%s',
+                    port, config['update_repo_url'], config['update_branch'] or '(releases)',
+                    g.user['username'])
 
     # Handle Windows autostart toggle
     autostart_enabled = '1' in request.form.getlist('autostart_enabled')
@@ -1370,96 +1392,298 @@ def save_guest_permissions():
 _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _parse_version(v):
+    """Parse 'X.Y.Z' into tuple of ints for comparison."""
+    try:
+        return tuple(int(x) for x in v.lstrip('v').split('.'))
+    except (ValueError, AttributeError):
+        return (0,)
+
+
+def _parse_github_repo(url):
+    """Extract (owner, repo) from a GitHub URL. Returns (None, None) for
+    non-GitHub URLs."""
+    import re
+    m = re.match(r'(?:https?://)?(?:www\.)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$', url or '')
+    if m:
+        return m.group(1), m.group(2)
+    return None, None
+
+
+def _github_api_latest_release(owner, repo, timeout=10):
+    """Query GitHub API for the latest release. Returns the parsed JSON
+    dict or raises on error. No auth required for public repos."""
+    import urllib.request
+    api_url = f'https://api.github.com/repos/{owner}/{repo}/releases/latest'
+    req = urllib.request.Request(api_url, headers={
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'HP-Connectivity-Inventory-Updater',
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
 @app.route('/admin/update/check', methods=['POST'])
 @permission_required('update')
 def app_update_check():
-    """Check for new tagged releases (vX.Y.Z) on the remote."""
+    """Check for new tagged releases on the configured remote.
+
+    Uses the GitHub REST API for github.com repos (no git clone needed
+    and works from the PyInstaller bundle where there is no local repo).
+    Falls back to `git ls-remote` for non-GitHub URLs (internal git
+    servers) so admins can point at a private branch.
+    """
+    config = _load_server_config()
+    repo_url = config.get('update_repo_url', _DEFAULT_UPDATE_REPO_URL).strip()
+    branch = config.get('update_branch', '').strip()
+
+    if not repo_url:
+        return jsonify({'error': 'No update repository configured. Set one in Server Settings.'})
+
+    owner, repo = _parse_github_repo(repo_url)
+
+    # --- GitHub REST API path (preferred) -------------------------------
+    if owner and repo and not branch:
+        try:
+            release = _github_api_latest_release(owner, repo)
+            latest_tag = release.get('tag_name', '').strip()
+            if not latest_tag:
+                return jsonify({'updates_available': False,
+                                'output': f'Current: v{_app_version}\nNo releases found on {owner}/{repo}.'})
+
+            latest_version = latest_tag.lstrip('v')
+            if _parse_version(latest_version) > _parse_version(_app_version):
+                body = (release.get('body') or '').strip()
+                # Cap the body at ~2000 chars so the UI doesn't get overwhelmed
+                if len(body) > 2000:
+                    body = body[:2000] + '\n...'
+                output = (f'Current: v{_app_version}\n'
+                          f'Available: {latest_tag}\n'
+                          f'Published: {release.get("published_at", "")}\n\n'
+                          f'{body}' if body else
+                          f'Current: v{_app_version}\nAvailable: {latest_tag}')
+                return jsonify({
+                    'updates_available': True,
+                    'output': output,
+                    'tag': latest_tag,
+                    'release_url': release.get('html_url', ''),
+                })
+            else:
+                return jsonify({'updates_available': False,
+                                'output': f'Current: v{_app_version}\n'
+                                          f'Latest release: {latest_tag}\n\n'
+                                          f'Application is up to date.'})
+        except Exception as e:
+            app_logger.warning('GitHub API update check failed: %s', e)
+            return jsonify({'error': f'Could not reach GitHub API: {e}'})
+
+    # --- git ls-remote path (for private branches or non-GitHub) --------
     try:
-        # Fetch tags from remote
-        fetch_result = subprocess.run(
-            [GIT_EXECUTABLE, 'fetch', '--tags', '--force'],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
-        )
-        if fetch_result.returncode != 0:
-            return jsonify({'error': f'Git fetch failed: {fetch_result.stderr.strip()}'})
-
-        # Get all v* tags sorted by version (newest last)
-        tag_result = subprocess.run(
-            [GIT_EXECUTABLE, 'tag', '-l', 'v*', '--sort=version:refname'],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
-        )
-        tags = [t.strip() for t in tag_result.stdout.strip().splitlines() if t.strip()]
-
-        if not tags:
-            return jsonify({'updates_available': False,
-                            'output': f'Current: v{_app_version}\nNo releases found.'})
-
-        latest_tag = tags[-1]
-        latest_version = latest_tag.lstrip('v')
-
-        # Compare with current version using tuple comparison
-        def _parse_ver(v):
-            """Parse 'X.Y.Z' into tuple of ints for comparison."""
-            try:
-                return tuple(int(x) for x in v.split('.'))
-            except (ValueError, AttributeError):
-                return (0,)
-
-        if _parse_ver(latest_version) > _parse_ver(_app_version):
-            # Get commit messages between current and latest tag
-            log_result = subprocess.run(
-                [GIT_EXECUTABLE, 'log', f'v{_app_version}..{latest_tag}',
-                 '--oneline', '--no-decorate', '--first-parent'],
-                cwd=_REPO_DIR, capture_output=True, text=True, timeout=10,
+        if branch:
+            # Check the HEAD commit of the configured branch
+            ls_result = subprocess.run(
+                [GIT_EXECUTABLE, 'ls-remote', '--heads', repo_url, branch],
+                capture_output=True, text=True, timeout=30,
             )
-            commits = log_result.stdout.strip()
-            lines = [l for l in commits.splitlines()
-                     if l and not l.split(' ', 1)[1].startswith(
-                         ('Bump version', 'Merge branch', 'Merge remote'))]
-            count = len(lines)
-            summary = '\n'.join(lines[:20])  # show up to 20 changes
-            if count > 20:
-                summary += f'\n... and {count - 20} more'
-
-            output = (f'Current: v{_app_version}\n'
-                      f'Available: {latest_tag}\n\n'
-                      f'{count} change(s):\n\n{summary}')
-            return jsonify({'updates_available': True, 'output': output,
-                            'tag': latest_tag})
+            if ls_result.returncode != 0:
+                return jsonify({'error': f'git ls-remote failed: {ls_result.stderr.strip()}'})
+            if not ls_result.stdout.strip():
+                return jsonify({'updates_available': False,
+                                'output': f'Current: v{_app_version}\nBranch "{branch}" not found on remote.'})
+            remote_sha = ls_result.stdout.split()[0][:12]
+            return jsonify({
+                'updates_available': True,
+                'output': f'Current: v{_app_version}\n'
+                          f'Remote branch: {branch}\n'
+                          f'HEAD: {remote_sha}\n\n'
+                          f'Apply will pull the latest commit from {branch}.',
+                'tag': f'branch:{branch}',
+            })
         else:
+            # Check tags on the remote
+            ls_result = subprocess.run(
+                [GIT_EXECUTABLE, 'ls-remote', '--tags', '--refs', repo_url, 'v*'],
+                capture_output=True, text=True, timeout=30,
+            )
+            if ls_result.returncode != 0:
+                return jsonify({'error': f'git ls-remote failed: {ls_result.stderr.strip()}'})
+            tags = []
+            for line in ls_result.stdout.splitlines():
+                parts = line.strip().split('refs/tags/')
+                if len(parts) == 2:
+                    tags.append(parts[1])
+            if not tags:
+                return jsonify({'updates_available': False,
+                                'output': f'Current: v{_app_version}\nNo releases found.'})
+            tags.sort(key=_parse_version)
+            latest_tag = tags[-1]
+            if _parse_version(latest_tag) > _parse_version(_app_version):
+                return jsonify({
+                    'updates_available': True,
+                    'output': f'Current: v{_app_version}\nAvailable: {latest_tag}',
+                    'tag': latest_tag,
+                })
             return jsonify({'updates_available': False,
                             'output': f'Current: v{_app_version}\n'
                                       f'Latest release: {latest_tag}\n\n'
                                       f'Application is up to date.'})
-
     except subprocess.TimeoutExpired:
         return jsonify({'error': 'Git operation timed out'})
     except FileNotFoundError:
-        return jsonify({'error': 'Git is not installed on this system'})
+        return jsonify({'error': 'Git is not available. Configure a GitHub repository to use the API instead.'})
     except Exception as e:
         return jsonify({'error': str(e)})
+
+
+def _apply_frozen_update(tag, owner, repo):
+    """Download the Windows release asset for `tag` and schedule a restart
+    that swaps the new exe bundle in. Only called in PyInstaller frozen mode."""
+    import tempfile
+    import urllib.request
+    import urllib.error
+
+    # Find the Windows zip asset in the release
+    release = _github_api_latest_release(owner, repo, timeout=15)
+    assets = release.get('assets') or []
+    asset = None
+    for a in assets:
+        name = (a.get('name') or '').lower()
+        if name.endswith('.zip') and 'windows' in name:
+            asset = a
+            break
+    if not asset:
+        raise RuntimeError('No Windows release asset found on GitHub — cannot update.')
+
+    download_url = asset['browser_download_url']
+    asset_size = asset.get('size', 0)
+    app_logger.info('Downloading update asset: %s (%d bytes)', download_url, asset_size)
+
+    # Download to a temp file
+    updates_dir = os.path.join(DATA_DIR, 'updates')
+    os.makedirs(updates_dir, exist_ok=True)
+    zip_path = os.path.join(updates_dir, f'InventorySystem-{tag}.zip')
+    req = urllib.request.Request(download_url, headers={
+        'User-Agent': 'HP-Connectivity-Inventory-Updater',
+    })
+    with urllib.request.urlopen(req, timeout=300) as resp, open(zip_path, 'wb') as f:
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            f.write(chunk)
+    app_logger.info('Download complete: %s', zip_path)
+
+    # Write a Windows batch updater that:
+    #   1. waits for the current exe to exit
+    #   2. extracts the new zip over the install directory
+    #   3. relaunches the exe
+    exe_path = sys.executable
+    install_dir = os.path.dirname(exe_path)
+    extract_dir = os.path.join(updates_dir, f'extract-{tag}')
+    batch_path = os.path.join(updates_dir, 'apply_update.bat')
+    batch = f"""@echo off
+echo Waiting for InventorySystem to exit...
+timeout /t 3 /nobreak > nul
+taskkill /f /im InventorySystem.exe > nul 2>&1
+timeout /t 1 /nobreak > nul
+
+echo Extracting update...
+if exist "{extract_dir}" rd /s /q "{extract_dir}"
+mkdir "{extract_dir}"
+powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '{zip_path}' -DestinationPath '{extract_dir}'"
+
+echo Copying new files...
+robocopy "{extract_dir}" "{install_dir}" /E /NFL /NDL /NJH /NJS /NC /NS /NP
+
+echo Cleaning up...
+rd /s /q "{extract_dir}"
+del "{zip_path}"
+
+echo Restarting...
+start "" "{exe_path}"
+
+exit /b 0
+"""
+    with open(batch_path, 'w') as f:
+        f.write(batch)
+    app_logger.info('Update script written: %s', batch_path)
+
+    # Launch the batch file detached and exit
+    def _run_updater():
+        import time as _t
+        _t.sleep(2)
+        app_logger.info('Launching update script and exiting...')
+        try:
+            if sys.platform == 'win32':
+                # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS = 0x00000200 | 0x00000008
+                subprocess.Popen(['cmd', '/c', batch_path],
+                                 creationflags=0x00000208,
+                                 cwd=updates_dir,
+                                 close_fds=True)
+            else:
+                subprocess.Popen(['bash', batch_path], cwd=updates_dir)
+        finally:
+            os._exit(0)
+
+    threading.Thread(target=_run_updater, daemon=True).start()
+    return {
+        'ok': True,
+        'output': f'Downloaded {tag} ({asset_size // 1024} KB). '
+                  f'The application will exit and restart shortly.',
+    }
 
 
 @app.route('/admin/update/apply', methods=['POST'])
 @permission_required('update')
 def app_update_apply():
-    """Checkout a tagged release, install dependencies, and restart."""
+    """Apply an update. For frozen builds, downloads the release zip and
+    runs an external updater script. For source installs, uses git checkout."""
     try:
         tag = request.json.get('tag') if request.is_json else request.form.get('tag')
-        if not tag or not tag.startswith('v'):
-            return jsonify({'error': 'No valid release tag specified'})
+        if not tag:
+            return jsonify({'error': 'No update tag specified'})
 
-        # Checkout the tagged release
-        checkout_result = subprocess.run(
-            [GIT_EXECUTABLE, 'checkout', tag],
-            cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
-        )
-        if checkout_result.returncode != 0:
-            return jsonify({'error': f'Git checkout failed: {checkout_result.stderr.strip()}'})
+        config = _load_server_config()
+        repo_url = config.get('update_repo_url', _DEFAULT_UPDATE_REPO_URL).strip()
+        owner, repo = _parse_github_repo(repo_url)
 
-        output = f'Updated to {tag}\n{checkout_result.stdout.strip()}'
+        # --- Frozen (PyInstaller) mode: download + swap ------------------
+        if getattr(sys, 'frozen', False):
+            if tag.startswith('branch:'):
+                return jsonify({'error': 'Branch-based updates are only supported for source installs.'})
+            if not (owner and repo):
+                return jsonify({'error': 'Only GitHub repositories are supported for frozen updates.'})
+            result = _apply_frozen_update(tag, owner, repo)
+            app_logger.info('Frozen update initiated by=%s tag=%s', current_username(), tag)
+            return jsonify(result)
 
-        # Install updated dependencies (best-effort, non-blocking)
+        # --- Source mode: git checkout the tag (or pull the branch) ------
+        if tag.startswith('branch:'):
+            branch = tag[len('branch:'):]
+            pull_result = subprocess.run(
+                [GIT_EXECUTABLE, 'pull', repo_url, branch],
+                cwd=_REPO_DIR, capture_output=True, text=True, timeout=60,
+            )
+            if pull_result.returncode != 0:
+                return jsonify({'error': f'git pull failed: {pull_result.stderr.strip()}'})
+            output = f'Updated to {branch}\n{pull_result.stdout.strip()}'
+        else:
+            if not tag.startswith('v'):
+                return jsonify({'error': 'No valid release tag specified'})
+            # Ensure tags are local
+            subprocess.run(
+                [GIT_EXECUTABLE, 'fetch', '--tags', '--force'],
+                cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
+            )
+            checkout_result = subprocess.run(
+                [GIT_EXECUTABLE, 'checkout', tag],
+                cwd=_REPO_DIR, capture_output=True, text=True, timeout=30,
+            )
+            if checkout_result.returncode != 0:
+                return jsonify({'error': f'Git checkout failed: {checkout_result.stderr.strip()}'})
+            output = f'Updated to {tag}\n{checkout_result.stdout.strip()}'
+
+        # Install updated dependencies (best-effort)
         pip_cmd = [sys.executable, '-m', 'pip', 'install', '-r',
                    os.path.join(_REPO_DIR, 'requirements.txt'), '-q']
         pip_result = subprocess.run(
@@ -1472,15 +1696,13 @@ def app_update_apply():
 
         app_logger.info('Application update applied by=%s: %s', current_username(), output.replace('\n', ' | '))
 
-        # Schedule restart in a background thread so the response can be sent first
         def _restart():
             import time as _t
-            _t.sleep(1.5)  # Give time for the HTTP response to complete
+            _t.sleep(1.5)
             app_logger.info('Restarting application after update...')
             os.execv(sys.executable, [sys.executable] + sys.argv)
 
         threading.Thread(target=_restart, daemon=True).start()
-
         return jsonify({'ok': True, 'output': output})
 
     except subprocess.TimeoutExpired:

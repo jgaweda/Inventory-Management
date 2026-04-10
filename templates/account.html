@@ -158,6 +158,29 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
             </div>
             <button type="submit" class="btn btn-primary">Save</button>
         </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;">Application Updates</div>
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Update repository URL</label>
+                <input type="text" name="update_repo_url"
+                       value="{{ server_config.update_repo_url or 'https://github.com/jgaweda/Inventory-Management' }}"
+                       placeholder="https://github.com/jgaweda/Inventory-Management"
+                       style="width: 100%; font-family: var(--font-mono, monospace); font-size: 13px;">
+                <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0;">
+                    Defaults to the official GitHub repository. Change to a private git URL for internal/staging builds.
+                </p>
+            </div>
+            <div style="margin-bottom: 4px;">
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Branch (optional)</label>
+                <input type="text" name="update_branch"
+                       value="{{ server_config.update_branch or '' }}"
+                       placeholder="Leave blank to use tagged releases"
+                       style="width: 100%; font-family: var(--font-mono, monospace); font-size: 13px;">
+                <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0;">
+                    Leave blank to check for tagged releases (recommended). Set to a branch name to track the HEAD of a private branch. Branch updates only work for source installs.
+                </p>
+            </div>
+        </div>
         {% if autostart and autostart.supported %}
         <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
             <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px;">
