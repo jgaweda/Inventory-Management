@@ -541,16 +541,25 @@ class TestDeviceViewedAudit(BaseTestCase):
         actions = [e['action'] for e in log]
         self.assertIn('viewed', actions)
 
-    def test_scan_redirect_creates_viewed(self):
-        """Barcode scan that finds a device logs a viewed action on redirect."""
+    def test_scan_redirect_creates_scanned_action(self):
+        """Device page loaded with ?scan=1 logs a 'scanned' action, not 'viewed'."""
         device_id = db.add_device({'name': 'Scan Test'})
-        device = db.get_device(device_id)
-        # The scan API returns the device_id, then the client redirects to the detail page
-        resp = self.client.get(f'/devices/{device_id}')
+        # The scan page appends ?scan=1 to the redirect URL
+        resp = self.client.get(f'/devices/{device_id}?scan=1')
         self.assertEqual(resp.status_code, 200)
         log = db.get_audit_log(device_id=device_id)
-        viewed = [e for e in log if e['action'] == 'viewed']
-        self.assertGreaterEqual(len(viewed), 1)
+        actions = [e['action'] for e in log]
+        self.assertIn('scanned', actions)
+        self.assertNotIn('viewed', actions)
+
+    def test_plain_view_logs_viewed_not_scanned(self):
+        """Device page loaded without ?scan=1 logs 'viewed'."""
+        device_id = db.add_device({'name': 'View Test'})
+        self.client.get(f'/devices/{device_id}')
+        log = db.get_audit_log(device_id=device_id)
+        actions = [e['action'] for e in log]
+        self.assertIn('viewed', actions)
+        self.assertNotIn('scanned', actions)
 
 
 class TestDeviceAttachments(BaseTestCase):
