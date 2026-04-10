@@ -158,16 +158,43 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
             </div>
             <button type="submit" class="btn btn-primary">Save</button>
         </div>
+        {% if autostart and autostart.supported %}
+        <div style="margin-top: 16px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px;">
+                <input type="hidden" name="autostart_enabled" value="0">
+                <input type="checkbox" name="autostart_enabled" value="1" {{ 'checked' if autostart.enabled }}
+                       style="width: 16px; height: 16px;">
+                <span>
+                    <strong>Run on startup</strong>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        Launch the application minimized in the background when you log into Windows.
+                    </div>
+                </span>
+            </label>
+        </div>
+        {% else %}
+        <div style="margin-top: 16px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: not-allowed; font-size: 13px; opacity: 0.5;">
+                <input type="checkbox" disabled style="width: 16px; height: 16px;">
+                <span>
+                    <strong>Run on startup</strong>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                        Only available when running on Windows.
+                    </div>
+                </span>
+            </label>
+        </div>
+        {% endif %}
         <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
             <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px;">Application Updates</div>
             <div style="margin-bottom: 12px;">
-                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Update repository URL</label>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 6px;">Update repository URL (override)</label>
                 <input type="text" name="update_repo_url"
-                       value="{{ server_config.update_repo_url or 'https://github.com/jgaweda/Inventory-Management' }}"
-                       placeholder="https://github.com/jgaweda/Inventory-Management"
+                       value="{{ server_config.update_repo_url or '' }}"
+                       placeholder="Leave blank to use the default release channel"
                        style="width: 100%; font-family: var(--font-mono, monospace); font-size: 13px;">
                 <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0;">
-                    Defaults to the official GitHub repository. Change to a private git URL for internal/staging builds.
+                    Leave blank to use the built-in default release channel. Set this to a private git URL to track an internal/staging build instead.
                 </p>
             </div>
             <div style="margin-bottom: 4px;">
@@ -181,21 +208,6 @@ if (window.location.search.indexOf('check_updates=1') !== -1) {
                 </p>
             </div>
         </div>
-        {% if autostart and autostart.supported %}
-        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
-            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px;">
-                <input type="hidden" name="autostart_enabled" value="0">
-                <input type="checkbox" name="autostart_enabled" value="1" {{ 'checked' if autostart.enabled }}
-                       style="width: 16px; height: 16px;">
-                <span>
-                    <strong>Run on startup</strong>
-                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                        Launch the application minimized in the background when you log into Windows.
-                    </div>
-                </span>
-            </label>
-        </div>
-        {% endif %}
         <p style="font-size: 11px; color: var(--text-muted); margin-top: 10px; margin-bottom: 0;">
             Port changes take effect after restarting the application. Current default: port {{ server_config.port or 8080 }}.
         </p>

@@ -84,10 +84,13 @@ _DEFAULT_UPDATE_REPO_URL = 'https://github.com/jgaweda/Inventory-Management'
 
 
 def _load_server_config():
+    # Default values. update_repo_url is stored as empty string when using
+    # the built-in default — this keeps the admin UI field blank so users
+    # only see their own custom value (if any).
     defaults = {
         'port': 8080,
         'host': '0.0.0.0',
-        'update_repo_url': _DEFAULT_UPDATE_REPO_URL,
+        'update_repo_url': '',
         'update_branch': '',  # empty = use releases instead of a branch
     }
     try:
@@ -97,6 +100,13 @@ def _load_server_config():
         saved = {}
     defaults.update(saved)
     return defaults
+
+
+def _get_update_repo_url(config=None):
+    """Resolve the effective update repo URL: user override or built-in default."""
+    if config is None:
+        config = _load_server_config()
+    return (config.get('update_repo_url') or '').strip() or _DEFAULT_UPDATE_REPO_URL
 
 
 def _save_server_config(config):
@@ -1340,16 +1350,17 @@ def save_server_config():
     config['port'] = port
 
     # Update repo URL & branch (for the self-update feature)
+    # Store empty string when using the default — keeps the admin UI blank
+    # so users only see their custom override (if any).
     repo_url = request.form.get('update_repo_url', '').strip()
-    if repo_url:
-        config['update_repo_url'] = repo_url
-    else:
-        config['update_repo_url'] = _DEFAULT_UPDATE_REPO_URL
+    if repo_url == _DEFAULT_UPDATE_REPO_URL:
+        repo_url = ''
+    config['update_repo_url'] = repo_url
     config['update_branch'] = request.form.get('update_branch', '').strip()
 
     _save_server_config(config)
     app_logger.info('Server config updated: port=%d repo=%s branch=%s by user=%s',
-                    port, config['update_repo_url'], config['update_branch'] or '(releases)',
+                    port, repo_url or '(default)', config['update_branch'] or '(releases)',
                     g.user['username'])
 
     # Handle Windows autostart toggle
@@ -1434,7 +1445,7 @@ def app_update_check():
     servers) so admins can point at a private branch.
     """
     config = _load_server_config()
-    repo_url = config.get('update_repo_url', _DEFAULT_UPDATE_REPO_URL).strip()
+    repo_url = _get_update_repo_url(config)
     branch = config.get('update_branch', '').strip()
 
     if not repo_url:
@@ -1644,7 +1655,7 @@ def app_update_apply():
             return jsonify({'error': 'No update tag specified'})
 
         config = _load_server_config()
-        repo_url = config.get('update_repo_url', _DEFAULT_UPDATE_REPO_URL).strip()
+        repo_url = _get_update_repo_url(config)
         owner, repo = _parse_github_repo(repo_url)
 
         # --- Frozen (PyInstaller) mode: download + swap ------------------
@@ -1811,6 +1822,8 @@ def _exec_scheduled_backup():
         else:
             app_logger.info('Scheduled backup completed: %s (%d bytes, pruned=%d)',
                             result['filename'], result['size'], result['pruned'])
+            # Mirror to cloud destinations so they stay in sync with local
+            _mirror_local_to_cloud(reason='scheduled backup')
         _fail_count['backup'] = 0
     except Exception as e:
         app_logger.error('Scheduled backup failed: %s\nTraceback:\n%s', e, traceback.format_exc())
@@ -1853,6 +1866,29 @@ def _exec_scheduled_filepath_push():
                          'filepath_enabled', 'filepath_push_interval_hours')
 
 
+def _mirror_local_to_cloud(reason='local change'):
+    """Push to git and/or file path destinations so their zip mirrors the
+    current local backup state. Called after local create/delete/prune
+    when the destination has mirroring enabled. Errors are logged but
+    do not raise — cloud mirroring is best-effort."""
+    try:
+        config = db._get_backup_config()
+    except Exception:
+        return
+    if config.get('git_enabled') and config.get('git_repo') and config.get('mirror_to_git'):
+        try:
+            db.push_backups_to_git()
+            app_logger.info('Cloud mirror (git) synced after %s', reason)
+        except Exception as e:
+            app_logger.warning('Cloud mirror (git) failed after %s: %s', reason, e)
+    if config.get('filepath_enabled') and config.get('filepath_path') and config.get('mirror_to_filepath'):
+        try:
+            db.push_backups_to_filepath()
+            app_logger.info('Cloud mirror (filepath) synced after %s', reason)
+        except Exception as e:
+            app_logger.warning('Cloud mirror (filepath) failed after %s: %s', reason, e)
+
+
 def _exec_scheduled_prune():
     """Run prune and reschedule from latest config, with retry on failure."""
     try:
@@ -1860,6 +1896,8 @@ def _exec_scheduled_prune():
         pruned = db._smart_prune_backups(config['max_backups'])
         if pruned:
             app_logger.info('Scheduled prune completed: removed %d old auto-backups', pruned)
+            # Mirror the pruned state to cloud destinations if enabled
+            _mirror_local_to_cloud(reason='scheduled prune')
         _fail_count['prune'] = 0
     except Exception as e:
         app_logger.error('Scheduled prune failed: %s\nTraceback:\n%s', e, traceback.format_exc())
@@ -2055,6 +2093,8 @@ def backup_create():
                         result['filename'], result['size'], result['pruned'],
                         current_username())
         flash(f'Backup created: {result["filename"]}', 'success')
+        # Mirror to cloud destinations if enabled
+        _mirror_local_to_cloud(reason='manual backup')
     except Exception as e:
         app_logger.error('Manual backup failed: %s by=%s\nTraceback:\n%s', e, current_username(), traceback.format_exc())
         flash(f'Backup failed: {e}', 'error')
@@ -2168,6 +2208,10 @@ def backup_config():
         config['prune_interval_hours'] = max(0.1, float(request.form.get('prune_interval_hours', 24)))
     except (ValueError, TypeError):
         config['prune_interval_hours'] = 24
+
+    # Mirror toggles — sync cloud zip to match local backup state
+    config['mirror_to_git'] = '1' in request.form.getlist('mirror_to_git')
+    config['mirror_to_filepath'] = '1' in request.form.getlist('mirror_to_filepath')
 
     # Git push settings
     config['git_enabled'] = '1' in request.form.getlist('git_enabled')
@@ -2486,6 +2530,8 @@ def backup_delete(filename):
         db.delete_backup(filename)
         app_logger.info('Backup deleted: %s by=%s', filename, current_username())
         flash(f'Backup deleted: {filename}', 'success')
+        # Mirror the removal to cloud destinations if enabled
+        _mirror_local_to_cloud(reason='manual delete')
     except Exception as e:
         app_logger.error('Backup delete failed: file=%s error=%s\nTraceback:\n%s', filename, e, traceback.format_exc())
         flash(f'Error deleting backup: {e}', 'error')

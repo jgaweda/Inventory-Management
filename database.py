@@ -1352,6 +1352,10 @@ def _get_backup_config():
         'last_filepath_backup_files': saved.get('last_filepath_backup_files', []),
         # Upload inclusion
         'include_uploads': bool(saved.get('include_uploads', True)),
+        # Mirror local backup state to cloud destinations (push after every
+        # local create/delete/prune so the cloud always matches what's local)
+        'mirror_to_git': bool(saved.get('mirror_to_git', True)),
+        'mirror_to_filepath': bool(saved.get('mirror_to_filepath', True)),
     }
 
 
@@ -1387,6 +1391,8 @@ def get_default_backup_config():
         'last_filepath_push': '',
         'last_filepath_backup_files': [],
         'include_uploads': True,
+        'mirror_to_git': True,
+        'mirror_to_filepath': True,
     }
 
 

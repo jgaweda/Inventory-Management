@@ -180,6 +180,14 @@
                                style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
                         <span style="font-size: 13px; color: var(--text-muted);">hours</span>
                     </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                            <input type="hidden" name="mirror_to_git" value="0">
+                            <input type="checkbox" name="mirror_to_git" value="1" {{ 'checked' if config.mirror_to_git }}
+                                   style="width: 16px; height: 16px;">
+                            <span>Mirror local backups (auto-prune cloud copy)</span>
+                        </label>
+                    </div>
                 </div>
                 <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('gitPushForm').submit()">
@@ -252,6 +260,14 @@
                                min="0.1" step="any" {{ 'disabled' if not config.filepath_enabled }}
                                style="width: 80px; text-align: center; font-size: 13px; padding: 8px;">
                         <span style="font-size: 13px; color: var(--text-muted);">hours</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                            <input type="hidden" name="mirror_to_filepath" value="0">
+                            <input type="checkbox" name="mirror_to_filepath" value="1" {{ 'checked' if config.mirror_to_filepath }}
+                                   style="width: 16px; height: 16px;">
+                            <span>Mirror local backups (auto-prune filepath copy)</span>
+                        </label>
                     </div>
                 </div>
                 <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
