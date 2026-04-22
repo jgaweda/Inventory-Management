@@ -1551,11 +1551,15 @@ def app_update_check():
 
 
 def _apply_frozen_update(tag, owner, repo):
-    """Download the Windows release asset for `tag` and schedule a restart
-    that swaps the new exe bundle in. Only called in PyInstaller frozen mode."""
-    import tempfile
+    """Download the Windows release asset for `tag`, extract it, and schedule
+    a restart that swaps the new build in. Only called in PyInstaller frozen mode.
+
+    Extraction happens in Python (not the batch script) so we don't depend
+    on PowerShell 5+ / Expand-Archive, which isn't available on Windows 7.
+    """
     import urllib.request
     import urllib.error
+    import zipfile
 
     # Find the Windows zip asset in the release
     release = _github_api_latest_release(owner, repo, timeout=15)
@@ -1588,31 +1592,46 @@ def _apply_frozen_update(tag, owner, repo):
             f.write(chunk)
     app_logger.info('Download complete: %s', zip_path)
 
+    # Extract in Python (no dependency on PowerShell version)
+    extract_dir = os.path.join(updates_dir, f'extract-{tag}')
+    if os.path.isdir(extract_dir):
+        import shutil
+        shutil.rmtree(extract_dir, ignore_errors=True)
+    os.makedirs(extract_dir, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        zf.extractall(extract_dir)
+    app_logger.info('Extracted update to: %s', extract_dir)
+
+    # Clean up the zip now that it's extracted
+    try:
+        os.remove(zip_path)
+    except OSError:
+        pass
+
     # Write a Windows batch updater that:
     #   1. waits for the current exe to exit
-    #   2. extracts the new zip over the install directory
+    #   2. copies the pre-extracted files over the install directory
     #   3. relaunches the exe
     exe_path = sys.executable
     install_dir = os.path.dirname(exe_path)
-    extract_dir = os.path.join(updates_dir, f'extract-{tag}')
     batch_path = os.path.join(updates_dir, 'apply_update.bat')
     batch = f"""@echo off
 echo Waiting for InventorySystem to exit...
-timeout /t 3 /nobreak > nul
+ping 127.0.0.1 -n 4 > nul
 taskkill /f /im InventorySystem.exe > nul 2>&1
-timeout /t 1 /nobreak > nul
-
-echo Extracting update...
-if exist "{extract_dir}" rd /s /q "{extract_dir}"
-mkdir "{extract_dir}"
-powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '{zip_path}' -DestinationPath '{extract_dir}'"
+ping 127.0.0.1 -n 2 > nul
 
 echo Copying new files...
 robocopy "{extract_dir}" "{install_dir}" /E /NFL /NDL /NJH /NJS /NC /NS /NP
+if errorlevel 8 (
+    echo ERROR: robocopy failed with exit code %errorlevel%
+    pause
+    exit /b 1
+)
 
 echo Cleaning up...
-rd /s /q "{extract_dir}"
-del "{zip_path}"
+rd /s /q "{extract_dir}" > nul 2>&1
 
 echo Restarting...
 start "" "{exe_path}"
@@ -1630,7 +1649,7 @@ exit /b 0
         app_logger.info('Launching update script and exiting...')
         try:
             if sys.platform == 'win32':
-                # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS = 0x00000200 | 0x00000008
+                # CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
                 subprocess.Popen(['cmd', '/c', batch_path],
                                  creationflags=0x00000208,
                                  cwd=updates_dir,
